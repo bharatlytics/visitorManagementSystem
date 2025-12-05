@@ -1,0 +1,33 @@
+"""
+VMS Configuration Settings
+
+NOTE: Mode (standalone vs connected) is NOT configured here.
+It's determined per-session based on how the user accessed the app:
+- Direct access → local login → own DB
+- From Platform → SSO token → platform API
+"""
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    # Flask session secret
+    SECRET_KEY = os.getenv('JWT_SECRET', 'vms-secret-key-change-in-production')
+    
+    # MongoDB - VMS's own database (always used for visitors/visits)
+    VMS_MONGODB_URI = os.getenv('VMS_MONGODB_URI', 'mongodb://localhost:27017/vms_db')
+    
+    # JWT for local auth
+    JWT_SECRET = os.getenv('JWT_SECRET', 'vms-secret-key-change-in-production')
+    JWT_ALGORITHM = 'HS256'
+    JWT_EXPIRY_HOURS = 24
+    
+    # Platform JWT Secret (for validating SSO tokens from platform - must match platform's JWT_SECRET)
+    PLATFORM_JWT_SECRET = os.getenv('PLATFORM_JWT_SECRET', 'supersecret')
+    
+    # Platform API (used when user comes via platform SSO)
+    PLATFORM_API_URL = os.getenv('PLATFORM_API_URL', 'https://face-recognition-server-one.vercel.app')
+    
+    # File uploads
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visitors - VMS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .content-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .navbar {
+            background: rgba(0, 0, 0, 0.3) !important;
+        }
+
+        .table {
+            color: #fff;
+        }
+
+        .table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-dark px-4 mb-4">
+        <a class="navbar-brand" href="/dashboard.html">
+            <i class="bi bi-chevron-left me-2"></i>Back to Dashboard
+        </a>
+        <span class="navbar-text text-light">Visitor Management</span>
+    </nav>
+
+    <div class="container">
+        <div class="content-card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3><i class="bi bi-people me-2"></i>Visitors</h3>
+                <button class="btn btn-primary" onclick="showRegisterModal()">
+                    <i class="bi bi-person-plus me-2"></i>Register New Visitor
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-borderless">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Company</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="visitors-table-body">
+                        <tr>
+                            <td colspan="5" class="text-center">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div class="modal fade" id="registerModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Register Visitor</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="registerForm">
+                        <div class="mb-3">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" class="form-control bg-secondary text-light border-0" name="visitorName"
+                                required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control bg-secondary text-light border-0"
+                                name="visitorEmail">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Phone</label>
+                            <input type="tel" class="form-control bg-secondary text-light border-0" name="visitorPhone">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Company</label>
+                            <input type="text" class="form-control bg-secondary text-light border-0"
+                                name="visitorCompany">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Visitor Type</label>
+                            <select class="form-select bg-secondary text-light border-0" name="visitorType">
+                                <option value="general">General</option>
+                                <option value="contractor">Contractor</option>
+                                <option value="vip">VIP</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="registerVisitor()">Register</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let registerModal;
+
+        async function loadVisitors() {
+            try {
+                const resp = await fetch('/api/visitors');
+                if (!resp.ok) throw new Error('Failed to fetch');
+                const visitors = await resp.json();
+
+                const tbody = document.getElementById('visitors-table-body');
+                tbody.innerHTML = '';
+
+                if (visitors.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No visitors found</td></tr>';
+                    return;
+                }
+
+                visitors.forEach(v => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center me-2" style="width:32px;height:32px">
+                                    <i class="bi bi-person"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-bold">${v.visitorName}</div>
+                                    <small class="text-muted">${v.visitorEmail || ''}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>${v.visitorCompany || '-'}</td>
+                        <td><span class="badge bg-info bg-opacity-25 text-info">${v.visitorType}</span></td>
+                        <td>
+                            ${v.isBlacklisted
+                            ? '<span class="badge bg-danger">Blacklisted</span>'
+                            : '<span class="badge bg-success">Active</span>'}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-light" onclick="viewVisitor('${v._id}')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function showRegisterModal() {
+            if (!registerModal) registerModal = new bootstrap.Modal(document.getElementById('registerModal'));
+            registerModal.show();
+        }
+
+        async function registerVisitor() {
+            const form = document.getElementById('registerForm');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                const resp = await fetch('/api/visitors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (resp.ok) {
+                    registerModal.hide();
+                    form.reset();
+                    loadVisitors();
+                } else {
+                    alert('Failed to register visitor');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error registering visitor');
+            }
+        }
+
+        function viewVisitor(id) {
+            alert('Visitor details view coming soon for ID: ' + id);
+        }
+
+        // Init
+        loadVisitors();
+    </script>
+</body>
+
+</html>
