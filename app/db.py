@@ -6,6 +6,7 @@ from gridfs import GridFS
 from app.config import Config
 
 # MongoDB connection
+print(f"[DB] Connecting to URI: {Config.VMS_MONGODB_URI}")  # Debug
 client = MongoClient(Config.VMS_MONGODB_URI)
 db = client.get_default_database()
 

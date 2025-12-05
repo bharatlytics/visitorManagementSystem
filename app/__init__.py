@@ -57,5 +57,10 @@ def create_app():
     @app.route('/css/<path:filename>')
     def serve_css(filename):
         return app.send_static_file(f'css/{filename}')
+
+    # Serve Image files from subdirectories
+    @app.route('/images/<path:filename>')
+    def serve_images(filename):
+        return app.send_static_file(f'images/{filename}')
     
     return app

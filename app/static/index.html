@@ -5,128 +5,204 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VMS - Visitor Management System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <style>
-        :root {
-            --primary-color: #2563eb;
-            --secondary-color: #1e40af;
-        }
-
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
-
-        .login-container {
-            max-width: 400px;
-            margin: 100px auto;
-        }
-
-        .card {
-            border: none;
-            border-radius: 16px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-        }
-
-        .btn-primary {
-            background: var(--primary-color);
-            border: none;
-        }
-
-        .btn-primary:hover {
-            background: var(--secondary-color);
-        }
-
-        .logo {
-            font-size: 3rem;
-            color: var(--primary-color);
-        }
-    </style>
+    <link href="css/login.css" rel="stylesheet">
 </head>
 
 <body>
-    <div class="container">
-        <div class="login-container">
-            <div class="card">
-                <div class="card-body p-5">
-                    <div class="text-center mb-4">
-                        <i class="bi bi-person-badge logo"></i>
-                        <h2 class="mt-3">VMS</h2>
-                        <p class="text-muted">Visitor Management System</p>
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="row align-items-center">
+                <!-- Left Column: Logo -->
+                <div class="col-md-6 text-center mb-4 mb-md-0 border-end-md">
+                    <div class="logo-container mb-0">
+                        <img src="images/logo-grunge.png" alt="VMS Logo" class="app-logo img-fluid">
                     </div>
+                </div>
 
+                <!-- Right Column: Forms -->
+                <div class="col-md-6">
                     <div id="login-form">
-                        <div class="mb-3">
-                            <label class="form-label">Email</label>
-                            <input type="email" id="email" class="form-control" placeholder="admin@company.com">
+                        <h2 class="login-title">Welcome Back</h2>
+                        <p class="login-subtitle">Sign in to access your dashboard</p>
+
+                        <div class="form-group">
+                            <input type="email" id="email" class="form-control" placeholder=" " required>
+                            <label class="form-label">Email Address</label>
                         </div>
-                        <div class="mb-3">
+
+                        <div class="form-group">
+                            <input type="password" id="password" class="form-control" placeholder=" " required>
                             <label class="form-label">Password</label>
-                            <input type="password" id="password" class="form-control" placeholder="••••••••">
                         </div>
-                        <button class="btn btn-primary w-100" onclick="login()">
-                            <i class="bi bi-box-arrow-in-right me-2"></i>Login
+
+                        <button class="btn-login" onclick="login()">
+                            <i class="bi bi-box-arrow-in-right me-2"></i> Sign In
                         </button>
-                        <hr>
-                        <p class="text-center text-muted mb-0">
-                            <small>Don't have an account? <a href="#" onclick="showRegister()">Register</a></small>
-                        </p>
+
+                        <div class="switch-auth">
+                            Don't have an account? <a href="#" onclick="showRegister()">Register</a>
+                        </div>
                     </div>
 
                     <div id="register-form" style="display:none;">
-                        <div class="mb-3">
-                            <label class="form-label">Company Name</label>
-                            <input type="text" id="reg-company" class="form-control" placeholder="Your Company">
+                        <h2 class="login-title">Create Account</h2>
+                        <p class="login-subtitle">Get started with VMS today</p>
+
+                        <!-- Registration Type Tabs -->
+                        <div class="auth-tabs mb-4">
+                            <button class="auth-tab active" onclick="switchRegType('join')" id="tab-join">Join
+                                Company</button>
+                            <button class="auth-tab" onclick="switchRegType('new')" id="tab-new">New Company</button>
                         </div>
-                        <div class="mb-3">
+
+                        <!-- Common Fields -->
+                        <div class="form-group">
+                            <input type="text" id="reg-name" class="form-control" placeholder=" " required>
                             <label class="form-label">Your Name</label>
-                            <input type="text" id="reg-name" class="form-control" placeholder="John Doe">
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email</label>
-                            <input type="email" id="reg-email" class="form-control" placeholder="john@company.com">
+
+                        <div class="form-group">
+                            <input type="email" id="reg-email" class="form-control" placeholder=" " required>
+                            <label class="form-label">Email Address</label>
                         </div>
-                        <div class="mb-3">
+
+                        <div class="form-group">
+                            <input type="password" id="reg-password" class="form-control" placeholder=" " required>
                             <label class="form-label">Password</label>
-                            <input type="password" id="reg-password" class="form-control" placeholder="••••••••">
                         </div>
-                        <button class="btn btn-primary w-100" onclick="register()">
-                            <i class="bi bi-person-plus me-2"></i>Register
+
+                        <!-- Join Company Fields -->
+                        <div id="join-company-fields">
+                            <div class="form-group">
+                                <div class="input-group">
+                                    <input type="text" id="reg-company-id" class="form-control" placeholder=" "
+                                        required>
+                                    <label class="form-label">Company ID</label>
+                                    <button class="btn btn-outline-light" type="button"
+                                        onclick="verifyCompany()">Verify</button>
+                                </div>
+                                <small class="text-success" id="company-verified-msg" style="display:none;"></small>
+                            </div>
+                        </div>
+
+                        <!-- New Company Fields -->
+                        <div id="new-company-fields" style="display:none;">
+                            <div class="form-group">
+                                <input type="text" id="reg-company-name" class="form-control" placeholder=" ">
+                                <label class="form-label">Company Name</label>
+                            </div>
+                            <div class="form-group">
+                                <input type="password" id="reg-admin-secret" class="form-control" placeholder=" ">
+                                <label class="form-label">Admin Secret</label>
+                            </div>
+                        </div>
+
+                        <button class="btn-login" onclick="register()">
+                            <i class="bi bi-person-plus me-2"></i> Create Account
                         </button>
-                        <hr>
-                        <p class="text-center text-muted mb-0">
-                            <small>Already have an account? <a href="#" onclick="showLogin()">Login</a></small>
-                        </p>
+
+                        <div class="switch-auth">
+                            Already have an account? <a href="#" onclick="showLogin()">Sign In</a>
+                        </div>
                     </div>
 
-                    <div id="alert" class="alert mt-3" style="display:none;"></div>
+                    <div id="alert" class="alert"></div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+        let regType = 'join';
+        let companyVerified = false;
+
         function showAlert(message, type) {
             const alert = document.getElementById('alert');
-            alert.className = `alert alert-${type} mt-3`;
+            alert.style.animation = 'none';
+            alert.offsetHeight; /* trigger reflow */
+            alert.style.animation = 'shake 0.5s ease-in-out';
+
+            alert.className = `alert alert-${type}`;
             alert.textContent = message;
             alert.style.display = 'block';
+
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 3000);
+        }
+
+        function switchRegType(type) {
+            regType = type;
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(`tab-${type}`).classList.add('active');
+
+            if (type === 'join') {
+                document.getElementById('join-company-fields').style.display = 'block';
+                document.getElementById('new-company-fields').style.display = 'none';
+            } else {
+                document.getElementById('join-company-fields').style.display = 'none';
+                document.getElementById('new-company-fields').style.display = 'block';
+            }
         }
 
         function showRegister() {
             document.getElementById('login-form').style.display = 'none';
             document.getElementById('register-form').style.display = 'block';
+            document.getElementById('alert').style.display = 'none';
         }
 
         function showLogin() {
             document.getElementById('register-form').style.display = 'none';
             document.getElementById('login-form').style.display = 'block';
+            document.getElementById('alert').style.display = 'none';
+        }
+
+        async function verifyCompany() {
+            const companyId = document.getElementById('reg-company-id').value;
+            if (!companyId) {
+                showAlert('Please enter a Company ID', 'danger');
+                return;
+            }
+
+            try {
+                const resp = await fetch('/auth/verify-company', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ companyId })
+                });
+                const data = await resp.json();
+
+                if (resp.ok) {
+                    companyVerified = true;
+                    const msg = document.getElementById('company-verified-msg');
+                    msg.textContent = `✓ ${data.companyName}`;
+                    msg.style.display = 'block';
+                    document.getElementById('reg-company-id').classList.add('is-valid');
+                } else {
+                    companyVerified = false;
+                    showAlert(data.error || 'Invalid Company ID', 'danger');
+                    document.getElementById('company-verified-msg').style.display = 'none';
+                }
+            } catch (e) {
+                showAlert('Verification failed', 'danger');
+            }
         }
 
         async function login() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
+
+            if (!email || !password) {
+                showAlert('Please fill in all fields', 'danger');
+                return;
+            }
+
+            const btn = document.querySelector('#login-form .btn-login');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i> Signing in...';
+            btn.disabled = true;
 
             try {
                 const resp = await fetch('/auth/login', {
@@ -142,19 +218,51 @@
                     window.location.href = '/dashboard.html';
                 } else {
                     showAlert(data.error || 'Login failed', 'danger');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
                 }
             } catch (e) {
-                showAlert('Connection error', 'danger');
+                showAlert('Connection error. Please try again.', 'danger');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
 
         async function register() {
-            const data = {
-                companyName: document.getElementById('reg-company').value,
-                name: document.getElementById('reg-name').value,
-                email: document.getElementById('reg-email').value,
-                password: document.getElementById('reg-password').value
-            };
+            const name = document.getElementById('reg-name').value;
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+
+            const data = { name, email, password };
+
+            if (regType === 'join') {
+                const companyId = document.getElementById('reg-company-id').value;
+                if (!companyId) {
+                    showAlert('Please enter Company ID', 'danger');
+                    return;
+                }
+                data.companyId = companyId;
+            } else {
+                const companyName = document.getElementById('reg-company-name').value;
+                const adminSecret = document.getElementById('reg-admin-secret').value;
+
+                if (!companyName || !adminSecret) {
+                    showAlert('Company Name and Admin Secret are required', 'danger');
+                    return;
+                }
+                data.companyName = companyName;
+                data.adminSecret = adminSecret;
+            }
+
+            if (!name || !email || !password) {
+                showAlert('Please fill in all fields', 'danger');
+                return;
+            }
+
+            const btn = document.querySelector('#register-form .btn-login');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i> Creating account...';
+            btn.disabled = true;
 
             try {
                 const resp = await fetch('/auth/register', {
@@ -170,9 +278,13 @@
                     window.location.href = '/dashboard.html';
                 } else {
                     showAlert(result.error || 'Registration failed', 'danger');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
                 }
             } catch (e) {
-                showAlert('Connection error', 'danger');
+                showAlert('Connection error. Please try again.', 'danger');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
 
@@ -180,6 +292,17 @@
         if (localStorage.getItem('token')) {
             window.location.href = '/dashboard.html';
         }
+
+        // Add enter key support
+        document.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                if (document.getElementById('login-form').style.display !== 'none') {
+                    login();
+                } else {
+                    register();
+                }
+            }
+        });
     </script>
 </body>
 

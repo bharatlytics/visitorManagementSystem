@@ -25,35 +25,44 @@ const Visitors = {
 
         state.visitors.forEach(visitor => {
             const id = visitor._id || visitor.visitorId;
-            const status = visitor.blacklisted
-                ? '<span class="badge bg-danger">Blacklisted</span>'
-                : '<span class="badge bg-success">Active</span>';
+            const statusClass = visitor.blacklisted ? 'blacklisted' : 'active';
+            const statusText = visitor.blacklisted ? 'Blacklisted' : 'Active';
 
             tbody.append(`
                 <tr>
-                    <td><div class="visitor-avatar">${this.getImageHtml(visitor)}</div></td>
-                    <td><div class="fw-bold">${visitor.visitorName}</div></td>
+                    <td class="visitor-avatar-cell">
+                        <div class="visitor-avatar-small">${this.getImageHtml(visitor)}</div>
+                    </td>
                     <td>
-                        <div class="small">${visitor.email || '-'}</div>
+                        <div class="fw-bold text-dark">${visitor.visitorName}</div>
+                    </td>
+                    <td>
+                        <div class="small text-dark">${visitor.email || '-'}</div>
                         <div class="small text-muted">${visitor.phone || '-'}</div>
                     </td>
                     <td>${visitor.organization || '-'}</td>
-                    <td>${status}</td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                     <td class="text-end">
-                        ${visitor.blacklisted
-                    ? `<button class="btn btn-sm btn-light text-success unblacklist-visitor" data-id="${id}"><i class="fas fa-check-circle"></i></button>`
-                    : `<button class="btn btn-sm btn-light text-danger blacklist-visitor" data-id="${id}"><i class="fas fa-ban"></i></button>`
+                        <div class="btn-action-group">
+                            ${visitor.blacklisted
+                    ? `<button class="btn btn-light text-success unblacklist-visitor" title="Unblacklist" data-id="${id}"><i class="fas fa-check-circle"></i></button>`
+                    : `<button class="btn btn-light text-danger blacklist-visitor" title="Blacklist" data-id="${id}"><i class="fas fa-ban"></i></button>`
                 }
-                        <button class="btn btn-sm btn-light text-primary view-visitor" data-id="${id}"><i class="fas fa-eye"></i></button>
-                        <button class="btn btn-sm btn-light text-dark edit-visitor" data-id="${id}"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-light text-primary view-visitor" title="View Details" data-id="${id}"><i class="fas fa-eye"></i></button>
+                            <button class="btn btn-light text-dark edit-visitor" title="Edit" data-id="${id}"><i class="fas fa-edit"></i></button>
+                        </div>
                     </td>
                 </tr>
             `);
         });
 
         $('#visitors-table').DataTable({
-            language: { search: "", searchPlaceholder: "Search visitors..." },
-            dom: '<"row mb-3"<"col-sm-12 col-md-6"f>>t<"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+            language: {
+                search: "",
+                searchPlaceholder: "Search visitors...",
+                lengthMenu: "Show _MENU_ entries"
+            },
+            dom: '<"row mb-3"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>t<"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
             pageLength: 10,
             drawCallback: () => this.bindRowActions()
         });

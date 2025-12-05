@@ -49,11 +49,26 @@ def _get_company_details(company_id):
     if not company_id or company_id == 'null' or company_id == 'undefined':
         return jsonify({'error': 'Invalid company ID'}), 400
     
-    # Try local database first
+    # Try local database with multiple strategies
     company = None
     try:
-        company = companies_collection.find_one({'_id': ObjectId(company_id)})
-    except:
+        # Strategy 1: Match by _id (standard)
+        if ObjectId.is_valid(company_id):
+            company = companies_collection.find_one({'_id': ObjectId(company_id)})
+        
+        # Strategy 2: Match by companyId (if not found by _id)
+        if not company:
+            # Try matching companyId as ObjectId
+            if ObjectId.is_valid(company_id):
+                company = companies_collection.find_one({'companyId': ObjectId(company_id)})
+            
+            # Strategy 3: Match by companyId as string
+            if not company:
+                company = companies_collection.find_one({'companyId': company_id})
+                
+    except Exception as e:
+        print(f"[Company] Lookup error: {e}")
+        # Fallback to simple string match
         company = companies_collection.find_one({'companyId': company_id})
     
     if company:

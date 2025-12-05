@@ -104,29 +104,83 @@ def login():
     })
 
 
+@auth_bp.route('/verify-company', methods=['POST'])
+def verify_company():
+    """Verify if a company ID exists"""
+    data = request.json or {}
+    company_id = data.get('companyId')
+    
+    if not company_id:
+        return jsonify({'error': 'Company ID required'}), 400
+        
+    from app.db import companies_collection
+    from bson import ObjectId, errors
+    
+    try:
+        if not ObjectId.is_valid(company_id):
+             return jsonify({'error': 'Invalid Company ID format'}), 400
+             
+        company = companies_collection.find_one({'_id': ObjectId(company_id)})
+        if company:
+            return jsonify({
+                'valid': True,
+                'companyName': company.get('companyName', 'Unknown Company')
+            })
+        else:
+            return jsonify({'error': 'Company not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
     """Register new user (standalone mode)"""
     data = request.json or {}
     
-    required = ['email', 'password', 'name', 'companyName']
-    if not all(data.get(k) for k in required):
-        return jsonify({'error': f'Required fields: {required}'}), 400
-    
+    # Common fields
+    if not all(data.get(k) for k in ['email', 'password', 'name']):
+        return jsonify({'error': 'Email, password, and name are required'}), 400
+        
     # Check if email exists
     if users_collection.find_one({'email': data['email']}):
         return jsonify({'error': 'Email already registered'}), 400
-    
+        
     from app.db import companies_collection
     from bson import ObjectId
     
-    # Create company
-    company = {
-        '_id': ObjectId(),
-        'companyName': data['companyName'],
-        'createdAt': datetime.utcnow()
-    }
-    companies_collection.insert_one(company)
+    company_id = None
+    role = 'employee'
+    
+    # Mode 1: Join Existing Company
+    if data.get('companyId'):
+        try:
+            c_id = ObjectId(data['companyId'])
+            company = companies_collection.find_one({'_id': c_id})
+            if not company:
+                return jsonify({'error': 'Invalid Company ID'}), 400
+            company_id = c_id
+            role = 'employee'
+        except:
+            return jsonify({'error': 'Invalid Company ID format'}), 400
+            
+    # Mode 2: Create New Company
+    elif data.get('companyName'):
+        # Verify Admin Secret
+        admin_secret = data.get('adminSecret')
+        if admin_secret != '112233445566778899':
+            return jsonify({'error': 'Invalid Admin Secret for new company registration'}), 403
+            
+        # Create company
+        company = {
+            '_id': ObjectId(),
+            'companyName': data['companyName'],
+            'createdAt': datetime.utcnow()
+        }
+        companies_collection.insert_one(company)
+        company_id = company['_id']
+        role = 'admin'
+    else:
+        return jsonify({'error': 'Either Company ID (to join) or Company Name + Secret (to create) is required'}), 400
     
     # Create user
     user = {
@@ -134,14 +188,14 @@ def register():
         'email': data['email'],
         'password': bcrypt.hash(data['password']),
         'name': data['name'],
-        'companyId': company['_id'],
-        'role': 'admin',
+        'companyId': company_id,
+        'role': role,
         'createdAt': datetime.utcnow()
     }
     users_collection.insert_one(user)
     
     # Create token
-    token = create_token(user['_id'], company['_id'])
+    token = create_token(user['_id'], company_id)
     
     return jsonify({
         'token': token,
@@ -149,7 +203,8 @@ def register():
             'id': str(user['_id']),
             'email': user['email'],
             'name': user['name'],
-            'companyId': str(company['_id'])
+            'role': role,
+            'companyId': str(company_id)
         }
     }), 201
 

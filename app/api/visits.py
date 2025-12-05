@@ -38,7 +38,15 @@ def list_visits():
     company_id = request.args.get('companyId') or request.company_id
     status = request.args.get('status')
     
-    query = {'companyId': ObjectId(company_id)}
+    # Support both ObjectId and string companyId in database
+    from bson.errors import InvalidId
+    try:
+        company_oid = ObjectId(company_id)
+        company_match = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+    except InvalidId:
+        company_match = {'companyId': company_id}
+    
+    query = company_match.copy()
     if status:
         query['status'] = status
     

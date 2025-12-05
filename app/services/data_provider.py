@@ -40,8 +40,16 @@ class DataProvider:
         if self.is_connected:
             return platform_client.get_employees(cid)
         else:
-            # Local database
-            return list(employees_collection.find({'companyId': cid}))
+            # Local database - handle both ObjectId and string
+            from bson import ObjectId
+            from bson.errors import InvalidId
+            try:
+                cid_oid = ObjectId(cid)
+                query = {'$or': [{'companyId': cid_oid}, {'companyId': cid}]}
+            except InvalidId:
+                query = {'companyId': cid}
+                
+            return list(employees_collection.find(query))
     
     def get_entities(self, company_id=None, types=None):
         """Get entities from appropriate source"""
@@ -50,8 +58,15 @@ class DataProvider:
         if self.is_connected:
             return platform_client.get_entities(cid, types)
         else:
-            # Local database
-            query = {'companyId': cid}
+            # Local database - handle both ObjectId and string
+            from bson import ObjectId
+            from bson.errors import InvalidId
+            try:
+                cid_oid = ObjectId(cid)
+                query = {'$or': [{'companyId': cid_oid}, {'companyId': cid}]}
+            except InvalidId:
+                query = {'companyId': cid}
+            
             if types:
                 query['type'] = {'$in': types}
             return list(entities_collection.find(query))
@@ -64,7 +79,28 @@ class DataProvider:
             return platform_client.get_company(cid)
         else:
             from bson import ObjectId
-            return companies_collection.find_one({'_id': ObjectId(cid) if isinstance(cid, str) else cid})
+            from bson.errors import InvalidId
+            
+            # Try multiple strategies like in company API
+            company = None
+            try:
+                if ObjectId.is_valid(cid):
+                    company = companies_collection.find_one({'_id': ObjectId(cid)})
+                
+                if not company:
+                    if ObjectId.is_valid(cid):
+                        company = companies_collection.find_one({'companyId': ObjectId(cid)})
+                    
+                    if not company:
+                        company = companies_collection.find_one({'companyId': cid})
+            except Exception:
+                pass
+                
+            if not company:
+                # Last resort fallback
+                company = companies_collection.find_one({'companyId': cid})
+                
+            return company
     
     def get_employee_by_id(self, employee_id, company_id=None):
         """Get single employee by ID"""

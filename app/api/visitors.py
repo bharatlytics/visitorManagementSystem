@@ -48,7 +48,18 @@ def list_visitors():
         if not company_id:
             return error_response('Company ID is required.', 400)
 
-        visitors = list(visitor_collection.find({'companyId': ObjectId(company_id)}))
+        # Query with both string and ObjectId to handle inconsistent data
+        try:
+            company_oid = ObjectId(company_id)
+            # Match either ObjectId or string version of companyId
+            query = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except InvalidId:
+            # If not valid ObjectId, just use string
+            query = {'companyId': company_id}
+        
+        print(f"[Visitors] Querying with: {query}")  # Debug
+        visitors = list(visitor_collection.find(query))
+        print(f"[Visitors] Found {len(visitors)} visitors")  # Debug
         
         # Convert all ObjectIds recursively
         visitors = convert_objectids(visitors)
@@ -70,7 +81,14 @@ def list_visits():
         if not company_id:
             return error_response('Company ID is required.', 400)
 
-        query = {'companyId': ObjectId(company_id)}
+        # Support both ObjectId and string companyId in database
+        try:
+            company_oid = ObjectId(company_id)
+            company_match = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except InvalidId:
+            company_match = {'companyId': company_id}
+        
+        query = company_match.copy()
         
         visitor_id = request.args.get('visitorId')
         if visitor_id:

@@ -20,40 +20,47 @@ def get_dashboard_stats():
         company_id = request.args.get('companyId')
         if not company_id:
             return error_response('Company ID is required', 400)
+        
+        # Support both ObjectId and string companyId in database
+        try:
+            company_oid = ObjectId(company_id)
+            company_query = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except:
+            company_query = {'companyId': company_id}
             
-        company_oid = ObjectId(company_id)
         now = get_current_utc()
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = start_of_day + timedelta(days=1)
         
         # Current Visitors (Checked In)
-        current_visitors = visit_collection.count_documents({
-            'companyId': company_oid,
-            'status': 'checked_in'
-        })
+        current_query = {**company_query, 'status': 'checked_in'}
+        current_visitors = visit_collection.count_documents(current_query)
         
         # Expected Today (Scheduled for today, not yet checked in)
-        expected_today = visit_collection.count_documents({
-            'companyId': company_oid,
+        expected_query = {
+            **company_query,
             'expectedArrival': {'$gte': start_of_day, '$lt': end_of_day},
             'status': 'scheduled'
-        })
+        }
+        expected_today = visit_collection.count_documents(expected_query)
         
         # Checked In Today (Total check-ins today)
-        checked_in_today = visit_collection.count_documents({
-            'companyId': company_oid,
+        checkin_query = {
+            **company_query,
             'actualArrival': {'$gte': start_of_day, '$lt': end_of_day}
-        })
+        }
+        checked_in_today = visit_collection.count_documents(checkin_query)
         
         # Checked Out Today
-        checked_out_today = visit_collection.count_documents({
-            'companyId': company_oid,
+        checkout_query = {
+            **company_query,
             'actualDeparture': {'$gte': start_of_day, '$lt': end_of_day}
-        })
+        }
+        checked_out_today = visit_collection.count_documents(checkout_query)
         
         # Recent Activity (Last 10 events)
         recent_visits = list(visit_collection.find({
-            'companyId': company_oid,
+            **company_query,
             'lastUpdated': {'$exists': True}
         }).sort('lastUpdated', -1).limit(10))
         

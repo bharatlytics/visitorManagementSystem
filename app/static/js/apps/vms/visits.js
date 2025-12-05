@@ -45,25 +45,37 @@ const Visits = {
                 methodBadge = `<span class="badge ${m === 'FR' ? 'bg-info' : 'bg-success'}">${m}</span>`;
             }
 
+            const statusClass = (visit.status || '').toLowerCase();
+            const statusText = (visit.status || '').replace('_', ' ').toUpperCase();
+
             tbody.append(`
                 <tr>
-                    <td><code class="small">${shortId}</code></td>
+                    <td><code class="small text-muted">${shortId}</code></td>
                     <td>
-                        <div class="fw-bold">${visit.visitorName || 'Unknown'}</div>
+                        <div class="fw-bold text-dark">${visit.visitorName || 'Unknown'}</div>
                         <div class="small text-muted">${visit.visitorMobile || ''}</div>
                     </td>
                     <td>${visit.hostEmployeeName || 'Unknown'}</td>
                     <td class="small">${checkin}</td>
                     <td class="small">${checkout}</td>
                     <td>${methodBadge}</td>
-                    <td>${getStatusBadge(visit.status)}</td>
-                    <td class="text-end">${this.getActions(visit)}</td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                    <td class="text-end">
+                        <div class="btn-action-group">
+                            ${this.getActions(visit)}
+                        </div>
+                    </td>
                 </tr>
             `);
         });
 
         $('#visits-table').DataTable({
-            language: { search: "", searchPlaceholder: "Search visits..." },
+            language: {
+                search: "",
+                searchPlaceholder: "Search visits...",
+                lengthMenu: "Show _MENU_ entries"
+            },
+            dom: '<"row mb-3"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>t<"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
             order: [[3, 'desc']]
         });
 
@@ -73,12 +85,12 @@ const Visits = {
     getActions: function (visit) {
         let actions = '';
         if (visit.status === 'scheduled') {
-            actions += `<button class="btn btn-sm btn-success me-1 btn-checkin" data-id="${visit._id}"><i class="fas fa-sign-in-alt"></i></button>`;
+            actions += `<button class="btn btn-light text-success btn-checkin" title="Check In" data-id="${visit._id}"><i class="fas fa-sign-in-alt"></i></button>`;
         }
         if (visit.status === 'checked_in') {
-            actions += `<button class="btn btn-sm btn-warning me-1 btn-checkout" data-id="${visit._id}"><i class="fas fa-sign-out-alt"></i></button>`;
+            actions += `<button class="btn btn-light text-warning btn-checkout" title="Check Out" data-id="${visit._id}"><i class="fas fa-sign-out-alt"></i></button>`;
         }
-        actions += `<button class="btn btn-sm btn-info text-white btn-pass" data-id="${visit._id}"><i class="fas fa-id-badge"></i></button>`;
+        actions += `<button class="btn btn-light text-info btn-pass" title="View Pass" data-id="${visit._id}"><i class="fas fa-id-badge"></i></button>`;
         return actions;
     },
 
