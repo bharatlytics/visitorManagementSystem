@@ -171,6 +171,16 @@ def platform_sso():
     Authenticate via Bharatlytics Platform SSO token.
     GET: Redirect from platform with token in query params
     POST: API call with token in body
+    
+    Expected token payload:
+    {
+        "user_id": "...",
+        "user_email": "...",
+        "user_name": "...",
+        "company_id": "...",
+        "company_name": "...",      # Optional but recommended
+        "company_logo": "...",      # Optional - URL to company logo
+    }
     """
     from flask import redirect
     
@@ -178,10 +188,15 @@ def platform_sso():
     if request.method == 'GET':
         platform_token = request.args.get('token')
         company_id = request.args.get('companyId')
+        # Also check for company details in query params (fallback)
+        company_name = request.args.get('companyName')
+        company_logo = request.args.get('companyLogo')
     else:
         data = request.json or {}
         platform_token = data.get('token')
         company_id = data.get('companyId')
+        company_name = data.get('companyName')
+        company_logo = data.get('companyLogo')
     
     if not platform_token:
         return jsonify({'error': 'Platform token required'}), 400
@@ -191,11 +206,19 @@ def platform_sso():
         # Use platform's JWT secret for SSO tokens
         payload = jwt.decode(platform_token, Config.PLATFORM_JWT_SECRET, algorithms=[Config.JWT_ALGORITHM])
         
-        # Extract user info from token
-        user_id = payload.get('user_id')
-        user_email = payload.get('user_email')
-        user_name = payload.get('user_name')
-        company_id = company_id or payload.get('company_id')
+        print(f"[SSO] Token payload: {payload}")  # Debug
+        
+        # Extract user info from token (camelCase primary, snake_case fallback)
+        user_id = payload.get('userId') or payload.get('user_id')
+        user_email = payload.get('userEmail') or payload.get('user_email')
+        user_name = payload.get('userName') or payload.get('user_name')
+        company_id = company_id or payload.get('companyId') or payload.get('company_id')
+        
+        # Extract company details (camelCase primary, snake_case fallback)
+        company_name = company_name or payload.get('companyName') or payload.get('company_name')
+        company_logo = company_logo or payload.get('companyLogo') or payload.get('company_logo')
+        
+        print(f"[SSO] Extracted - company_name: {company_name}, company_logo: {company_logo}")  # Debug
         
         # Store in session - this marks user as "connected mode"
         session['platform_token'] = platform_token
@@ -203,8 +226,10 @@ def platform_sso():
         session['user_id'] = user_id
         session['user_email'] = user_email
         session['user_name'] = user_name
+        session['company_name'] = company_name
+        session['company_logo'] = company_logo
         
-        print(f"[SSO] Session set: user_id={user_id}, company_id={company_id}, email={user_email}")
+        print(f"[SSO] Session set: user_id={user_id}, company_id={company_id}, company_name={company_name}")
         
         # If GET request (redirect from platform), redirect to dashboard
         if request.method == 'GET':
@@ -213,6 +238,11 @@ def platform_sso():
         return jsonify({
             'message': 'Platform SSO successful',
             'companyId': company_id,
+            'company': {
+                'id': company_id,
+                'name': company_name,
+                'logo': company_logo
+            },
             'user': {
                 'id': user_id,
                 'email': user_email,
@@ -230,8 +260,24 @@ def platform_sso():
 @require_auth
 def get_current_user():
     """Get current authenticated user"""
-    return jsonify({
+    company_id = request.company_id
+    is_connected = bool(session.get('platform_token'))
+    
+    response = {
         'user_id': request.user_id,
-        'company_id': request.company_id,
-        'connected': bool(session.get('platform_token'))
-    })
+        'company_id': company_id,
+        'connected': is_connected
+    }
+    
+    # If connected to platform, include company details and return URL
+    if is_connected and company_id:
+        # Use platform URL for exit navigation (PLATFORM_API_URL from .env)
+        platform_base = Config.PLATFORM_API_URL.rstrip('/')
+        response['platform_url'] = f'{platform_base}/companies/{company_id}'
+        response['company'] = {
+            'id': company_id,
+            'name': session.get('company_name'),
+            'logo': session.get('company_logo')
+        }
+    
+    return jsonify(response)

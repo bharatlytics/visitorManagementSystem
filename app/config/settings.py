@@ -29,5 +29,11 @@ class Config:
     # Platform API (used when user comes via platform SSO)
     PLATFORM_API_URL = os.getenv('PLATFORM_API_URL', 'https://face-recognition-server-one.vercel.app')
     
+    # Platform Web URL (for "Exit App" navigation back to platform)
+    PLATFORM_WEB_URL = os.getenv('PLATFORM_WEB_URL', 'http://localhost:5000')
+    
     # File uploads
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
+    
+    # Allowed embedding models
+    ALLOWED_MODELS = ['facenet', 'arcface', 'vggface']

@@ -48,4 +48,14 @@ def create_app():
     def health():
         return {'status': 'ok', 'app': 'VMS'}
     
+    # Serve JS files from subdirectories
+    @app.route('/js/<path:filename>')
+    def serve_js(filename):
+        return app.send_static_file(f'js/{filename}')
+    
+    # Serve CSS files from subdirectories
+    @app.route('/css/<path:filename>')
+    def serve_css(filename):
+        return app.send_static_file(f'css/{filename}')
+    
     return app

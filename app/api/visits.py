@@ -8,9 +8,13 @@ import qrcode
 import io
 import base64
 
-from app.db import visits_collection, visitors_collection
+from app.db import visit_collection, visitor_collection
 from app.auth import require_auth
 from app.services import get_data_provider
+
+# Aliases for compatibility with this file
+visits_collection = visit_collection
+visitors_collection = visitor_collection
 
 visits_bp = Blueprint('visits', __name__)
 
