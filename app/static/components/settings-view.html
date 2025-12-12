@@ -1,0 +1,82 @@
+<!-- Settings View Component -->
+<div id="view-settings" style="display: none;">
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-cog me-2"></i>Device & Settings</h5>
+        </div>
+        <div class="card-body">
+            <!-- General Settings -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Auto-checkout (hours)</label>
+                    <input type="number" class="form-control" id="setting-auto-checkout-hours" min="1" max="48"
+                        value="8">
+                    <div class="form-text">Visitors auto-checked out after this duration</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Visitor Types</label>
+                    <input type="text" class="form-control" id="setting-visitor-types"
+                        placeholder="guest, vendor, contractor">
+                    <div class="form-text">Comma-separated categories</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Require Approval</label>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="setting-require-approval">
+                        <label class="form-check-label">Visits require host approval</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications -->
+            <h6 class="fw-bold mb-3"><i class="fas fa-bell me-2"></i>Notifications</h6>
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="notif-email" checked>
+                        <label class="form-check-label"><i class="fas fa-envelope me-2"></i>Email</label>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="notif-sms">
+                        <label class="form-check-label"><i class="fas fa-sms me-2"></i>SMS</label>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="notif-whatsapp">
+                        <label class="form-check-label"><i class="fab fa-whatsapp me-2"></i>WhatsApp</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Device Management -->
+            <h6 class="fw-bold mb-3">
+                <i class="fas fa-tablet-alt me-2"></i>Devices
+                <button class="btn btn-sm btn-outline-primary ms-2" id="addDeviceBtn">
+                    <i class="fas fa-plus"></i> Add Device
+                </button>
+            </h6>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm" id="devices-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Device Name</th>
+                            <th>Type</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <hr class="my-4">
+            <button class="btn btn-primary" id="saveSettingsBtn">
+                <i class="fas fa-save me-2"></i>Save Settings
+            </button>
+        </div>
+    </div>
+</div>

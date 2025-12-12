@@ -1,0 +1,247 @@
+<!-- Enterprise Schedule Visit Modal -->
+<div class="modal fade" id="scheduleVisitModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-calendar-plus me-2"></i>Schedule Visit</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="scheduleVisitForm">
+                    <!-- Basic Info -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Visitor <span class="text-danger">*</span></label>
+                            <select class="form-select" id="visitVisitorId" required>
+                                <option value="">-- Select Visitor --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Visit Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="visitType">
+                                <option value="guest">Guest / VIP</option>
+                                <option value="interview">Interview Candidate</option>
+                                <option value="vendor">Vendor / Supplier</option>
+                                <option value="contractor">Contract Staff</option>
+                                <option value="delivery">Delivery (Courier/Material)</option>
+                                <option value="government">Government Official</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Host Employee <span class="text-danger">*</span></label>
+                            <select class="form-select" id="visitHostId" required>
+                                <option value="">-- Select Host --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Entry Point (Device/Gate)</label>
+                            <select class="form-select" id="visitDeviceId">
+                                <option value="">-- Any Entry Point --</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Purpose</label>
+                            <input type="text" class="form-control" id="visitPurpose"
+                                placeholder="Meeting, Delivery, Audit...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Location</label>
+                            <select class="form-select" id="visitLocationId">
+                                <option value="">-- Select Location --</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Schedule -->
+                    <h6 class="fw-bold mt-4 mb-3 border-bottom pb-2"><i class="fas fa-clock me-2"></i>Schedule</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Expected Arrival</label>
+                            <input type="datetime-local" class="form-control" id="visitExpectedArrival">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Expected Departure</label>
+                            <input type="datetime-local" class="form-control" id="visitExpectedDeparture">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Duration (hours)</label>
+                            <input type="number" class="form-control" id="visitDurationHours" min="1" max="24"
+                                value="2">
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="visitRecurring">
+                                <label class="form-check-label">Recurring Visit</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="visitRequiresApproval">
+                                <label class="form-check-label">Requires Approval</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Assets & Belongings -->
+                    <h6 class="fw-bold mt-4 mb-3 border-bottom pb-2"><i class="fas fa-laptop me-2"></i>Assets &
+                        Belongings</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label class="form-label">Items Carried</label>
+                            <div class="row">
+                                <div class="col-4">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="assetLaptop"><label class="form-check-label">Laptop</label></div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="assetCamera"><label class="form-check-label">Camera</label></div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="assetPendrive"><label class="form-check-label">Pendrive/HDD</label>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="assetMobile"><label class="form-check-label">Mobile Phone</label></div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="assetBag"><label class="form-check-label">Bag/Luggage</label></div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="assetTools"><label class="form-check-label">Tools/Equipment</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Asset Serial Numbers / Details</label>
+                        <textarea class="form-control" id="visitAssetDetails" rows="2"
+                            placeholder="Laptop: Dell XPS 1234, Camera: Canon EOS..."></textarea>
+                    </div>
+
+                    <!-- Facilities -->
+                    <h6 class="fw-bold mt-4 mb-3 border-bottom pb-2"><i class="fas fa-utensils me-2"></i>Facilities &
+                        Access</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitLunchIncluded">
+                                <label class="form-check-label">Lunch Included</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitParkingRequired">
+                                <label class="form-check-label">Parking Required</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitWifiAccess">
+                                <label class="form-check-label">WiFi Access</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Access Areas</label>
+                            <select class="form-select" id="visitAccessAreas" multiple size="3">
+                                <option value="lobby">Lobby</option>
+                                <option value="conference">Conference Rooms</option>
+                                <option value="cafeteria">Cafeteria</option>
+                                <option value="office">Office Floor</option>
+                                <option value="lab">Lab/Factory</option>
+                                <option value="restricted">Restricted Zone</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Meal Preference</label>
+                            <select class="form-select" id="visitMealPreference">
+                                <option value="">None</option>
+                                <option value="veg">Vegetarian</option>
+                                <option value="nonveg">Non-Vegetarian</option>
+                                <option value="vegan">Vegan</option>
+                                <option value="jain">Jain</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Vehicle Info -->
+                    <h6 class="fw-bold mt-4 mb-3 border-bottom pb-2"><i class="fas fa-car me-2"></i>Vehicle Details
+                        (Optional)</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Vehicle Number</label>
+                            <input type="text" class="form-control" id="visitVehicleNumber" placeholder="DL-01-AB-1234">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Vehicle Type</label>
+                            <select class="form-select" id="visitVehicleType">
+                                <option value="">None</option>
+                                <option value="car">Car</option>
+                                <option value="bike">Bike/Scooter</option>
+                                <option value="auto">Auto</option>
+                                <option value="truck">Truck/Tempo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Driver Name</label>
+                            <input type="text" class="form-control" id="visitDriverName">
+                        </div>
+                    </div>
+
+                    <!-- Compliance -->
+                    <h6 class="fw-bold mt-4 mb-3 border-bottom pb-2"><i class="fas fa-shield-alt me-2"></i>Compliance
+                    </h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitNdaRequired">
+                                <label class="form-check-label">NDA Required</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitSafetyBriefing">
+                                <label class="form-check-label">Safety Briefing Required</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitEscortRequired">
+                                <label class="form-check-label">Escort Required</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="visitIdVerified">
+                                <label class="form-check-label">ID Pre-Verified</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="mb-3">
+                        <label class="form-label">Special Instructions / Notes</label>
+                        <textarea class="form-control" id="visitNotes" rows="2"
+                            placeholder="Any special requirements..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveVisitBtn"><i
+                        class="fas fa-calendar-check me-2"></i>Schedule Visit</button>
+            </div>
+        </div>
+    </div>
+</div>

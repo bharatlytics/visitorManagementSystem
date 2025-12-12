@@ -1,0 +1,56 @@
+<!-- Visitor Modal Component -->
+<div class="modal fade" id="visitorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="visitorModalLabel">Register Visitor</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="visitorForm" enctype="multipart/form-data">
+                    <input type="hidden" id="visitorId">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Full Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="visitorName" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Email</label>
+                                <input type="email" class="form-control" id="visitorEmail">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Phone</label>
+                                <input type="tel" class="form-control" id="visitorPhone">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Organization</label>
+                                <input type="text" class="form-control" id="visitorOrganization">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Visitor Type</label>
+                                <select class="form-select" id="visitorType">
+                                    <option value="guest">Guest</option>
+                                    <option value="vendor">Vendor</option>
+                                    <option value="contractor">Contractor</option>
+                                    <option value="interview">Interview</option>
+                                    <option value="vip">VIP</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Photo</label>
+                                <input type="file" class="form-control" id="visitorPhoto" accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveVisitorBtn">Save Visitor</button>
+            </div>
+        </div>
+    </div>
+</div>

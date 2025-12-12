@@ -11,10 +11,23 @@ const state = {
     visits: [],
     employees: [],
     entities: [],
+    locations: [],       // VMS Locations
     filters: { entityId: null, hostId: null },
     currentView: 'dashboard',
     initialized: false
 };
+
+// Utility function to deduplicate array by _id
+function deduplicate(arr) {
+    if (!Array.isArray(arr)) return [];
+    const seen = new Set();
+    return arr.filter(item => {
+        const id = item._id || item.id;
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+    });
+}
 
 $(document).ready(function () {
     init();
@@ -29,9 +42,23 @@ async function init() {
 
     setupNavigation();
 
-    // Initialize modules
+    // Load modular components first
+    if (typeof ComponentLoader !== 'undefined') {
+        try {
+            await Promise.all([
+                ComponentLoader.loadVMSModals(),
+                ComponentLoader.replaceView('settings-view', 'view-settings'),
+                ComponentLoader.loadVMSViews()
+            ]);
+        } catch (e) {
+            console.error('Error loading components:', e);
+        }
+    }
+
+    // Initialize modules after DOM is ready
     Visitors.init();
     Visits.init();
+    Settings.init();
 
     // Check connection mode and get company ID (wait for auth)
     await detectConnectionMode();
@@ -264,7 +291,7 @@ function exitApp() {
 
 function switchView(viewName) {
     // Permission check
-    if (state.userRole === 'employee' && ['settings', 'visitors'].includes(viewName)) {
+    if (state.userRole === 'employee' && ['settings', 'visitors', 'security'].includes(viewName)) {
         showToast('Access Denied', 'danger');
         return;
     }
@@ -274,7 +301,7 @@ function switchView(viewName) {
     $('.list-group-item').removeClass('active');
     $(`#nav-${viewName}`).addClass('active');
 
-    $('#view-dashboard, #view-visitors, #view-visits, #view-settings').css('display', 'none');
+    $('#view-dashboard, #view-visitors, #view-visits, #view-settings, #view-security, #view-reports').css('display', 'none');
     $(`#view-${viewName}`).css('display', 'block');
 
     $('#page-title').text(viewName.charAt(0).toUpperCase() + viewName.slice(1));
@@ -290,6 +317,14 @@ function switchView(viewName) {
     }
     if (viewName === 'visitors') refreshVisitors();
     if (viewName === 'visits') refreshVisits();
+    if (viewName === 'settings' && typeof Settings !== 'undefined') Settings.init();
+    if (viewName === 'security') {
+        Dashboard.loadSecurityDashboard();
+        Dashboard.loadPendingApprovals();
+    }
+    if (viewName === 'reports') {
+        Dashboard.loadReportsSummary();
+    }
 }
 
 function loadData() {
@@ -307,7 +342,7 @@ function loadData() {
         })
         .catch(err => console.warn('Failed to load employees:', err));
 
-    // Load entities
+    // Load entities (for backward compatibility)
     VMS_API.getEntities(state.companyId)
         .then(data => {
             state.entities = Array.isArray(data) ? data : [];
@@ -315,11 +350,22 @@ function loadData() {
         })
         .catch(err => console.warn('Failed to load entities:', err));
 
+    // Load locations (VMS Domain)
+    VMS_API.call(`/settings/locations?companyId=${state.companyId}`)
+        .then(data => {
+            state.locations = Array.isArray(data) ? data : [];
+        })
+        .catch(err => console.warn('Failed to load locations:', err));
+
     refreshVisitors();
     refreshVisits();
 }
 
 function populateFilterDropdowns() {
+    console.log('populateFilterDropdowns called');
+    console.log('state.entities:', state.entities);
+    console.log('state.employees:', state.employees);
+
     ['#filter-entity-visitors', '#filter-entity-visits'].forEach(sel => {
         const $select = $(sel);
         if ($select.length) {
@@ -327,6 +373,9 @@ function populateFilterDropdowns() {
             state.entities.forEach(e => {
                 $select.append(`<option value="${e._id}">${e.name || 'Unnamed'} (${e.type || 'entity'})</option>`);
             });
+            console.log(`Populated ${sel} with ${state.entities.length} entities`);
+        } else {
+            console.warn(`Dropdown ${sel} not found in DOM`);
         }
     });
 
@@ -336,6 +385,9 @@ function populateFilterDropdowns() {
         state.employees.forEach(e => {
             $hostSelect.append(`<option value="${e._id}">${e.employeeName || e.name || 'Unknown'}</option>`);
         });
+        console.log(`Populated #filter-host-visits with ${state.employees.length} employees`);
+    } else {
+        console.warn(`Host dropdown not found or no employees. Length: ${$hostSelect.length}, Employees: ${state.employees.length}`);
     }
 }
 

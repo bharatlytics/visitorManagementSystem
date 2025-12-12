@@ -27,7 +27,7 @@ class Config:
     PLATFORM_JWT_SECRET = os.getenv('PLATFORM_JWT_SECRET', 'supersecret')
     
     # Platform API (used when user comes via platform SSO)
-    PLATFORM_API_URL = os.getenv('PLATFORM_API_URL', 'https://face-recognition-server-one.vercel.app')
+    PLATFORM_API_URL = os.getenv('PLATFORM_API_URL', 'http://localhost:5000')
     
     # Platform Web URL (for "Exit App" navigation back to platform)
     PLATFORM_WEB_URL = os.getenv('PLATFORM_WEB_URL', 'http://localhost:5000')
@@ -37,3 +37,11 @@ class Config:
     
     # Allowed embedding models
     ALLOWED_MODELS = ['facenet', 'arcface', 'vggface']
+
+    # SMTP Configuration (for Host Notifications)
+    MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+    MAIL_PORT = int(os.getenv('MAIL_PORT', 587))
+    MAIL_USERNAME = os.getenv('MAIL_USERNAME')
+    MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
+    MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'true').lower() == 'true'
+    MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@vms.com')

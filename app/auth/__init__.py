@@ -326,8 +326,8 @@ def get_current_user():
     
     # If connected to platform, include company details and return URL
     if is_connected and company_id:
-        # Use platform URL for exit navigation (PLATFORM_API_URL from .env)
-        platform_base = Config.PLATFORM_API_URL.rstrip('/')
+        # Use platform WEB URL for exit navigation (browser URL, not API URL)
+        platform_base = Config.PLATFORM_WEB_URL.rstrip('/')
         response['platform_url'] = f'{platform_base}/companies/{company_id}'
         response['company'] = {
             'id': company_id,

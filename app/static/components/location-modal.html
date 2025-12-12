@@ -1,0 +1,53 @@
+<!-- Location Modal Component -->
+<div class="modal fade" id="locationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="locationModalLabel"><i class="fas fa-map-marker-alt me-2"></i>Add Location
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="locationForm">
+                    <input type="hidden" id="locationId">
+
+                    <div class="mb-3">
+                        <label class="form-label">Location Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="locationName" placeholder="Main Lobby, Gate A, etc."
+                            required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" id="locationType">
+                            <option value="gate">Gate</option>
+                            <option value="reception">Reception</option>
+                            <option value="floor">Floor</option>
+                            <option value="building">Building</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <textarea class="form-control" id="locationAddress" rows="2"
+                            placeholder="Building A, Floor 1..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="locationStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveLocationBtn">
+                    <i class="fas fa-save me-1"></i>Save Location
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

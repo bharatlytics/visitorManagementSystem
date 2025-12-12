@@ -1,0 +1,133 @@
+{
+  "name": "Visitor Management System",
+  "appId": "vms_app_v1",
+  "version": "1.1.0",
+  "description": "Complete Visitor Management System with facial recognition, digital badges, and host notifications.",
+  "icon": "fas fa-user-check",
+  "category": "operations",
+  "requiredActors": [
+    {
+      "actorType": "visitor",
+      "access": "write",
+      "justification": "To manage visitor records, check-ins, and history",
+      "fields": [
+        "name",
+        "phone",
+        "email",
+        "photo",
+        "company"
+      ]
+    },
+    {
+      "actorType": "employee",
+      "access": "read",
+      "justification": "To link visitors to host employees",
+      "fields": [
+        "name",
+        "email",
+        "department",
+        "phone",
+        "code"
+      ]
+    }
+  ],
+  "requiredEntities": [
+    {
+      "entityType": "location",
+      "access": "read",
+      "justification": "To assign visits to specific buildings or zones"
+    }
+  ],
+  "dataExchange": {
+    "produces": {
+      "actors": [
+        {
+          "type": "visitor",
+          "supportedResidency": [
+            "platform",
+            "app"
+          ],
+          "syncEndpoint": "/api/sync/visitors",
+          "queryEndpoint": "/api/query/visitors",
+          "fields": [
+            "name",
+            "phone",
+            "email",
+            "photo",
+            "company",
+            "embedding"
+          ]
+        }
+      ],
+      "events": [
+        "visit.scheduled",
+        "visit.checked_in",
+        "visit.checked_out",
+        "visitor.registered",
+        "visitor.updated",
+        "visitor.blacklisted",
+        "host.approval_requested",
+        "host.approved",
+        "host.rejected"
+      ],
+      "metrics": [
+        {
+          "name": "active_visitors",
+          "unit": "count",
+          "aggregation": "hourly",
+          "dimensions": [
+            "location",
+            "visitor_type"
+          ]
+        },
+        {
+          "name": "visits_today",
+          "unit": "count",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ]
+        },
+        {
+          "name": "avg_visit_duration",
+          "unit": "minutes",
+          "aggregation": "daily",
+          "dimensions": [
+            "visitor_type"
+          ]
+        },
+        {
+          "name": "peak_occupancy",
+          "unit": "count",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ]
+        }
+      ],
+      "schemas": [
+        {
+          "id": "visit_record",
+          "description": "Full visit details including host and check-in times"
+        }
+      ]
+    }
+  },
+  "webhooks": {
+    "install": "/api/webhooks/install",
+    "uninstall": "/api/webhooks/uninstall",
+    "dataUpdate": "/api/webhooks/data-update",
+    "residencyChange": "/api/webhooks/residency-change"
+  },
+  "configuration": {
+    "hybridMode": true,
+    "settings": [
+      {
+        "key": "require_approval",
+        "label": "Require Host Approval",
+        "type": "boolean",
+        "default": false
+      }
+    ]
+  }
+}

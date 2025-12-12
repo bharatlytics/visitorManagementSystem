@@ -12,6 +12,8 @@ def register_blueprints(app):
     from app.api.employees import employees_bp
     from app.api.entities import entities_bp
     from app.api.company import company_bp
+    from app.api.settings import settings_bp
+    from app.api.security import security_bp
     
     # VMS core APIs
     app.register_blueprint(visitor_bp, url_prefix='/api/visitors')
@@ -19,6 +21,8 @@ def register_blueprints(app):
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
     app.register_blueprint(vms_analytics_bp, url_prefix='/api/analytics')
     app.register_blueprint(badge_bp, url_prefix='/api/badge')
+    app.register_blueprint(settings_bp, url_prefix='/api/settings')
+    app.register_blueprint(security_bp, url_prefix='/api/security')
     
     # Company API
     app.register_blueprint(company_bp, url_prefix='/api/company')
@@ -27,4 +31,5 @@ def register_blueprints(app):
     # Data APIs (use DataProvider for dual-mode)
     app.register_blueprint(employees_bp, url_prefix='/api/employees')
     app.register_blueprint(entities_bp, url_prefix='/api/entities')
+
 

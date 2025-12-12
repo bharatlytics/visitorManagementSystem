@@ -21,6 +21,7 @@ from app.utils import (
 )
 from app.config import Config
 from app.auth import require_auth
+from app.services.integration_helper import integration_client
 
 visitor_bp = Blueprint('visitor', __name__)
 
@@ -213,19 +214,18 @@ def register_visitor():
         document_dict = {}
         if has_images:
             for position in required_face_positions:
-                if position not in request.files:
-                    return error_response(f'Visitor face image for {position} position is required.', 400)
-                face_image = request.files[position]
-                face_image_id = visitor_image_fs.put(
-                    face_image.stream,
-                    filename=f"{data['companyId']}_{position}_face.jpg",
-                    metadata={
-                        'companyId': data['companyId'],
-                        'type': f'face_image_{position}',
-                        'timestamp': get_current_utc()
-                    }
-                )
-                image_dict[position] = face_image_id
+                if position in request.files:
+                    face_image = request.files[position]
+                    face_image_id = visitor_image_fs.put(
+                        face_image.stream,
+                        filename=f"{data['companyId']}_{position}_face.jpg",
+                        metadata={
+                            'companyId': data['companyId'],
+                            'type': f'face_image_{position}',
+                            'timestamp': get_current_utc()
+                        }
+                    )
+                    image_dict[position] = face_image_id
         
         # Process ID documents if provided
         id_documents = ['pan_card', 'aadhar_card', 'driving_license', 'passport']
@@ -316,6 +316,14 @@ def register_visitor():
         # Update visitor document with embeddings_dict
         visitor_collection.update_one({'_id': visitor_id}, {'$set': {'visitorEmbeddings': embeddings_dict}})
         
+        # Publish Event: visitor.registered
+        integration_client.publish_event('visitor.registered', {
+            'visitorId': str(visitor_id),
+            'name': data['visitorName'],
+            'companyId': data['companyId'],
+            'visitorType': data.get('visitorType', 'general')
+        })
+
         return jsonify({
             'message': 'Visitor registration successful',
             '_id': str(visitor_id),
@@ -538,6 +546,13 @@ def schedule_visit(visitorId):
         visit_doc['accessAreas'] = validated_access_areas
         visit_doc['visitType'] = data.get('visitType', 'single')
         
+        # Add detailed fields
+        visit_doc['assets'] = data.get('assets', {})
+        visit_doc['facilities'] = data.get('facilities', {})
+        visit_doc['vehicle'] = data.get('vehicle', {})
+        visit_doc['compliance'] = data.get('compliance', {})
+        visit_doc['notes'] = data.get('notes', '')
+        
         result = visit_collection.insert_one(visit_doc)
         visit_id = result.inserted_id
         
@@ -571,6 +586,15 @@ def schedule_visit(visitorId):
             NotificationService.notify_visit_scheduled(visit_dict, visitor, host_employee)
         except Exception as e:
             print(f"Error sending notifications: {e}")
+            
+        # Publish Event: visit.scheduled
+        integration_client.publish_event('visit.scheduled', {
+            'visitId': str(visit_id),
+            'visitorId': str(primary_visitor_id),
+            'hostId': str(host_obj_id),
+            'expectedArrival': arrival.isoformat(),
+            'companyId': data['companyId']
+        })
                 
         return jsonify({
             'message': 'Visit scheduled successfully',
@@ -625,6 +649,33 @@ def check_in(visitId):
         except Exception as e:
             print(f"Error sending check-in notifications: {e}")
 
+        # Publish Event: visit.checked_in
+        integration_client.publish_event('visit.checked_in', {
+            'visitId': str(visit_id),
+            'visitorId': str(visit['visitorId']),
+            'checkInTime': get_current_utc().isoformat(),
+            'locationId': str(visit.get('accessAreas', ['default'])[0]) if visit.get('accessAreas') else 'default'
+        })
+
+        # Report Metrics
+        try:
+            # 1. Active Visitors (Count of visits with status='checked_in')
+            active_count = visit_collection.count_documents({
+                'companyId': visit['companyId'],
+                'status': 'checked_in'
+            })
+            integration_client.report_metric('active_visitors', active_count, 'count', {'location': 'default'})
+
+            # 2. Visits Today (Count of visits created today)
+            start_of_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            visits_today = visit_collection.count_documents({
+                'companyId': visit['companyId'],
+                'actualArrival': {'$gte': start_of_day}
+            })
+            integration_client.report_metric('visits_today', visits_today, 'count', {'location': 'default'})
+        except Exception as e:
+            print(f"Error reporting metrics: {e}")
+
         return jsonify({
             'message': 'Check-in successful',
             'visitId': visit_id
@@ -661,6 +712,36 @@ def check_out(visitId):
                 }
             }
         )
+
+        # Publish Event: visit.checked_out
+        integration_client.publish_event('visit.checked_out', {
+            'visitId': str(visit_id),
+            'visitorId': str(visit['visitorId']),
+            'checkOutTime': get_current_utc().isoformat()
+        })
+
+        # Report Metrics
+        try:
+            # 1. Active Visitors (Decrement)
+            active_count = visit_collection.count_documents({
+                'companyId': visit['companyId'],
+                'status': 'checked_in'
+            })
+            integration_client.report_metric('active_visitors', active_count, 'count', {'location': 'default'})
+
+            # 2. Avg Visit Duration
+            # Calculate duration for this visit
+            arrival = visit.get('actualArrival') or visit.get('createdAt')
+            if arrival:
+                # Ensure arrival is datetime
+                if isinstance(arrival, str):
+                    arrival = parse_datetime(arrival)
+                
+                duration_mins = (get_current_utc() - arrival).total_seconds() / 60
+                
+                integration_client.report_metric('avg_visit_duration', duration_mins, 'minutes', {'visitor_type': 'general'})
+        except Exception as e:
+            print(f"Error reporting checkout metrics: {e}")
 
         return jsonify({
             'message': 'Check-out successful',

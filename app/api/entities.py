@@ -18,11 +18,15 @@ def list_entities():
     """List entities - from platform or local DB based on mode"""
     company_id = request.args.get('companyId') or request.company_id
     entity_type = request.args.get('type')
+    print(f"[API/entities] GET /entities?companyId={company_id}&type={entity_type}")
     
     types = [entity_type] if entity_type else None
     
     data_provider = get_data_provider(company_id)
+    print(f"[API/entities] data_provider.is_connected = {data_provider.is_connected}")
+    
     entities = data_provider.get_entities(company_id, types)
+    print(f"[API/entities] Got {len(entities)} entities")
     
     # Convert ObjectIds to strings
     result = []

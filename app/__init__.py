@@ -27,6 +27,14 @@ def create_app():
     from app.auth import auth_bp
     app.register_blueprint(auth_bp)
     
+    # Register webhooks
+    from app.api.webhooks import webhooks_bp
+    app.register_blueprint(webhooks_bp, url_prefix='/api/webhooks')
+    
+    # Register residency API (Data Residency v3)
+    from app.api.residency_api import residency_bp
+    app.register_blueprint(residency_bp, url_prefix='/api')
+    
     # Main routes
     @app.route('/')
     def index():

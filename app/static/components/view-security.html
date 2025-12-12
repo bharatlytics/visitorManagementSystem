@@ -1,0 +1,157 @@
+<!-- Security Dashboard - Real-time Monitoring -->
+<div class="mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-semibold text-dark mb-1">Security Dashboard</h4>
+            <p class="text-muted mb-0">Real-time visitor monitoring and security alerts</p>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="Dashboard.loadSecurityDashboard()">
+            <i class="fas fa-sync-alt me-1"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Security Stats -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="security-stat-card live">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Currently On-Site</div>
+                    <div class="stat-value" id="security-live-count">0</div>
+                </div>
+                <div class="icon-wrapper"
+                    style="width: 56px; height: 56px; background: var(--success-light); color: #059669; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+                    <i class="fas fa-user-clock"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="security-stat-card overstay">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Overstayed Visitors</div>
+                    <div class="stat-value" id="security-overstay-count">0</div>
+                </div>
+                <div class="icon-wrapper"
+                    style="width: 56px; height: 56px; background: var(--warning-light); color: #b45309; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="security-stat-card pending">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">Pending Approvals</div>
+                    <div class="stat-value" id="security-pending-count">0</div>
+                </div>
+                <div class="icon-wrapper"
+                    style="width: 56px; height: 56px; background: var(--info-light); color: #4f46e5; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+                    <i class="fas fa-clock"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Live Visitors Table -->
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold"><i class="fas fa-users me-2 text-success"></i>Live Visitors</span>
+                <span class="badge badge-success" id="live-visitor-badge">0 on site</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="live-visitors-table">
+                        <thead>
+                            <tr>
+                                <th>Visitor</th>
+                                <th>Host</th>
+                                <th>Duration</th>
+                                <th>Location</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="live-visitors-tbody">
+                            <tr>
+                                <td colspan="5">
+                                    <div class="empty-state py-4">
+                                        <i class="fas fa-user-clock"></i>
+                                        <p>No visitors currently on site</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Approvals -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold"><i class="fas fa-check-circle me-2 text-info"></i>Pending Approvals</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="pending-approvals-table">
+                        <thead>
+                            <tr>
+                                <th>Visitor</th>
+                                <th>Host</th>
+                                <th>Type</th>
+                                <th>Purpose</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pending-approvals-tbody">
+                            <tr>
+                                <td colspan="5">
+                                    <div class="empty-state py-4">
+                                        <i class="fas fa-check-circle"></i>
+                                        <p>No pending approvals</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <div class="col-lg-4">
+        <!-- Security Alerts -->
+        <div class="card mb-4">
+            <div class="card-header" style="background: var(--danger-light); border: none;">
+                <span class="fw-semibold" style="color: var(--danger);"><i class="fas fa-bell me-2"></i>Security
+                    Alerts</span>
+            </div>
+            <div class="card-body" id="security-alerts-container" style="max-height: 300px; overflow-y: auto;">
+                <div class="empty-state py-4">
+                    <i class="fas fa-shield-alt"></i>
+                    <p>No active alerts</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Watchlist -->
+        <div class="card">
+            <div class="card-header" style="background: var(--warning-light); border: none;">
+                <span class="fw-semibold" style="color: #b45309;"><i class="fas fa-user-slash me-2"></i>Watchlist</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Flagged visitors require special attention during check-in.</p>
+                <button class="btn btn-outline-warning w-100" onclick="switchView('visitors')">
+                    <i class="fas fa-list me-2"></i>View Watchlist
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

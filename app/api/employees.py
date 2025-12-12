@@ -16,9 +16,13 @@ employees_bp = Blueprint('employees', __name__)
 def list_employees():
     """List employees - from platform or local DB based on mode"""
     company_id = request.args.get('companyId') or request.company_id
+    print(f"[API/employees] GET /employees?companyId={company_id}")
     
     data_provider = get_data_provider(company_id)
+    print(f"[API/employees] data_provider.is_connected = {data_provider.is_connected}")
+    
     employees = data_provider.get_employees(company_id)
+    print(f"[API/employees] Got {len(employees)} employees")
     
     # Convert ObjectIds to strings
     result = []

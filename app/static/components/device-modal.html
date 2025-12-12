@@ -1,0 +1,53 @@
+<!-- Device Modal Component -->
+<div class="modal fade" id="deviceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="deviceModalLabel">Add Device</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="deviceForm">
+                    <input type="hidden" id="deviceId">
+                    <div class="mb-3">
+                        <label class="form-label">Device Name</label>
+                        <input type="text" class="form-control" id="deviceName" required placeholder="Main Gate Kiosk">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" id="deviceType">
+                            <option value="kiosk">Kiosk</option>
+                            <option value="tablet">Tablet</option>
+                            <option value="turnstile">Turnstile</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Location (Entity)</label>
+                        <select class="form-select" id="deviceEntity">
+                            <option value="">-- Select Location --</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mode</label>
+                        <select class="form-select" id="deviceMode">
+                            <option value="both">Check-in & Check-out</option>
+                            <option value="checkin">Check-in Only</option>
+                            <option value="checkout">Check-out Only</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="deviceStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveDeviceBtn">Save Device</button>
+            </div>
+        </div>
+    </div>
+</div>

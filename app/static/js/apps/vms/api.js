@@ -4,7 +4,7 @@ const VMS_API = {
     // Detect mode and set base path
     basePath: '/api',  // Default to standalone
 
-    init: function() {
+    init: function () {
         // Check if running in platform mode
         if (window.location.pathname.includes('/companies/')) {
             this.basePath = '/api';  // Use local API but with platform context
@@ -12,7 +12,7 @@ const VMS_API = {
     },
 
     // Helper for API calls
-    call: function(endpoint, method = 'GET', data = null, contentType = 'application/json') {
+    call: function (endpoint, method = 'GET', data = null, contentType = 'application/json') {
         const options = {
             method: method,
             headers: {}
@@ -42,15 +42,16 @@ const VMS_API = {
 
     // Visitors
     getVisitors: (companyId) => VMS_API.call(`/visitors?companyId=${companyId}`),
+    getVisitor: (visitorId) => VMS_API.call(`/visitors/${visitorId}`),
     getVisitorImage: (imageId) => `${VMS_API.basePath}/visitors/images/${imageId}`,
-    
+
     registerVisitor: (formData) => {
         return fetch(VMS_API.basePath + '/visitors/register', {
             method: 'POST',
             body: formData
         }).then(r => r.json());
     },
-    
+
     updateVisitor: (data) => {
         const formData = new FormData();
         Object.keys(data).forEach(k => {
@@ -64,22 +65,22 @@ const VMS_API = {
         }).then(r => r.json());
     },
 
-    blacklistVisitor: (visitorId, reason) => 
+    blacklistVisitor: (visitorId, reason) =>
         VMS_API.call('/visitors/blacklist', 'POST', { visitorId, reason }),
-    
-    unblacklistVisitor: (visitorId) => 
+
+    unblacklistVisitor: (visitorId) =>
         VMS_API.call('/visitors/unblacklist', 'POST', { visitorId }),
 
     // Visits
     getVisits: (companyId) => VMS_API.call(`/visitors/visits?companyId=${companyId}`),
-    
-    scheduleVisit: (visitorId, data) => 
+
+    scheduleVisit: (visitorId, data) =>
         VMS_API.call(`/visitors/${visitorId}/schedule-visit`, 'POST', data),
-    
-    checkIn: (visitId, method = 'manual') => 
+
+    checkIn: (visitId, method = 'manual') =>
         VMS_API.call(`/visitors/visits/${visitId}/check-in`, 'POST', { method }),
-    
-    checkOut: (visitId) => 
+
+    checkOut: (visitId) =>
         VMS_API.call(`/visitors/visits/${visitId}/check-out`, 'POST'),
 
     getVisitQR: (visitId) => `${VMS_API.basePath}/visitors/visits/qr/${visitId}`,
@@ -89,7 +90,11 @@ const VMS_API = {
     getEmployees: (companyId) => VMS_API.call(`/employees?companyId=${companyId}`),
 
     // Entities (for filtering)
-    getEntities: (companyId) => VMS_API.call(`/entities?companyId=${companyId}`)
+    getEntities: (companyId) => VMS_API.call(`/entities?companyId=${companyId}`),
+
+    // Settings
+    getSettings: (companyId) => VMS_API.call(`/settings?companyId=${companyId}`),
+    updateSettings: (companyId, data) => VMS_API.call('/settings', 'PUT', { companyId, ...data })
 };
 
 // Initialize on load

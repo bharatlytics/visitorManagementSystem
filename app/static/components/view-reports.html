@@ -1,0 +1,119 @@
+<!-- Reports View - Enterprise Analytics -->
+<div class="mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-semibold text-dark mb-1">Analytics & Reports</h4>
+            <p class="text-muted mb-0">Insights and data exports for your visitor management</p>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="Dashboard.loadReportsSummary()">
+            <i class="fas fa-sync-alt me-1"></i> Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Key Metrics -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="report-stat-card">
+            <div class="icon-wrapper" style="background: var(--primary-light); color: var(--primary);">
+                <i class="fas fa-calendar-alt"></i>
+            </div>
+            <div class="stat-value" id="report-monthly-visits">0</div>
+            <div class="stat-label">Visits This Month</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="report-stat-card">
+            <div class="icon-wrapper" style="background: var(--success-light); color: #059669;">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="stat-value" id="report-avg-duration">-</div>
+            <div class="stat-label">Avg Duration</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="report-stat-card">
+            <div class="icon-wrapper" style="background: var(--info-light); color: #4f46e5;">
+                <i class="fas fa-user-check"></i>
+            </div>
+            <div class="stat-value" id="report-face-count">0</div>
+            <div class="stat-label">Face Check-ins</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="report-stat-card cursor-pointer" onclick="Dashboard.exportVisitsCSV()">
+            <div class="icon-wrapper" style="background: var(--warning-light); color: #b45309;">
+                <i class="fas fa-download"></i>
+            </div>
+            <div class="stat-value" style="font-size: 1.5rem;">Export</div>
+            <div class="stat-label">Download CSV</div>
+        </div>
+    </div>
+</div>
+
+<!-- Analytics Breakdown -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold"><i class="fas fa-users me-2 text-primary"></i>By Visitor Type</span>
+            </div>
+            <div class="card-body" id="report-by-type">
+                <div class="empty-state py-4">
+                    <i class="fas fa-chart-pie"></i>
+                    <p>Loading data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold"><i class="fas fa-fingerprint me-2 text-success"></i>By Check-in Method</span>
+            </div>
+            <div class="card-body" id="report-by-method">
+                <div class="empty-state py-4">
+                    <i class="fas fa-chart-bar"></i>
+                    <p>Loading data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold"><i class="fas fa-chart-line me-2 text-info"></i>Peak Hours</span>
+            </div>
+            <div class="card-body" id="report-peak-hours">
+                <div class="empty-state py-4">
+                    <i class="fas fa-clock"></i>
+                    <p>Loading data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Section -->
+<div class="card">
+    <div class="card-header">
+        <span class="fw-semibold"><i class="fas fa-file-export me-2"></i>Export Reports</span>
+    </div>
+    <div class="card-body">
+        <div class="row align-items-end g-3">
+            <div class="col-md-4">
+                <label class="form-label text-muted small fw-semibold">Start Date</label>
+                <input type="date" class="form-control" id="report-start-date">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label text-muted small fw-semibold">End Date</label>
+                <input type="date" class="form-control" id="report-end-date">
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-primary w-100" onclick="Dashboard.exportVisitsCSV()">
+                    <i class="fas fa-download me-2"></i>Download CSV
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

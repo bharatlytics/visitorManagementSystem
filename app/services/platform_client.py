@@ -30,7 +30,7 @@ class PlatformClient:
         """Make authenticated request to platform using session token"""
         token = self._get_token()
         if not token:
-            print("No platform token in session")
+            print("[PlatformClient] No platform token in session - falling back to local")
             return None
         
         url = f"{self.base_url}{endpoint}"
@@ -39,6 +39,8 @@ class PlatformClient:
             'X-App-Id': 'vms',
             'Content-Type': 'application/json'
         }
+        
+        print(f"[PlatformClient] {method} {url} params={params}")
         
         try:
             response = requests.request(
@@ -49,10 +51,13 @@ class PlatformClient:
                 json=data,
                 timeout=30
             )
+            print(f"[PlatformClient] Response status: {response.status_code}")
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            print(f"[PlatformClient] Response data type: {type(result)}, length: {len(result) if isinstance(result, list) else 'N/A'}")
+            return result
         except requests.exceptions.RequestException as e:
-            print(f"Platform API error: {e}")
+            print(f"[PlatformClient] API error: {e}")
             return None
     
     def get_employees(self, company_id=None):

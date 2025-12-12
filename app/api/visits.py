@@ -67,12 +67,12 @@ def get_visit(visit_id):
 @visits_bp.route('', methods=['POST'])
 @require_auth
 def schedule_visit():
-    """Schedule a new visit"""
+    """Schedule a new visit with enterprise fields"""
     data = request.json or {}
     company_id = data.get('companyId') or request.company_id
     
     # Required fields
-    required = ['visitorId', 'hostEmployeeId', 'expectedArrival']
+    required = ['visitorId', 'hostEmployeeId']
     if not all(data.get(k) for k in required):
         return jsonify({'error': f'Required: {required}'}), 400
     
@@ -86,18 +86,90 @@ def schedule_visit():
     host = data_provider.get_employee_by_id(data['hostEmployeeId'], company_id)
     host_name = host.get('employeeName', 'Unknown') if host else 'Unknown'
     
+    # Parse datetime fields
+    expected_arrival = None
+    expected_departure = None
+    if data.get('expectedArrival'):
+        expected_arrival = datetime.fromisoformat(data['expectedArrival'].replace('Z', '+00:00')) if isinstance(data['expectedArrival'], str) else data['expectedArrival']
+    if data.get('expectedDeparture'):
+        expected_departure = datetime.fromisoformat(data['expectedDeparture'].replace('Z', '+00:00')) if isinstance(data['expectedDeparture'], str) else data['expectedDeparture']
+    
     visit = {
         '_id': ObjectId(),
         'companyId': ObjectId(company_id),
+        
+        # Core
         'visitorId': ObjectId(data['visitorId']),
         'visitorName': visitor.get('visitorName'),
         'hostEmployeeId': data['hostEmployeeId'],
         'hostEmployeeName': host_name,
+        'visitType': data.get('visitType', 'guest'),
         'purpose': data.get('purpose'),
-        'expectedArrival': datetime.fromisoformat(data['expectedArrival'].replace('Z', '+00:00')) if isinstance(data['expectedArrival'], str) else data['expectedArrival'],
-        'expectedDeparture': data.get('expectedDeparture'),
+        
+        # Location & Device
+        'locationId': data.get('locationId'),
+        'locationName': data.get('locationName'),
+        'deviceId': data.get('deviceId'),  # Entry device (kiosk/turnstile)
+        'deviceName': data.get('deviceName'),
+        
+        # Schedule
+        'expectedArrival': expected_arrival,
+        'expectedDeparture': expected_departure,
+        'durationHours': data.get('durationHours', 2),
+        'recurring': data.get('recurring', False),
+        'requiresApproval': data.get('requiresApproval', False),
+        
+        # Assets
+        'assets': {
+            'laptop': data.get('assets', {}).get('laptop', False),
+            'camera': data.get('assets', {}).get('camera', False),
+            'pendrive': data.get('assets', {}).get('pendrive', False),
+            'mobile': data.get('assets', {}).get('mobile', False),
+            'bag': data.get('assets', {}).get('bag', False),
+            'tools': data.get('assets', {}).get('tools', False),
+            'details': data.get('assetDetails', '')
+        },
+        
+        # Facilities
+        'facilities': {
+            'lunchIncluded': data.get('lunchIncluded', False),
+            'parkingRequired': data.get('parkingRequired', False),
+            'wifiAccess': data.get('wifiAccess', False),
+            'mealPreference': data.get('mealPreference', '')
+        },
         'accessAreas': data.get('accessAreas', []),
+        
+        # Vehicle
+        'vehicle': {
+            'number': data.get('vehicleNumber', ''),
+            'type': data.get('vehicleType', ''),
+            'driverName': data.get('driverName', '')
+        },
+        
+        # Compliance
+        'compliance': {
+            'ndaRequired': data.get('ndaRequired', False),
+            'ndaSigned': False,
+            'safetyBriefingRequired': data.get('safetyBriefing', False),
+            'safetyBriefingCompleted': False,
+            'escortRequired': data.get('escortRequired', False),
+            'idVerified': data.get('idVerified', False)
+        },
+        
+        # Status & Tracking
         'status': 'scheduled',
+        'approvalStatus': 'pending' if data.get('requiresApproval') else 'approved',
+        'notes': data.get('notes', ''),
+        
+        # Check-in/out tracking
+        'checkInDeviceId': None,
+        'checkOutDeviceId': None,
+        'checkInMethod': None,  # face, qr, manual
+        'checkOutMethod': None,
+        
+        # Timestamps
+        'actualArrival': None,
+        'actualDeparture': None,
         'createdAt': datetime.utcnow(),
         'lastUpdated': datetime.utcnow()
     }
@@ -113,7 +185,8 @@ def schedule_visit():
 @visits_bp.route('/<visit_id>/check-in', methods=['POST'])
 @require_auth
 def check_in(visit_id):
-    """Check in a visitor"""
+    """Check in a visitor with device and method tracking"""
+    data = request.json or {}
     visit = visits_collection.find_one({'_id': ObjectId(visit_id)})
     if not visit:
         return jsonify({'error': 'Visit not found'}), 404
@@ -121,22 +194,32 @@ def check_in(visit_id):
     if visit.get('status') == 'checked_in':
         return jsonify({'error': 'Already checked in'}), 400
     
+    update_data = {
+        'status': 'checked_in',
+        'actualArrival': datetime.utcnow(),
+        'checkInDeviceId': data.get('deviceId'),
+        'checkInDeviceName': data.get('deviceName'),
+        'checkInMethod': data.get('method', 'manual'),  # face, qr, manual
+        'lastUpdated': datetime.utcnow()
+    }
+    
     visits_collection.update_one(
         {'_id': ObjectId(visit_id)},
-        {'$set': {
-            'status': 'checked_in',
-            'actualArrival': datetime.utcnow(),
-            'lastUpdated': datetime.utcnow()
-        }}
+        {'$set': update_data}
     )
     
-    return jsonify({'message': 'Checked in successfully'})
+    return jsonify({
+        'message': 'Checked in successfully',
+        'checkInTime': update_data['actualArrival'].isoformat(),
+        'method': update_data['checkInMethod']
+    })
 
 
 @visits_bp.route('/<visit_id>/check-out', methods=['POST'])
 @require_auth
 def check_out(visit_id):
-    """Check out a visitor"""
+    """Check out a visitor with device and method tracking"""
+    data = request.json or {}
     visit = visits_collection.find_one({'_id': ObjectId(visit_id)})
     if not visit:
         return jsonify({'error': 'Visit not found'}), 404
@@ -144,16 +227,33 @@ def check_out(visit_id):
     if visit.get('status') != 'checked_in':
         return jsonify({'error': 'Not checked in'}), 400
     
+    actual_departure = datetime.utcnow()
+    duration_minutes = None
+    if visit.get('actualArrival'):
+        duration = actual_departure - visit['actualArrival']
+        duration_minutes = int(duration.total_seconds() / 60)
+    
+    update_data = {
+        'status': 'checked_out',
+        'actualDeparture': actual_departure,
+        'checkOutDeviceId': data.get('deviceId'),
+        'checkOutDeviceName': data.get('deviceName'),
+        'checkOutMethod': data.get('method', 'manual'),
+        'durationMinutes': duration_minutes,
+        'lastUpdated': datetime.utcnow()
+    }
+    
     visits_collection.update_one(
         {'_id': ObjectId(visit_id)},
-        {'$set': {
-            'status': 'checked_out',
-            'actualDeparture': datetime.utcnow(),
-            'lastUpdated': datetime.utcnow()
-        }}
+        {'$set': update_data}
     )
     
-    return jsonify({'message': 'Checked out successfully'})
+    return jsonify({
+        'message': 'Checked out successfully',
+        'checkOutTime': actual_departure.isoformat(),
+        'durationMinutes': duration_minutes,
+        'method': update_data['checkOutMethod']
+    })
 
 
 @visits_bp.route('/<visit_id>/qr', methods=['GET'])
