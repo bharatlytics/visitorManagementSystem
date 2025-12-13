@@ -178,22 +178,26 @@ function applyRolePermissions() {
 function updateModeIndicator() {
     const indicator = $('#mode-indicator');
     const roleBadge = state.userRole === 'admin'
-        ? '<span class="badge bg-primary ms-2">Admin</span>'
-        : '<span class="badge bg-info ms-2">Employee</span>';
+        ? '<span class="badge bg-primary">Admin</span>'
+        : '<span class="badge bg-info">Employee</span>';
 
     if (state.isConnected) {
         indicator.html(`
-            <span class="badge bg-success d-flex align-items-center">
-                <i class="fas fa-link me-1"></i> Connected to Bharatlytics
-            </span>
-            ${roleBadge}
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-success d-flex align-items-center">
+                    <i class="fas fa-link me-1"></i> Connected to Bharatlytics
+                </span>
+                ${roleBadge}
+            </div>
         `);
     } else {
         indicator.html(`
-            <span class="badge bg-secondary d-flex align-items-center">
-                <i class="fas fa-hdd me-1"></i> Standalone Mode
-            </span>
-            ${roleBadge}
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-secondary d-flex align-items-center">
+                    <i class="fas fa-hdd me-1"></i> Standalone Mode
+                </span>
+                ${roleBadge}
+            </div>
         `);
     }
 }

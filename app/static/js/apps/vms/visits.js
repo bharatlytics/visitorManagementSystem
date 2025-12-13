@@ -194,14 +194,87 @@ const Visits = {
         const vehicle = visit.vehicle || {};
         $('#visitVehicleNumber').val(vehicle.number || '').prop('disabled', true);
 
+        // Update modal title based on status
+        const status = visit.status || 'scheduled';
+        let modalTitle = 'Visit Details';
+        if (status === 'checked_in') {
+            modalTitle = '<i class="fas fa-user-check me-2 text-success"></i>Visit In Progress';
+        } else if (status === 'checked_out') {
+            modalTitle = '<i class="fas fa-check-circle me-2 text-secondary"></i>Completed Visit';
+        } else if (status === 'cancelled') {
+            modalTitle = '<i class="fas fa-times-circle me-2 text-danger"></i>Cancelled Visit';
+        } else if (status === 'scheduled') {
+            modalTitle = '<i class="fas fa-calendar-check me-2 text-primary"></i>Scheduled Visit';
+        }
+        $('#scheduleVisitModal .modal-title').html(modalTitle);
+
+        // Set up action buttons based on status
+        const $footer = $('#scheduleVisitModal .modal-footer');
+        $footer.empty();
+        $footer.append('<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>');
+
+        if (status === 'scheduled') {
+            // Scheduled: Can update or check-in
+            $footer.append(`
+                <button type="button" class="btn btn-warning" id="btnEditVisit" data-id="${id}">
+                    <i class="fas fa-edit me-1"></i>Edit Visit
+                </button>
+                <button type="button" class="btn btn-success" id="btnQuickCheckIn" data-id="${id}">
+                    <i class="fas fa-sign-in-alt me-1"></i>Check In
+                </button>
+            `);
+        } else if (status === 'checked_in') {
+            // Checked in: Can check out
+            $footer.append(`
+                <button type="button" class="btn btn-warning" id="btnQuickCheckOut" data-id="${id}">
+                    <i class="fas fa-sign-out-alt me-1"></i>Check Out
+                </button>
+            `);
+        }
+        // checked_out and cancelled: No actions, view-only
+
+        // Bind new button events
+        $('#btnQuickCheckIn').off('click').on('click', function () {
+            const visitId = $(this).data('id');
+            Visits.updateStatus(visitId, 'check-in');
+            $('#scheduleVisitModal').modal('hide');
+        });
+        $('#btnQuickCheckOut').off('click').on('click', function () {
+            const visitId = $(this).data('id');
+            Visits.updateStatus(visitId, 'check-out');
+            $('#scheduleVisitModal').modal('hide');
+        });
+        $('#btnEditVisit').off('click').on('click', function () {
+            // Enable editing for scheduled visits
+            $('#scheduleVisitForm input, #scheduleVisitForm select, #scheduleVisitForm textarea').prop('disabled', false);
+            // Disable visitor change (keep same visitor)
+            $('#visitVisitorId').prop('disabled', true);
+            $(this).hide();
+            $('#btnQuickCheckIn').hide();
+            // Add save button
+            $footer.append(`
+                <button type="button" class="btn btn-primary" id="btnSaveEditedVisit">
+                    <i class="fas fa-save me-1"></i>Save Changes
+                </button>
+            `);
+            $('#btnSaveEditedVisit').off('click').on('click', function () {
+                // TODO: Implement visit update API call
+                showToast('Visit update functionality coming soon', 'info');
+            });
+        });
+
+        // Hide the main schedule button
         $('#saveVisitBtn').hide();
-        $('#scheduleVisitModal .modal-title').text('Visit Details');
         $('#scheduleVisitModal').modal('show');
 
         // Reset on close
-        $('#scheduleVisitModal').on('hidden.bs.modal', function () {
+        $('#scheduleVisitModal').off('hidden.bs.modal').on('hidden.bs.modal', function () {
             $('#scheduleVisitForm input, #scheduleVisitForm select, #scheduleVisitForm textarea').prop('disabled', false);
-            $('#saveVisitBtn').show();
+            // Restore footer with original save button
+            $footer.empty();
+            $footer.append('<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>');
+            $footer.append('<button type="button" class="btn btn-primary" id="saveVisitBtn">Schedule Visit</button>');
+            $('#saveVisitBtn').off('click').on('click', () => Visits.scheduleVisit());
             $('#scheduleVisitModal .modal-title').html('<i class="fas fa-calendar-plus me-2"></i>Schedule Visit');
         });
     },

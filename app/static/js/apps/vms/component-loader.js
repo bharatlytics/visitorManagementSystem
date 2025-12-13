@@ -55,7 +55,8 @@ const ComponentLoader = {
             'device-modal',
             'visitor-modal',
             'schedule-visit-modal',
-            'location-modal'
+            'location-modal',
+            'pre-register-visitor-modal'
         ];
 
         return Promise.all(modals.map(m => this.load(m, '#modals-container')));

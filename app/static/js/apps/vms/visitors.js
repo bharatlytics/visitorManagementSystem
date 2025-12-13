@@ -6,9 +6,87 @@ const Visitors = {
     },
 
     bindEvents: function () {
-        $('#btn-add-visitor').click(() => $('#addVisitorModal').modal('show'));
+        $('#btn-add-visitor').click(() => {
+            this.openPreRegisterModal();
+        });
         $('#saveEditVisitorBtn').click(() => this.saveVisitor());
     },
+
+    openPreRegisterModal: function () {
+        // Reset form
+        const form = document.getElementById('preRegisterVisitorForm');
+        if (form) form.reset();
+
+        // Populate host dropdown
+        const hostSelect = $('#preRegHostEmployeeId');
+        hostSelect.empty().append('<option value="">-- Select Host --</option>');
+        (state.employees || []).forEach(e => {
+            hostSelect.append(`<option value="${e._id}">${e.employeeName || e.name} (${e.department || 'N/A'})</option>`);
+        });
+
+        // Bind save button
+        $('#btnPreRegisterVisitor').off('click').on('click', () => this.preRegisterVisitor());
+
+        $('#preRegisterVisitorModal').modal('show');
+    },
+
+    preRegisterVisitor: function () {
+        const name = $('#preRegVisitorName').val().trim();
+        const phone = $('#preRegVisitorPhone').val().trim();
+        const hostId = $('#preRegHostEmployeeId').val();
+
+        if (!name || !phone || !hostId) {
+            showToast('Please fill required fields: Name, Phone, Host', 'warning');
+            return;
+        }
+
+        // Build FormData for the API
+        const formData = new FormData();
+        formData.append('companyId', state.companyId);
+        formData.append('visitorName', name);
+        formData.append('phone', phone.startsWith('+91') ? phone : '+91' + phone);
+        formData.append('hostEmployeeId', hostId);
+        formData.append('email', $('#preRegVisitorEmail').val().trim());
+        formData.append('organization', $('#preRegVisitorOrganization').val().trim());
+        formData.append('visitorType', $('#preRegVisitorType').val());
+        formData.append('idType', $('#preRegIdType').val());
+        formData.append('idNumber', $('#preRegIdNumber').val().trim());
+        formData.append('purpose', $('#preRegPurpose').val().trim());
+
+        // Show loading
+        const btn = $('#btnPreRegisterVisitor');
+        const originalText = btn.html();
+        btn.html('<i class="fas fa-spinner fa-spin me-2"></i>Registering...').prop('disabled', true);
+
+        VMS_API.registerVisitor(formData)
+            .then(response => {
+                if (response.error) {
+                    throw response;
+                }
+
+                $('#preRegisterVisitorModal').modal('hide');
+                showToast('Visitor registered successfully!', 'success');
+
+                // If "also schedule visit" is checked, open schedule modal
+                if ($('#preRegScheduleVisit').is(':checked') && response._id) {
+                    setTimeout(() => {
+                        // Pre-select the new visitor in schedule modal
+                        $('#visitVisitorId').val(response._id);
+                        $('#scheduleVisitModal').modal('show');
+                    }, 300);
+                }
+
+                refreshVisitors();
+            })
+            .catch(err => {
+                console.error('Registration error:', err);
+                showToast(err.error || 'Failed to register visitor', 'danger');
+            })
+            .finally(() => {
+                btn.html(originalText).prop('disabled', false);
+            });
+    },
+
 
     renderTable: function () {
         if ($.fn.DataTable.isDataTable('#visitors-table')) {
