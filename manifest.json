@@ -1,7 +1,7 @@
 {
   "name": "Visitor Management System",
   "appId": "vms_app_v1",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Complete Visitor Management System with facial recognition, digital badges, and host notifications.",
   "icon": "fas fa-user-check",
   "category": "operations",
@@ -103,12 +103,93 @@
           "dimensions": [
             "location"
           ]
+        },
+        {
+          "name": "visitor_conversion_rate",
+          "unit": "percentage",
+          "aggregation": "daily",
+          "description": "Percentage of scheduled visits that complete check-in",
+          "dimensions": [
+            "location"
+          ]
+        },
+        {
+          "name": "avg_wait_time",
+          "unit": "minutes",
+          "aggregation": "hourly",
+          "description": "Average time from arrival to check-in completion",
+          "dimensions": [
+            "location"
+          ]
+        },
+        {
+          "name": "repeat_visitor_ratio",
+          "unit": "percentage",
+          "aggregation": "weekly",
+          "description": "Percentage of returning visitors vs new visitors",
+          "dimensions": []
+        },
+        {
+          "name": "peak_hours_distribution",
+          "unit": "counts_by_hour",
+          "aggregation": "daily",
+          "description": "Visit count distribution across hours of the day",
+          "dimensions": [
+            "location"
+          ]
+        },
+        {
+          "name": "host_response_time",
+          "unit": "minutes",
+          "aggregation": "daily",
+          "description": "Average time for hosts to approve visitor requests",
+          "dimensions": [
+            "department"
+          ]
+        },
+        {
+          "name": "no_show_rate",
+          "unit": "percentage",
+          "aggregation": "daily",
+          "description": "Percentage of scheduled visits that did not complete",
+          "dimensions": [
+            "location"
+          ]
+        },
+        {
+          "name": "visitor_satisfaction_nps",
+          "unit": "score",
+          "aggregation": "weekly",
+          "description": "Net Promoter Score from visitor feedback",
+          "dimensions": [
+            "location"
+          ]
         }
       ],
       "schemas": [
         {
           "id": "visit_record",
           "description": "Full visit details including host and check-in times"
+        }
+      ]
+    },
+    "consumes": {
+      "fromPlatform": [
+        {
+          "type": "employee_presence",
+          "use": "Check if host is available before scheduling visits"
+        },
+        {
+          "type": "meeting_rooms",
+          "use": "Suggest available meeting rooms for visits"
+        },
+        {
+          "type": "parking_status",
+          "use": "Provide visitor arrival guidance on parking availability"
+        },
+        {
+          "type": "company_events",
+          "use": "Block high-traffic event days for regular visits"
         }
       ]
     }

@@ -1,9 +1,15 @@
 """Seed VMS installation data with platform app_id.
 Run this once to set up the correct mapping between VMS and platform.
 """
+import os
 from pymongo import MongoClient
+from dotenv import load_dotenv
 
-MONGO_URI = "mongodb+srv://bharatlytics:nN9AEW7exNdqoQ3r@cluster0.tato9.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+load_dotenv()
+
+MONGO_URI = os.getenv('VMS_MONGODB_URI')
+if not MONGO_URI:
+    raise ValueError("VMS_MONGODB_URI environment variable not set")
 
 # Connect to VMS database
 client = MongoClient(MONGO_URI)
