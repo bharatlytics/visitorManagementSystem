@@ -36,3 +36,16 @@ Deploy to Vercel:
 ```bash
 vercel
 ```
+
+## Platform Integration
+
+When running in **Connected Mode**, the VMS integrates securely with the Bharatlytics Platform:
+
+- **SSO Authentication**: Users log in via the Platform and are redirected to VMS with a secure JWT token.
+- **Secure Data Access**: VMS uses the user's SSO token to fetch data (employees, entities) from the Platform APIs.
+- **Data Isolation**: All API requests are scoped to the user's Company ID, ensuring strict data isolation.
+
+### Configuration
+Ensure the following environment variables match your Platform configuration:
+- `PLATFORM_API_URL`: URL of the Platform API (e.g., `http://localhost:5000`)
+- `PLATFORM_JWT_SECRET`: Must match the Platform's `JWT_SECRET` to validate SSO tokens.
