@@ -75,26 +75,31 @@ class PlatformClient:
             List of actors mapped to a common format for use by VMS
         """
         cid = company_id or self._get_company_id()
-        data = self._request('GET', '/bharatlytics/v1/actors', params={'companyId': cid})
+        
+        # Pass actorType to server for proper filtering based on data mapping
+        # This ensures that when mapped to 'shift_supervisor', we only get shift supervisors
+        data = self._request('GET', '/bharatlytics/v1/actors', params={
+            'companyId': cid,
+            'actorType': actor_type  # Let server filter by actor type
+        })
         if not data:
             return []
         
-        # Filter to the specified actor type and map fields
+        # Map fields to VMS format (server already filtered by actorType)
         actors = []
         for actor in data if isinstance(data, list) else []:
-            if actor.get('actorType') == actor_type:
-                attrs = actor.get('attributes', {})
-                actors.append({
-                    '_id': actor.get('_id'),
-                    'employeeId': attrs.get('employeeId') or actor.get('_id'),
-                    'employeeName': attrs.get('employeeName') or attrs.get('name', 'Unknown'),
-                    'name': attrs.get('name'),
-                    'email': attrs.get('email'),
-                    'phone': attrs.get('phone'),
-                    'department': attrs.get('department'),
-                    'designation': attrs.get('designation'),
-                    'actorType': actor_type  # Keep original type for reference
-                })
+            attrs = actor.get('attributes', {})
+            actors.append({
+                '_id': actor.get('_id'),
+                'employeeId': attrs.get('employeeId') or actor.get('_id'),
+                'employeeName': attrs.get('employeeName') or attrs.get('name', 'Unknown'),
+                'name': attrs.get('name'),
+                'email': attrs.get('email'),
+                'phone': attrs.get('phone'),
+                'department': attrs.get('department'),
+                'designation': attrs.get('designation'),
+                'actorType': actor_type  # Keep original type for reference
+            })
         
         print(f"[PlatformClient.get_actors_by_type] Found {len(actors)} actors of type '{actor_type}'")
         return actors

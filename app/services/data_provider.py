@@ -225,12 +225,18 @@ class DataProvider:
             app_id = self._get_app_id(company_id)
             
             if company_id:
-                # Fetch mapping from platform
+                # Fetch mapping from platform (with auth if available)
                 url = f"{Config.PLATFORM_API_URL}/bharatlytics/integration/v1/installations/mapping"
                 params = {'appId': app_id, 'companyId': company_id}
                 
-                print(f"[_get_full_mapping_config] Fetching from {url} params={params}")
-                response = requests.get(url, params=params, timeout=5)
+                # Build headers with auth token if available
+                headers = {}
+                platform_token = session.get('platform_token')
+                if platform_token:
+                    headers['Authorization'] = f'Bearer {platform_token}'
+                
+                print(f"[_get_full_mapping_config] Fetching from {url} params={params} (has_token={bool(platform_token)})")
+                response = requests.get(url, params=params, headers=headers, timeout=5)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -260,7 +266,7 @@ class DataProvider:
                     else:
                         print(f"[_get_full_mapping_config] No mapping configured for {app_id}")
                 else:
-                    print(f"[_get_full_mapping_config] API error {response.status_code}")
+                    print(f"[_get_full_mapping_config] API error {response.status_code}: {response.text[:200]}")
                     
         except Exception as e:
             print(f"[_get_full_mapping_config] Error: {e}")
