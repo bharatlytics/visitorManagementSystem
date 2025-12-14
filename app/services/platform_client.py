@@ -62,26 +62,42 @@ class PlatformClient:
     
     def get_employees(self, company_id=None):
         """Get employees from platform actors collection"""
+        return self.get_actors_by_type(company_id, 'employee')
+    
+    def get_actors_by_type(self, company_id=None, actor_type='employee'):
+        """Get actors of a specific type from platform.
+        
+        Args:
+            company_id: Company ID to fetch actors for
+            actor_type: The actor type to fetch (e.g., 'employee', 'shift_supervisor', 'visitor')
+        
+        Returns:
+            List of actors mapped to a common format for use by VMS
+        """
         cid = company_id or self._get_company_id()
         data = self._request('GET', '/bharatlytics/v1/actors', params={'companyId': cid})
         if not data:
             return []
         
-        # Filter to employees and map fields
-        employees = []
+        # Filter to the specified actor type and map fields
+        actors = []
         for actor in data if isinstance(data, list) else []:
-            if actor.get('actorType') == 'employee':
+            if actor.get('actorType') == actor_type:
                 attrs = actor.get('attributes', {})
-                employees.append({
+                actors.append({
                     '_id': actor.get('_id'),
-                    'employeeId': attrs.get('employeeId', actor.get('_id')),
+                    'employeeId': attrs.get('employeeId') or actor.get('_id'),
                     'employeeName': attrs.get('employeeName') or attrs.get('name', 'Unknown'),
+                    'name': attrs.get('name'),
                     'email': attrs.get('email'),
                     'phone': attrs.get('phone'),
                     'department': attrs.get('department'),
-                    'designation': attrs.get('designation')
+                    'designation': attrs.get('designation'),
+                    'actorType': actor_type  # Keep original type for reference
                 })
-        return employees
+        
+        print(f"[PlatformClient.get_actors_by_type] Found {len(actors)} actors of type '{actor_type}'")
+        return actors
     
     def get_entities(self, company_id=None, types=None):
         """Get entities from platform"""

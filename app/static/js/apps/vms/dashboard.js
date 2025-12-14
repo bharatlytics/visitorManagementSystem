@@ -137,15 +137,16 @@ const Dashboard = {
         tbody.html('<tr><td colspan="4" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></td></tr>');
 
         setTimeout(() => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
+            // Use UTC date to match backend
+            const now = new Date();
+            const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+            const tomorrowUTC = new Date(todayUTC);
+            tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
 
             const expected = (state.visits || []).filter(v => {
                 if (v.status !== 'scheduled' || !v.expectedArrival) return false;
                 const t = new Date(v.expectedArrival);
-                return t >= today && t < tomorrow;
+                return t >= todayUTC && t < tomorrowUTC;
             });
 
             tbody.empty();
@@ -172,12 +173,13 @@ const Dashboard = {
         tbody.html('<tr><td colspan="4"><div class="spinner-border spinner-border-sm"></div></td></tr>');
 
         setTimeout(() => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            // Use UTC date to match backend
+            const now = new Date();
+            const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
             const checkedIn = (state.visits || []).filter(v => {
                 if (!v.actualArrival) return false;
-                return new Date(v.actualArrival) >= today;
+                return new Date(v.actualArrival) >= todayUTC;
             });
 
             tbody.empty();
@@ -207,12 +209,14 @@ const Dashboard = {
         tbody.html('<tr><td colspan="4"><div class="spinner-border spinner-border-sm"></div></td></tr>');
 
         setTimeout(() => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            // Use UTC date to match backend (which uses get_current_utc())
+            const now = new Date();
+            const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
             const checkedOut = (state.visits || []).filter(v => {
                 if (!v.actualDeparture) return false;
-                return new Date(v.actualDeparture) >= today;
+                const departure = new Date(v.actualDeparture);
+                return departure >= todayUTC;
             });
 
             tbody.empty();

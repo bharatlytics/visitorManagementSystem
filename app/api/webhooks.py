@@ -33,11 +33,14 @@ def handle_install():
     installation_doc = {
         'company_id': company_id,
         'installation_id': installation_id,
+        'app_id': data.get('app_id') or credentials.get('app_id'),  # Platform-generated app ID
         'client_id': credentials.get('client_id'),
         'client_secret': credentials.get('client_secret'),
         'status': 'active',
         'installed_at': data.get('timestamp')
     }
+    
+    print(f"[Webhook/Install] Storing installation: app_id={installation_doc.get('app_id')}, company_id={company_id}")
     
     # Update or insert
     db['installations'].update_one(

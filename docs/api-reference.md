@@ -22,14 +22,15 @@ All protected endpoints require one of the following:
 
 1. [Visitors](#1-visitors)
 2. [Visits](#2-visits)
-3. [Dashboard](#3-dashboard)
-4. [Analytics](#4-analytics)
-5. [Settings](#5-settings)
-6. [Security](#6-security)
-7. [Data Residency](#7-data-residency)
-8. [Webhooks](#8-webhooks)
-9. [Error Codes](#9-error-codes)
-10. [Data Models](#10-data-models)
+3. [Employees](#3-employees)
+4. [Dashboard](#4-dashboard)
+5. [Analytics](#5-analytics)
+6. [Settings](#6-settings)
+7. [Security](#7-security)
+8. [Data Residency](#8-data-residency)
+9. [Webhooks](#9-webhooks)
+10. [Error Codes](#10-error-codes)
+11. [Data Models](#11-data-models)
 
 ---
 
@@ -433,11 +434,76 @@ GET /api/visitors/visits/qr/{visit_id}
 
 ---
 
-## 3. Dashboard
+## 3. Employees
+
+**Base Path:** `/api/employees`
+
+VMS fetches employee data respecting the **Data Mapping** configuration from the platform. The data source and actor type are determined by the company's mapping settings.
+
+### 3.1 List Employees (Hosts)
+
+```http
+GET /api/employees?companyId={companyId}
+```
+
+**Data Source Logic:**
+
+| Mapping Mode | Source | Description |
+|--------------|--------|-------------|
+| `platform` | Platform API | Fetches actors of the **mapped type** from Platform |
+| `app` | Local VMS Database | Returns VMS's local employee records |
+
+**Actor Type Mapping:**
+
+The platform mapping configuration determines WHICH actor type to fetch. For example:
+
+```json
+{
+  "actorMappings": {
+    "employee": ["shift_supervisor"]
+  }
+}
+```
+
+This means VMS's "employee" concept maps to Platform's "shift_supervisor" actor type. VMS will fetch shift_supervisors, not employees.
+
+**Response:**
+```json
+{
+  "employees": [
+    {
+      "_id": "emp_12345",
+      "employeeId": "EMP001",
+      "employeeName": "Jane Smith",
+      "email": "jane.smith@company.com",
+      "phone": "+919876543210",
+      "department": "Engineering",
+      "designation": "Manager",
+      "actorType": "shift_supervisor"
+    }
+  ],
+  "source": "platform",
+  "mappedType": "shift_supervisor"
+}
+```
+
+### 3.2 Data Flow
+
+```
+VMS Request → _get_full_mapping_config() 
+            → Fetch mapping from Platform API
+            → Determine: mode (platform/app), actorType (mapped type)
+            → If mode=platform: Call platform_client.get_actors_by_type(actorType)
+            → If mode=app: Query local employees_collection
+```
+
+---
+
+## 4. Dashboard
 
 **Base Path:** `/api/dashboard`
 
-### 3.1 Get Stats
+### 4.1 Get Stats
 
 ```http
 GET /api/dashboard/stats?companyId={companyId}
@@ -464,7 +530,7 @@ GET /api/dashboard/stats?companyId={companyId}
 
 ---
 
-### 3.2 Get Trends
+### 4.2 Get Trends
 
 ```http
 GET /api/dashboard/trends?companyId={companyId}
@@ -487,7 +553,7 @@ GET /api/dashboard/trends?companyId={companyId}
 
 ---
 
-### 3.3 Security Dashboard
+### 4.3 Security Dashboard
 
 ```http
 GET /api/dashboard/security?companyId={companyId}
@@ -523,7 +589,7 @@ GET /api/dashboard/security?companyId={companyId}
 
 ---
 
-### 3.4 Export Visits Report
+### 4.4 Export Visits Report
 
 ```http
 GET /api/dashboard/reports/visits?companyId={companyId}&format=json
@@ -568,7 +634,7 @@ GET /api/dashboard/reports/visits?companyId={companyId}&format=csv&startDate=202
 
 ---
 
-### 3.5 Summary Report
+### 4.5 Summary Report
 
 ```http
 GET /api/dashboard/reports/summary?companyId={companyId}
@@ -599,7 +665,7 @@ GET /api/dashboard/reports/summary?companyId={companyId}
 
 ---
 
-### 3.6 Approve Visit
+### 4.6 Approve Visit
 
 ```http
 POST /api/dashboard/approvals/{visit_id}/approve
@@ -622,7 +688,7 @@ Content-Type: application/json
 
 ---
 
-### 3.7 Deny Visit
+### 4.7 Deny Visit
 
 ```http
 POST /api/dashboard/approvals/{visit_id}/deny
@@ -646,11 +712,11 @@ Content-Type: application/json
 
 ---
 
-## 4. Analytics
+## 5. Analytics
 
 **Base Path:** `/api/analytics`
 
-### 4.1 Dashboard Analytics
+### 5.1 Dashboard Analytics
 
 ```http
 GET /api/analytics/dashboard?companyId={companyId}
@@ -672,7 +738,7 @@ GET /api/analytics/dashboard?companyId={companyId}
 
 ---
 
-### 4.2 Visitor Trends
+### 5.2 Visitor Trends
 
 ```http
 GET /api/analytics/trends?companyId={companyId}
@@ -682,11 +748,11 @@ Same response format as `/api/dashboard/trends`.
 
 ---
 
-## 5. Settings
+## 6. Settings
 
 **Base Path:** `/api/settings`
 
-### 5.1 Get Settings
+### 6.1 Get Settings
 
 ```http
 GET /api/settings?companyId={companyId}
@@ -720,7 +786,7 @@ GET /api/settings?companyId={companyId}
 
 ---
 
-### 5.2 Update Settings
+### 6.2 Update Settings
 
 ```http
 PUT /api/settings
@@ -751,7 +817,7 @@ Content-Type: application/json
 
 ---
 
-### 5.3 Devices
+### 6.3 Devices
 
 #### List Devices
 
@@ -805,7 +871,7 @@ DELETE /api/settings/devices/{device_id}
 
 ---
 
-### 5.4 Locations
+### 6.4 Locations
 
 #### List Locations
 
@@ -852,11 +918,11 @@ Content-Type: application/json
 
 ---
 
-## 6. Security
+## 7. Security
 
 **Base Path:** `/api/security`
 
-### 6.1 Get Watchlist
+### 7.1 Get Watchlist
 
 ```http
 GET /api/security/watchlist?companyId={companyId}
@@ -877,7 +943,7 @@ GET /api/security/watchlist?companyId={companyId}
 
 ---
 
-### 6.2 Add to Watchlist
+### 7.2 Add to Watchlist
 
 ```http
 POST /api/security/watchlist/{visitor_id}
@@ -899,7 +965,7 @@ Content-Type: application/json
 
 ---
 
-### 6.3 Remove from Watchlist
+### 7.3 Remove from Watchlist
 
 ```http
 DELETE /api/security/watchlist/{visitor_id}
@@ -907,7 +973,7 @@ DELETE /api/security/watchlist/{visitor_id}
 
 ---
 
-### 6.4 Check Security Status
+### 7.4 Check Security Status
 
 ```http
 GET /api/security/check/{visitor_id}
@@ -927,7 +993,7 @@ GET /api/security/check/{visitor_id}
 
 ---
 
-### 6.5 Get Security Alerts
+### 7.5 Get Security Alerts
 
 ```http
 GET /api/security/alerts?companyId={companyId}
@@ -977,13 +1043,33 @@ GET /api/security/alerts?companyId={companyId}
 
 ---
 
-## 7. Data Residency
+## 8. Data Residency
 
 **Base Path:** `/api`
 
 These endpoints support the Bharatlytics Platform v3 Data Residency feature.
 
-### 7.1 Federated Query (Platform → VMS)
+### Overview
+
+VMS respects the company's **Data Mapping** configuration from the platform:
+
+| Configuration | VMS Behavior |
+|---------------|--------------|
+| `residencyMode.actor_employee.mode = 'platform'` | Fetch employees from Platform |
+| `residencyMode.actor_employee.mode = 'app'` | Use VMS's local employees (standalone) |
+| `actorMappings.employee = ['shift_supervisor']` | Fetch Platform's `shift_supervisor` actors instead of `employee` |
+
+### How VMS Fetches Configuration
+
+```
+1. Get app_id from local installations collection (stored by install webhook)
+2. Call Platform API: GET /bharatlytics/integration/v1/installations/mapping?appId=X&companyId=Y
+3. Parse response:
+   - residencyMode.actor_employee.mode → determines source (platform/app)
+   - actorMappings.employee → determines which actor type to fetch
+```
+
+### 8.1 Federated Query (Platform → VMS)
 
 ```http
 POST /api/query/visitors
@@ -1035,7 +1121,7 @@ Called by the Platform when residency mode is `app` (federated).
 
 ---
 
-### 7.2 Trigger Sync (VMS → Platform)
+### 8.2 Trigger Sync (VMS → Platform)
 
 ```http
 POST /api/sync/visitors
@@ -1069,7 +1155,7 @@ Trigger manual sync when residency mode is `platform`.
 
 ---
 
-### 7.3 Sync Single Visitor
+### 8.3 Sync Single Visitor
 
 ```http
 POST /api/sync/visitors/{visitor_id}
@@ -1084,13 +1170,13 @@ POST /api/sync/visitors/{visitor_id}
 
 ---
 
-## 8. Webhooks
+## 9. Webhooks
 
 **Base Path:** `/api/webhooks`
 
 These endpoints are called by the Bharatlytics Platform.
 
-### 8.1 Install Webhook
+### 9.1 Install Webhook
 
 ```http
 POST /api/webhooks/install
@@ -1104,13 +1190,17 @@ Called when the app is installed for a company.
 {
   "company_id": "507f1f77bcf86cd799439011",
   "installation_id": "install_abc123",
+  "app_id": "app_bharatlytics_vms_366865a4",
   "credentials": {
     "client_id": "vms_client_abc",
-    "client_secret": "secret_xyz..."
+    "client_secret": "secret_xyz...",
+    "app_id": "app_bharatlytics_vms_366865a4"
   },
   "timestamp": "2024-12-13T10:00:00Z"
 }
 ```
+
+> **Note:** The `app_id` is the platform-generated identifier for this app. VMS stores this locally to fetch data mapping configurations from the platform.
 
 **Response:**
 ```json
@@ -1122,7 +1212,7 @@ Called when the app is installed for a company.
 
 ---
 
-### 8.2 Uninstall Webhook
+### 9.2 Uninstall Webhook
 
 ```http
 POST /api/webhooks/uninstall
@@ -1138,7 +1228,7 @@ Content-Type: application/json
 
 ---
 
-### 8.3 Residency Change Webhook
+### 9.3 Residency Change Webhook
 
 ```http
 POST /api/webhooks/residency-change
@@ -1159,7 +1249,7 @@ Called when company changes data residency mode.
 
 ---
 
-### 8.4 Data Update Webhook
+### 9.4 Data Update Webhook
 
 ```http
 POST /api/webhooks/data-update
@@ -1179,7 +1269,7 @@ Called when platform data changes.
 
 ---
 
-## 9. Error Codes
+## 10. Error Codes
 
 | Status | Code | Description |
 |--------|------|-------------|
@@ -1200,7 +1290,7 @@ Called when platform data changes.
 
 ---
 
-## 10. Data Models
+## 11. Data Models
 
 ### Visitor
 

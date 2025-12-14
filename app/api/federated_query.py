@@ -1,0 +1,337 @@
+"""
+Federated Query API for VMS
+
+This module exposes endpoints for the Bharatlytics Platform to query
+VMS data when data residency is set to "App (Federated)".
+
+Endpoints:
+- GET /api/query/visitors - Query visitor data
+- GET /api/query/employees - Query employee data
+
+These endpoints are called by the Platform's federated query service
+when another app (e.g., People Tracking) requests data that VMS owns.
+
+Authentication:
+- Expects X-Platform-Request header
+- Verifies Platform service token
+"""
+
+from flask import Blueprint, request, jsonify
+from bson import ObjectId
+from bson.errors import InvalidId
+from datetime import datetime
+import jwt
+import os
+
+from app.db import visitor_collection, employee_collection, visitor_embedding_fs
+from app.utils import format_datetime
+
+# Blueprint for federated query endpoints
+federated_query_bp = Blueprint('federated_query', __name__, url_prefix='/api/query')
+
+# Platform secret for verifying tokens (should match platform's PLATFORM_SECRET)
+PLATFORM_SECRET = os.getenv('PLATFORM_SECRET', 'bharatlytics-platform-secret-2024')
+
+
+def verify_platform_request():
+    """
+    Verify that the request comes from the Bharatlytics Platform.
+    
+    Checks:
+    1. X-Platform-Request header is present
+    2. Bearer token is valid Platform service token
+    
+    Returns:
+        (is_valid, context_dict or error_message)
+    """
+    # Check for platform header
+    if not request.headers.get('X-Platform-Request'):
+        return False, 'Missing X-Platform-Request header'
+    
+    # Check for auth token
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return False, 'Missing or invalid Authorization header'
+    
+    token = auth_header.replace('Bearer ', '')
+    
+    try:
+        # Add leeway to handle clock skew between Platform and VMS
+        # PyJWT 2.x: leeway is a direct parameter (in seconds)
+        # Also specify expected audience to pass PyJWT 2.x audience validation
+        from datetime import timedelta
+        payload = jwt.decode(
+            token, 
+            PLATFORM_SECRET, 
+            algorithms=['HS256'], 
+            leeway=timedelta(seconds=60),
+            audience='vms_app_v1'  # This VMS app's expected audience
+        )
+        
+        # Verify it's a platform-issued federated query token
+        if payload.get('iss') != 'bharatlytics-platform':
+            return False, 'Invalid token issuer'
+        
+        if payload.get('type') != 'federated_query':
+            return False, 'Invalid token type'
+        
+        return True, {
+            'company_id': payload.get('company_id'),
+            'requesting_app': payload.get('sub'),
+            'target_app': payload.get('aud')
+        }
+    except jwt.ExpiredSignatureError:
+        print(f"[FEDERATED] Token expired - Token: {token[:50]}...")
+        return False, 'Token expired'
+    except jwt.InvalidTokenError as e:
+        print(f"[FEDERATED] Invalid token: {e}")
+        return False, f'Invalid token: {str(e)}'
+
+
+def convert_objectids(obj):
+    """Recursively convert all ObjectId instances to strings"""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_objectids(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectids(item) for item in obj]
+    elif isinstance(obj, datetime):
+        return format_datetime(obj)
+    elif isinstance(obj, bytes):
+        # Skip binary data like embeddings
+        return None
+    else:
+        return obj
+
+
+@federated_query_bp.route('/visitors', methods=['GET'])
+def query_visitors():
+    """
+    Federated query endpoint for visitor data.
+    
+    Called by the Platform when another app needs visitor data
+    and residency is set to "App (Federated)".
+    
+    Query params:
+    - companyId: Required - Company ID
+    - status: Optional - Filter by status (active, pending, etc.)
+    - limit: Optional - Max results (default 100)
+    - offset: Optional - Pagination offset (default 0)
+    - fields: Optional - Comma-separated list of fields to return
+    - includeEmbeddings: Optional - Include embedding IDs (default false)
+    
+    Returns:
+    {
+        "data": [...],
+        "count": N,
+        "source": "vms_app_v1",
+        "dataType": "visitor"
+    }
+    """
+    # Verify platform request
+    is_valid, result = verify_platform_request()
+    if not is_valid:
+        return jsonify({'error': result}), 401
+    
+    ctx = result
+    company_id = request.args.get('companyId') or ctx.get('company_id')
+    
+    if not company_id:
+        return jsonify({'error': 'companyId is required'}), 400
+    
+    # Parse query parameters
+    status = request.args.get('status')
+    limit = min(int(request.args.get('limit', 100)), 1000)  # Cap at 1000
+    offset = int(request.args.get('offset', 0))
+    fields = request.args.get('fields', '').split(',') if request.args.get('fields') else None
+    include_embeddings = request.args.get('includeEmbeddings', 'false').lower() == 'true'
+    
+    try:
+        # Build query
+        try:
+            company_oid = ObjectId(company_id)
+            query = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except InvalidId:
+            query = {'companyId': company_id}
+        
+        if status:
+            query['status'] = status
+        
+        # Build projection (fields to return)
+        projection = None
+        if fields and fields[0]:  # Check if fields list is not empty
+            projection = {f: 1 for f in fields}
+            projection['_id'] = 1  # Always include ID
+            projection['companyId'] = 1
+        
+        # Query visitors
+        cursor = visitor_collection.find(query, projection).skip(offset).limit(limit)
+        visitors = list(cursor)
+        
+        # Get total count
+        total_count = visitor_collection.count_documents(query)
+        
+        # Process visitors
+        processed = []
+        for visitor in visitors:
+            visitor_dict = convert_objectids(visitor)
+            
+            # Handle embeddings
+            if include_embeddings and 'visitorEmbeddings' in visitor:
+                # Include embedding metadata but not raw data
+                embeddings = visitor.get('visitorEmbeddings', {})
+                visitor_dict['embeddings'] = {}
+                for model, emb_data in embeddings.items():
+                    if isinstance(emb_data, dict):
+                        visitor_dict['embeddings'][model] = {
+                            'status': emb_data.get('status'),
+                            'embeddingId': str(emb_data.get('embeddingId')) if emb_data.get('embeddingId') else None
+                        }
+            elif 'visitorEmbeddings' in visitor_dict:
+                # Remove raw embedding data if not requested
+                del visitor_dict['visitorEmbeddings']
+            
+            # Map VMS fields to platform actor format
+            processed_visitor = {
+                'id': visitor_dict.get('_id'),
+                'actorType': 'visitor',
+                'name': visitor_dict.get('visitorName'),
+                'phone': visitor_dict.get('phone'),
+                'email': visitor_dict.get('email'),
+                'status': visitor_dict.get('status', 'active'),
+                'blacklisted': visitor_dict.get('blacklisted', False),
+                'photo': visitor_dict.get('visitorImages', {}).get('center'),  # Primary photo
+                'companyId': company_id,
+                'metadata': {
+                    'organization': visitor_dict.get('organization'),
+                    'idType': visitor_dict.get('idType'),
+                    'idNumber': visitor_dict.get('idNumber'),
+                    'visitorType': visitor_dict.get('visitorType')
+                }
+            }
+            
+            # Add embeddings if requested
+            if include_embeddings and 'embeddings' in visitor_dict:
+                processed_visitor['embeddings'] = visitor_dict['embeddings']
+            
+            processed.append(processed_visitor)
+        
+        return jsonify({
+            'data': processed,
+            'count': len(processed),
+            'totalCount': total_count,
+            'source': 'vms_app_v1',
+            'dataType': 'visitor',
+            'offset': offset,
+            'limit': limit
+        })
+        
+    except Exception as e:
+        print(f"Error in query_visitors: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@federated_query_bp.route('/employees', methods=['GET'])
+def query_employees():
+    """
+    Federated query endpoint for employee data.
+    
+    Query params:
+    - companyId: Required - Company ID  
+    - status: Optional - Filter by status
+    - limit: Optional - Max results
+    - offset: Optional - Pagination offset
+    
+    Returns:
+    {
+        "data": [...],
+        "count": N,
+        "source": "vms_app_v1",
+        "dataType": "employee"
+    }
+    """
+    # Verify platform request
+    is_valid, result = verify_platform_request()
+    if not is_valid:
+        return jsonify({'error': result}), 401
+    
+    ctx = result
+    company_id = request.args.get('companyId') or ctx.get('company_id')
+    
+    if not company_id:
+        return jsonify({'error': 'companyId is required'}), 400
+    
+    status = request.args.get('status')
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+    include_embeddings = request.args.get('includeEmbeddings', 'false').lower() == 'true'
+    
+    try:
+        # Build query
+        try:
+            company_oid = ObjectId(company_id)
+            query = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except InvalidId:
+            query = {'companyId': company_id}
+        
+        if status:
+            query['status'] = status
+        
+        # Query employees
+        employees = list(employee_collection.find(query).skip(offset).limit(limit))
+        total_count = employee_collection.count_documents(query)
+        
+        # Process employees
+        processed = []
+        for emp in employees:
+            emp_dict = convert_objectids(emp)
+            
+            processed_emp = {
+                'id': emp_dict.get('_id'),
+                'actorType': 'employee',
+                'name': emp_dict.get('employeeName'),
+                'phone': emp_dict.get('employeePhone'),
+                'email': emp_dict.get('employeeEmail'),
+                'status': emp_dict.get('status', 'active'),
+                'blacklisted': emp_dict.get('blacklisted', False),
+                'companyId': company_id,
+                'metadata': {
+                    'employeeId': emp_dict.get('employeeId'),
+                    'department': emp_dict.get('department'),
+                    'designation': emp_dict.get('designation')
+                }
+            }
+            
+            if include_embeddings and 'employeeEmbeddings' in emp_dict:
+                processed_emp['embeddings'] = emp_dict.get('employeeEmbeddings')
+            
+            processed.append(processed_emp)
+        
+        return jsonify({
+            'data': processed,
+            'count': len(processed),
+            'totalCount': total_count,
+            'source': 'vms_app_v1',
+            'dataType': 'employee',
+            'offset': offset,
+            'limit': limit
+        })
+        
+    except Exception as e:
+        print(f"Error in query_employees: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@federated_query_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for verifying federated connectivity"""
+    return jsonify({
+        'status': 'healthy',
+        'app': 'vms_app_v1',
+        'endpoints': ['/api/query/visitors', '/api/query/employees']
+    })
