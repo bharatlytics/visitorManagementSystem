@@ -71,4 +71,50 @@ def create_app():
     def serve_images(filename):
         return app.send_static_file(f'images/{filename}')
     
+    # Sync manifest to Platform on startup
+    sync_manifest_to_platform()
+    
     return app
+
+
+def sync_manifest_to_platform():
+    """
+    Push VMS manifest to Platform on startup.
+    This ensures Platform knows our latest data agreements.
+    """
+    import json
+    import requests
+    import os
+    from threading import Thread
+    
+    def _sync():
+        try:
+            # Load manifest
+            manifest_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'manifest.json')
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            platform_url = os.getenv('PLATFORM_URL', 'http://localhost:5000')
+            vms_url = os.getenv('VMS_URL', 'http://localhost:5001')
+            
+            response = requests.post(
+                f"{platform_url}/bharatlytics/integration/v1/manifest/sync",
+                json={
+                    'appId': manifest.get('appId', 'vms_app_v1'),
+                    'manifest': manifest,
+                    'baseUrl': vms_url
+                },
+                timeout=10
+            )
+            
+            if response.status_code in [200, 201]:
+                print(f"[VMS] Manifest synced to Platform: v{manifest.get('version')}")
+            else:
+                print(f"[VMS] Manifest sync failed: {response.status_code}")
+                
+        except Exception as e:
+            print(f"[VMS] Manifest sync error (Platform may be down): {e}")
+    
+    # Run in background thread to not block startup
+    thread = Thread(target=_sync, daemon=True)
+    thread.start()

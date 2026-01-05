@@ -1,15 +1,15 @@
 {
   "name": "Visitor Management System",
   "appId": "vms_app_v1",
-  "version": "1.2.0",
-  "description": "Complete Visitor Management System with facial recognition, digital badges, and host notifications.",
+  "version": "1.4.0",
+  "description": "Complete Visitor Management System with facial recognition, digital badges, and host notifications. Provides employee and visitor data with biometric embeddings to other platform apps via federated queries.",
   "icon": "fas fa-user-check",
   "category": "operations",
   "requiredActors": [
     {
       "actorType": "visitor",
       "access": "write",
-      "justification": "To manage visitor records, check-ins, and history",
+      "justification": "To manage visitor records, check-ins, and history with biometric data",
       "fields": [
         "name",
         "phone",
@@ -20,14 +20,16 @@
     },
     {
       "actorType": "employee",
-      "access": "read",
-      "justification": "To link visitors to host employees",
+      "access": "write",
+      "justification": "To manage employee records with biometric data for host verification and access control",
       "fields": [
         "name",
         "email",
         "department",
         "phone",
-        "code"
+        "code",
+        "photo",
+        "embedding"
       ]
     }
   ],
@@ -43,20 +45,52 @@
       "actors": [
         {
           "type": "visitor",
+          "defaultResidency": "app",
           "supportedResidency": [
-            "platform",
             "app"
           ],
-          "syncEndpoint": "/api/sync/visitors",
+          "federated": true,
           "queryEndpoint": "/api/query/visitors",
           "fields": [
             "name",
             "phone",
             "email",
             "photo",
-            "company",
-            "embedding"
-          ]
+            "company"
+          ],
+          "embeddingModels": {
+            "available": [
+              "Facenet512"
+            ],
+            "shareByDefault": false,
+            "note": "VMS generates its own embeddings; other apps can request raw images via includeImages=true"
+          },
+          "imageExchange": {
+            "supported": true,
+            "format": "base64",
+            "queryParam": "includeImages=true",
+            "note": "Other apps receive raw images and can train their own models"
+          }
+        },
+        {
+          "type": "employee",
+          "defaultResidency": "platform",
+          "supportedResidency": [
+            "platform",
+            "app"
+          ],
+          "syncEndpoint": "/api/employees/register",
+          "queryEndpoint": "/api/query/employees",
+          "fields": [
+            "name",
+            "phone",
+            "email",
+            "photo",
+            "embedding",
+            "department",
+            "code"
+          ],
+          "note": "Employees sync to platform; platform generates embeddings"
         }
       ],
       "events": [
@@ -66,6 +100,8 @@
         "visitor.registered",
         "visitor.updated",
         "visitor.blacklisted",
+        "employee.registered",
+        "employee.updated",
         "host.approval_requested",
         "host.approved",
         "host.rejected"

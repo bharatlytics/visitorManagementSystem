@@ -499,6 +499,56 @@ VMS Request → _get_full_mapping_config()
 
 ---
 
+### 3.3 Register Employee
+
+```http
+POST /api/employees/register
+Content-Type: multipart/form-data
+```
+
+Register a new employee with face images for biometric recognition.
+
+**Form Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+| `employeeId` | string | Yes | Unique employee code (e.g., EMP001) |
+| `employeeName` | string | Yes | Full name |
+| `employeeEmail` | string | No | Email address |
+| `employeeMobile` | string | No | Phone number (10 digits) |
+| `department` | string | No | Department name |
+| `front` | file | No | Front-facing photo |
+| `side` | file | No | Side-facing photo |
+| `left` | file | No | Left-facing photo (alt format) |
+| `center` | file | No | Center-facing photo (alt format) |
+| `right` | file | No | Right-facing photo (alt format) |
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:5001/api/employees/register \
+  -H "Authorization: Bearer <token>" \
+  -F "companyId=507f1f77bcf86cd799439011" \
+  -F "employeeId=EMP001" \
+  -F "employeeName=John Doe" \
+  -F "front=@/path/to/front.jpg" \
+  -F "side=@/path/to/side.jpg"
+```
+
+**Response:**
+```json
+{
+  "message": "Employee registration successful",
+  "_id": "507f1f77bcf86cd799439012",
+  "employeeId": "EMP001",
+  "embeddingStatus": { "Facenet512": "queued" },
+  "hasBiometric": true,
+  "syncedToPlatform": false
+}
+```
+
+---
+
 ## 4. Dashboard
 
 **Base Path:** `/api/dashboard`
@@ -1437,6 +1487,170 @@ Called when platform data changes.
   "status": "active|inactive",
   "createdAt": "ISO8601",
   "updatedAt": "ISO8601"
+}
+```
+
+---
+
+## 12. Actor Registration (Platform Sync)
+
+**Base Path:** `/api/actors`
+
+VMS provides actor registration endpoints that **directly sync to Bharatlytics Platform**. Only actor types declared in the manifest can be synced.
+
+### 12.1 Get Manifest Info
+
+```http
+GET /api/actors/manifest
+```
+
+Returns what actor types VMS can produce (per manifest).
+
+**Response:**
+```json
+{
+  "appId": "vms_app_v1",
+  "canProduce": ["visitor", "employee"],
+  "actorFields": {
+    "visitor": ["name", "phone", "email", "photo", "company", "embedding"],
+    "employee": ["name", "phone", "email", "photo", "embedding", "department", "code"]
+  },
+  "message": "Only these actor types can be synced to platform"
+}
+```
+
+---
+
+### 12.2 Create Employee (Direct to Platform)
+
+```http
+POST /api/actors/employee
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "507f1f77bcf86cd799439011",
+  "name": "John Doe",
+  "email": "john@company.com",
+  "phone": "+919876543210",
+  "department": "Engineering",
+  "code": "EMP001",
+  "photo": "base64_or_url",
+  "embedding": "optional_base64_embedding"
+}
+```
+
+**Response:**
+```json
+{
+  "_id": "actor_id_on_platform",
+  "name": "John Doe",
+  "message": "Employee registered on platform",
+  "syncedFields": ["name", "email", "phone", "department", "photo"],
+  "hasBiometric": true,
+  "source": "platform"
+}
+```
+
+---
+
+### 12.3 Create Visitor (Direct to Platform)
+
+```http
+POST /api/actors/visitor
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "507f1f77bcf86cd799439011",
+  "name": "Jane Visitor",
+  "email": "jane@example.com",
+  "phone": "+919876543211",
+  "company": "Acme Corp",
+  "photo": "base64_or_url"
+}
+```
+
+**Response:**
+```json
+{
+  "_id": "actor_id_on_platform",
+  "name": "Jane Visitor",
+  "message": "Visitor registered on platform",
+  "syncedFields": ["name", "email", "phone", "company", "photo"],
+  "hasBiometric": false
+}
+```
+
+---
+
+### 12.4 List Actors by Type
+
+```http
+GET /api/actors/{actorType}?companyId={companyId}
+```
+
+**Example:** `GET /api/actors/employee?companyId=...`
+
+**Response:**
+```json
+{
+  "actors": [
+    {
+      "_id": "actor_123",
+      "actorType": "employee",
+      "attributes": {
+        "name": "John Doe",
+        "email": "john@company.com"
+      }
+    }
+  ],
+  "count": 1,
+  "source": "platform"
+}
+```
+
+---
+
+### 12.5 Update Actor
+
+```http
+PATCH /api/actors/{actorType}/{actorId}
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "name": "Updated Name",
+  "department": "New Department"
+}
+```
+
+**Response:**
+```json
+{
+  "_id": "actor_123",
+  "message": "employee updated"
+}
+```
+
+---
+
+### 12.6 Delete Actor
+
+```http
+DELETE /api/actors/{actorType}/{actorId}
+```
+
+**Response:**
+```json
+{
+  "message": "employee deleted"
 }
 ```
 

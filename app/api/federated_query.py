@@ -22,8 +22,13 @@ from bson.errors import InvalidId
 from datetime import datetime
 import jwt
 import os
+import base64
 
-from app.db import visitor_collection, employee_collection, visitor_embedding_fs
+from app.db import (
+    visitor_collection, employee_collection, 
+    visitor_embedding_fs, visitor_image_fs,
+    employee_image_fs, employee_embedding_fs
+)
 from app.utils import format_datetime
 
 # Blueprint for federated query endpoints
@@ -146,6 +151,7 @@ def query_visitors():
     offset = int(request.args.get('offset', 0))
     fields = request.args.get('fields', '').split(',') if request.args.get('fields') else None
     include_embeddings = request.args.get('includeEmbeddings', 'false').lower() == 'true'
+    include_images = request.args.get('includeImages', 'false').lower() == 'true'
     
     try:
         # Build query
@@ -201,7 +207,6 @@ def query_visitors():
                 'email': visitor_dict.get('email'),
                 'status': visitor_dict.get('status', 'active'),
                 'blacklisted': visitor_dict.get('blacklisted', False),
-                'photo': visitor_dict.get('visitorImages', {}).get('center'),  # Primary photo
                 'companyId': company_id,
                 'metadata': {
                     'organization': visitor_dict.get('organization'),
@@ -211,9 +216,39 @@ def query_visitors():
                 }
             }
             
-            # Add embeddings if requested
+            # Include images as base64 if requested
+            if include_images:
+                images = visitor.get('visitorImages', {})
+                photo_base64 = None
+                for position in ['center', 'front', 'left', 'right']:
+                    if position in images and images[position]:
+                        try:
+                            image_id = images[position]
+                            if not isinstance(image_id, ObjectId):
+                                image_id = ObjectId(str(image_id))
+                            file_data = visitor_image_fs.get(image_id)
+                            image_bytes = file_data.read()
+                            photo_base64 = f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                            print(f"[FederatedQuery] Included {position} image for visitor {visitor_dict.get('_id')}")
+                            break
+                        except Exception as e:
+                            print(f"[FederatedQuery] Error reading image: {e}")
+                            continue
+                
+                if photo_base64:
+                    processed_visitor['photo'] = photo_base64
+                    processed_visitor['hasPhoto'] = True
+                else:
+                    processed_visitor['hasPhoto'] = False
+            else:
+                # Just include image IDs, not full data
+                processed_visitor['photoId'] = str(visitor.get('visitorImages', {}).get('center', '')) or None
+                processed_visitor['hasPhoto'] = bool(visitor.get('visitorImages'))
+            
+            # Add embeddings if requested (with model info)
             if include_embeddings and 'embeddings' in visitor_dict:
                 processed_visitor['embeddings'] = visitor_dict['embeddings']
+                processed_visitor['embeddingModels'] = list(visitor_dict['embeddings'].keys())
             
             processed.append(processed_visitor)
         
@@ -268,6 +303,7 @@ def query_employees():
     limit = min(int(request.args.get('limit', 100)), 1000)
     offset = int(request.args.get('offset', 0))
     include_embeddings = request.args.get('includeEmbeddings', 'false').lower() == 'true'
+    include_images = request.args.get('includeImages', 'false').lower() == 'true'
     
     try:
         # Build query
@@ -293,8 +329,9 @@ def query_employees():
                 'id': emp_dict.get('_id'),
                 'actorType': 'employee',
                 'name': emp_dict.get('employeeName'),
-                'phone': emp_dict.get('employeePhone'),
-                'email': emp_dict.get('employeeEmail'),
+                # Handle both field naming conventions
+                'phone': emp_dict.get('phone') or emp_dict.get('employeePhone'),
+                'email': emp_dict.get('email') or emp_dict.get('employeeEmail'),
                 'status': emp_dict.get('status', 'active'),
                 'blacklisted': emp_dict.get('blacklisted', False),
                 'companyId': company_id,
@@ -305,10 +342,19 @@ def query_employees():
                 }
             }
             
+            # Handle embeddings - normalize format for cross-app consumption
             if include_embeddings and 'employeeEmbeddings' in emp_dict:
-                processed_emp['embeddings'] = emp_dict.get('employeeEmbeddings')
+                embeddings = emp_dict.get('employeeEmbeddings', {})
+                processed_emp['embeddings'] = {}
+                for model, emb_data in embeddings.items():
+                    if isinstance(emb_data, dict):
+                        processed_emp['embeddings'][model] = {
+                            'status': emb_data.get('status'),
+                            'embeddingId': str(emb_data.get('embeddingId')) if emb_data.get('embeddingId') else None
+                        }
             
             processed.append(processed_emp)
+
         
         return jsonify({
             'data': processed,

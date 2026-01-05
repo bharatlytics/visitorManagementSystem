@@ -343,6 +343,47 @@ class DataProvider:
         except Exception as e:
             print(f"Failed to sync visitor: {e}")
             return False
+    
+    def sync_employee_if_needed(self, employee_data):
+        """
+        Sync employee to platform if in platform residency mode.
+        Call this after creating/updating employees.
+        
+        This enables cross-app data sharing - other apps like People Tracking
+        can query employee data (including biometrics) via the platform.
+        """
+        config = self._get_residency_config('employee')
+        
+        if config['mode'] != 'platform':
+            return True  # No sync needed, data stays in VMS
+        
+        try:
+            from app.services.integration_helper import integration_client
+            
+            sync_data = {
+                'type': 'employee',
+                'id': str(employee_data.get('_id', employee_data.get('id'))),
+                'data': {
+                    'name': employee_data.get('employeeName'),
+                    'phone': employee_data.get('phone') or employee_data.get('employeePhone'),
+                    'email': employee_data.get('email') or employee_data.get('employeeEmail'),
+                    'department': employee_data.get('department'),
+                    'code': employee_data.get('employeeId'),  # Employee code
+                },
+                'operation': 'upsert'
+            }
+            
+            # Include embedding reference if available
+            if employee_data.get('employeeEmbeddings'):
+                embeddings = employee_data['employeeEmbeddings']
+                sync_data['data']['hasEmbedding'] = True
+                # Include embedding IDs for reference (actual data queried via federated endpoint)
+                sync_data['data']['embeddingModels'] = list(embeddings.keys())
+            
+            return integration_client.sync_actor(sync_data)
+        except Exception as e:
+            print(f"Failed to sync employee: {e}")
+            return False
 
 
 def get_data_provider(company_id=None):

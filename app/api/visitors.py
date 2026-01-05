@@ -22,8 +22,101 @@ from app.utils import (
 from app.config import Config
 from app.auth import require_auth
 from app.services.integration_helper import integration_client
+import requests
+import base64
 
 visitor_bp = Blueprint('visitor', __name__)
+
+
+def sync_visitor_to_platform(visitor_data, company_id, include_images=True):
+    """
+    Sync visitor to platform actors collection with images.
+    Platform's actor_embedding_worker will auto-generate embeddings.
+    """
+    from flask import session
+    
+    try:
+        platform_token = session.get('platform_token')
+        
+        # Build attributes
+        attributes = {
+            'name': visitor_data.get('visitorName'),
+            'visitorName': visitor_data.get('visitorName'),
+            'email': visitor_data.get('email'),
+            'phone': visitor_data.get('phone'),
+            'organization': visitor_data.get('organization'),
+            'visitorType': visitor_data.get('visitorType', 'guest'),
+        }
+        
+        # Include image as base64
+        photo_data = None
+        if include_images and visitor_data.get('visitorImages'):
+            images = visitor_data.get('visitorImages', {})
+            for position in ['center', 'front', 'left', 'right']:
+                if position in images and images[position]:
+                    try:
+                        image_id = images[position]
+                        if not isinstance(image_id, ObjectId):
+                            image_id = ObjectId(image_id)
+                        
+                        file_data = visitor_image_fs.get(image_id)
+                        image_bytes = file_data.read()
+                        photo_data = base64.b64encode(image_bytes).decode('utf-8')
+                        print(f"[sync_visitor] Included {position} image ({len(image_bytes)} bytes)")
+                        break
+                    except Exception as e:
+                        print(f"[sync_visitor] Error reading {position} image: {e}")
+                        continue
+        
+        if photo_data:
+            attributes['photo'] = f"data:image/jpeg;base64,{photo_data}"
+        
+        actor_data = {
+            'companyId': str(company_id),
+            'actorType': 'visitor',
+            'attributes': attributes,
+            'sourceAppId': 'vms_app_v1',
+            'sourceActorId': str(visitor_data.get('_id')),
+            'status': 'active',
+            'metadata': {
+                'hasPhoto': bool(photo_data),
+                'sourceApp': 'vms_app_v1'
+            }
+        }
+        
+        if not platform_token:
+            print("[sync_visitor] No platform token")
+            return {'success': False, 'error': 'No platform token'}
+        
+        headers = {
+            'Authorization': f'Bearer {platform_token}',
+            'Content-Type': 'application/json',
+            'X-App-Id': 'vms_app_v1',
+            'X-Source-App': 'vms_app_v1'
+        }
+        
+        response = requests.post(
+            f'{Config.PLATFORM_API_URL}/bharatlytics/v1/actors',
+            headers=headers,
+            json=actor_data,
+            timeout=30
+        )
+        
+        if response.status_code in [200, 201]:
+            result = response.json()
+            print(f"[sync_visitor] Synced: {visitor_data.get('visitorName')} (photo: {bool(photo_data)})")
+            return {
+                'success': True,
+                'actorId': result.get('_id') or result.get('actorId'),
+                'hasPhoto': bool(photo_data)
+            }
+        else:
+            print(f"[sync_visitor] Failed: {response.status_code}")
+            return {'success': False, 'error': response.text[:200]}
+            
+    except Exception as e:
+        print(f"[sync_visitor] Error: {e}")
+        return {'success': False, 'error': str(e)}
 
 
 def convert_objectids(obj):
@@ -316,6 +409,9 @@ def register_visitor():
         # Update visitor document with embeddings_dict
         visitor_collection.update_one({'_id': visitor_id}, {'$set': {'visitorEmbeddings': embeddings_dict}})
         
+        # NOTE: Visitors stay in VMS (residency: app) - no platform sync
+        # Other apps access visitor data via federated query: /api/query/visitors
+        
         # Publish Event: visitor.registered
         integration_client.publish_event('visitor.registered', {
             'visitorId': str(visitor_id),
@@ -327,7 +423,10 @@ def register_visitor():
         return jsonify({
             'message': 'Visitor registration successful',
             '_id': str(visitor_id),
-            'embeddingStatus': {k: v.get('status', 'unknown') for k, v in embeddings_dict.items()}
+            'embeddingStatus': {k: v.get('status', 'unknown') for k, v in embeddings_dict.items()},
+            'hasBiometric': has_images,
+            'dataResidency': 'app',  # Visitor stays in VMS
+            'federatedAccess': '/api/query/visitors'  # Other apps query via this
         }), 201
     except Exception as e:
         print(f"Error in register_visitor: {e}")
