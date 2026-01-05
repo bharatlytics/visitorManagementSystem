@@ -7,13 +7,13 @@ from datetime import timedelta
 
 from app.db import visit_collection, visitor_collection, entities_collection
 from app.utils import get_current_utc, error_response
-from app.auth import require_auth
+from app.auth import require_auth, require_company_access
 
 vms_analytics_bp = Blueprint('vms_analytics', __name__)
 
 
 @vms_analytics_bp.route('/dashboard', methods=['GET'])
-@require_auth
+@require_company_access
 def get_dashboard_analytics():
     """Get dashboard analytics - total visitors, active visits, visits today, top zones"""
     try:
@@ -89,7 +89,7 @@ def get_dashboard_analytics():
 
 
 @vms_analytics_bp.route('/trends', methods=['GET'])
-@require_auth
+@require_company_access
 def get_visitor_trends():
     """Get visitor trends - last 7 days"""
     try:

@@ -13,7 +13,7 @@ from bson.errors import InvalidId
 from datetime import datetime
 import requests
 
-from app.auth import require_auth
+from app.auth import require_auth, require_company_access
 from app.services import get_data_provider
 from app.db import (
     employees_collection, employee_image_fs, employee_embedding_fs,
@@ -159,7 +159,7 @@ def sync_employee_to_platform(employee_data, company_id, include_images=True):
 
 
 @employees_bp.route('', methods=['GET'])
-@require_auth
+@require_company_access
 def list_employees():
     """
     List employees - respects data residency:
@@ -177,7 +177,7 @@ def list_employees():
 
 
 @employees_bp.route('/<employee_id>', methods=['GET'])
-@require_auth
+@require_company_access
 def get_employee(employee_id):
     """Get single employee by ID"""
     company_id = request.args.get('companyId') or request.company_id
@@ -192,7 +192,7 @@ def get_employee(employee_id):
 
 
 @employees_bp.route('', methods=['POST'])
-@require_auth
+@require_company_access
 def create_employee():
     """
     Create employee with data residency support:
@@ -262,7 +262,7 @@ def create_employee():
 
 
 @employees_bp.route('/register', methods=['POST'])
-@require_auth
+@require_company_access
 def register_employee():
     """
     Register employee with face images - matches faceRecognitionServer format.
@@ -464,7 +464,7 @@ def register_employee():
 
 
 @employees_bp.route('/<employee_id>', methods=['PUT', 'PATCH'])
-@require_auth
+@require_company_access
 def update_employee(employee_id):
     """Update employee with data residency support"""
     data = request.json or {}
@@ -509,7 +509,7 @@ def update_employee(employee_id):
 
 
 @employees_bp.route('/<employee_id>', methods=['DELETE'])
-@require_auth
+@require_company_access
 def delete_employee(employee_id):
     """Soft delete employee"""
     company_id = request.args.get('companyId') or request.company_id
@@ -531,7 +531,7 @@ def delete_employee(employee_id):
 
 
 @employees_bp.route('/<employee_id>/blacklist', methods=['POST'])
-@require_auth
+@require_company_access
 def blacklist_employee(employee_id):
     """Blacklist an employee"""
     data = request.json or {}
@@ -558,7 +558,7 @@ def blacklist_employee(employee_id):
 
 
 @employees_bp.route('/<employee_id>/unblacklist', methods=['POST'])
-@require_auth
+@require_company_access
 def unblacklist_employee(employee_id):
     """Remove employee from blacklist"""
     try:
@@ -581,7 +581,7 @@ def unblacklist_employee(employee_id):
 
 
 @employees_bp.route('/sync-from-platform', methods=['POST'])
-@require_auth
+@require_company_access
 def sync_from_platform():
     """
     Manually sync employees from platform to local VMS database.

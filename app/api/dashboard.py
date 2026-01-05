@@ -6,7 +6,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 
 from app.db import visit_collection, visitor_collection, employee_collection
-from app.auth import require_auth
+from app.auth import require_auth, require_company_access
 from app.utils import get_current_utc, error_response, format_datetime
 from app.services.auto_checkout import run_auto_checkout
 
@@ -14,7 +14,7 @@ dashboard_bp = Blueprint('vms_dashboard', __name__)
 
 
 @dashboard_bp.route('/stats', methods=['GET'])
-@require_auth
+@require_company_access
 def get_dashboard_stats():
     """Get dashboard statistics"""
     try:
@@ -119,7 +119,7 @@ def get_dashboard_stats():
 
 
 @dashboard_bp.route('/trends', methods=['GET'])
-@require_auth
+@require_company_access
 def get_trends():
     """Get visitor trends (last 7 days)"""
     try:
@@ -168,7 +168,7 @@ def get_trends():
 # =====================================
 
 @dashboard_bp.route('/security', methods=['GET'])
-@require_auth
+@require_company_access
 def security_dashboard():
     """Security dashboard - live visitors, alerts, overstays"""
     try:
@@ -249,7 +249,7 @@ def security_dashboard():
 # =====================================
 
 @dashboard_bp.route('/reports/visits', methods=['GET'])
-@require_auth
+@require_company_access
 def export_visits_report():
     """Export visits report"""
     try:
@@ -328,7 +328,7 @@ def export_visits_report():
 
 
 @dashboard_bp.route('/reports/summary', methods=['GET'])
-@require_auth
+@require_company_access
 def get_summary_report():
     """Get summary analytics"""
     try:
@@ -401,7 +401,7 @@ def get_summary_report():
 # =====================================
 
 @dashboard_bp.route('/approvals/<visit_id>/approve', methods=['POST'])
-@require_auth
+@require_company_access
 def approve_visit(visit_id):
     """Approve a pending visit"""
     try:
@@ -427,7 +427,7 @@ def approve_visit(visit_id):
 
 
 @dashboard_bp.route('/approvals/<visit_id>/deny', methods=['POST'])
-@require_auth
+@require_company_access
 def deny_visit(visit_id):
     """Deny a pending visit"""
     try:

@@ -20,7 +20,7 @@ from app.utils import (
     validate_phone_format, parse_datetime, format_datetime, get_current_utc
 )
 from app.config import Config
-from app.auth import require_auth
+from app.auth import require_auth, require_company_access
 from app.services.integration_helper import integration_client
 import requests
 import base64
@@ -134,7 +134,7 @@ def convert_objectids(obj):
 
 
 @visitor_bp.route('/', methods=['GET'])
-@require_auth
+@require_company_access
 def list_visitors():
     """List all visitors for a company"""
     try:
@@ -167,7 +167,7 @@ def list_visitors():
 
 
 @visitor_bp.route('/visits', methods=['GET'])
-@require_auth
+@require_company_access
 def list_visits():
     """List all visits for a company"""
     try:
@@ -255,7 +255,7 @@ def serve_visit_qr(visit_id):
 
 
 @visitor_bp.route('/register', methods=['POST'])
-@require_auth
+@require_company_access
 def register_visitor():
     """Register a new visitor"""
     try:
@@ -436,7 +436,7 @@ def register_visitor():
 
 
 @visitor_bp.route('/update', methods=['PATCH'])
-@require_auth
+@require_company_access
 def update_visitor():
     """Update visitor details"""
     try:
@@ -487,7 +487,7 @@ def update_visitor():
 
 
 @visitor_bp.route('/blacklist', methods=['POST'])
-@require_auth
+@require_company_access
 def blacklist_visitor():
     """Blacklist a visitor"""
     try:
@@ -519,7 +519,7 @@ def blacklist_visitor():
 
 
 @visitor_bp.route('/unblacklist', methods=['POST'])
-@require_auth
+@require_company_access
 def unblacklist_visitor():
     """Remove visitor from blacklist"""
     try:
@@ -562,7 +562,7 @@ def has_overlapping_visit(visitor_id, new_start, new_end):
 
 
 @visitor_bp.route('/<visitorId>/schedule-visit', methods=['POST'])
-@require_auth
+@require_company_access
 def schedule_visit(visitorId):
     """Schedule a visit for a visitor"""
     if not request.is_json:
@@ -708,7 +708,7 @@ def schedule_visit(visitorId):
 
 
 @visitor_bp.route('/visits/<visitId>/check-in', methods=['POST'])
-@require_auth
+@require_company_access
 def check_in(visitId):
     """Check in a visitor"""
     try:
@@ -786,7 +786,7 @@ def check_in(visitId):
 
 
 @visitor_bp.route('/visits/<visitId>/check-out', methods=['POST'])
-@require_auth
+@require_company_access
 def check_out(visitId):
     """Check out a visitor"""
     try:

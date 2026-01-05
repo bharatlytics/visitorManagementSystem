@@ -63,6 +63,80 @@ def require_auth(f):
     return decorated
 
 
+def require_company_access(f):
+    """
+    Authentication + Authorization decorator.
+    
+    Validates that:
+    1. User is authenticated (has valid token/session)
+    2. Requested companyId matches the user's company from token
+    
+    This prevents users from accessing data from other companies.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Step 1: Authenticate user
+        token_company_id = None
+        
+        # Check for Bearer token
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            payload = decode_token(token)
+            if not payload:
+                return jsonify({'error': 'Invalid or expired token'}), 401
+            
+            token_company_id = payload.get('company_id')
+            request.user_id = payload.get('user_id')
+            request.company_id = token_company_id
+        
+        # Check session (fallback for browser)
+        elif session.get('user_id'):
+            token_company_id = session.get('company_id')
+            request.user_id = session['user_id']
+            request.company_id = token_company_id
+        
+        else:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        # Step 2: Extract requested company ID from request
+        requested_company_id = None
+        
+        # Check query parameters (GET requests)
+        if request.args.get('companyId'):
+            requested_company_id = request.args.get('companyId')
+        
+        # Check JSON body (POST/PATCH requests)
+        elif request.is_json and request.json and request.json.get('companyId'):
+            requested_company_id = request.json.get('companyId')
+        
+        # Check form data (multipart/form-data)
+        elif request.form.get('companyId'):
+            requested_company_id = request.form.get('companyId')
+        
+        if not requested_company_id:
+            return jsonify({
+                'error': 'Company ID required',
+                'message': 'companyId must be provided in request'
+            }), 400
+        
+        # Step 3: CRITICAL - Validate company access
+        # Convert both to strings for comparison (handles ObjectId vs string)
+        if str(token_company_id) != str(requested_company_id):
+            return jsonify({
+                'error': 'Access denied',
+                'message': 'You can only access data from your own company',
+                'yourCompanyId': str(token_company_id),
+                'requestedCompanyId': str(requested_company_id)
+            }), 403
+        
+        # Authorization passed - proceed with request
+        return f(*args, **kwargs)
+    
+    return decorated
+
+
+
 # =====================================
 # Local Authentication (Standalone Mode)
 # =====================================
@@ -290,8 +364,14 @@ def platform_sso():
         if request.method == 'GET':
             return redirect('/dashboard.html')
         
+        # For POST requests (mobile/API), return JSON with VMS JWT token
+        # Create VMS-specific JWT token for API access
+        vms_token = create_token(user_id, company_id, expires_hours=24)
+        
         return jsonify({
             'message': 'Platform SSO successful',
+            'vmsToken': vms_token,  # JWT token for mobile API access
+            'expiresIn': 86400,     # 24 hours in seconds
             'companyId': company_id,
             'company': {
                 'id': company_id,

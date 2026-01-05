@@ -9,7 +9,7 @@ import io
 import base64
 
 from app.db import visit_collection, visitor_collection
-from app.auth import require_auth
+from app.auth import require_auth, require_company_access
 from app.services import get_data_provider
 
 # Aliases for compatibility with this file
@@ -32,7 +32,7 @@ def convert_objectids(obj):
 
 
 @visits_bp.route('', methods=['GET'])
-@require_auth
+@require_company_access
 def list_visits():
     """List visits for company"""
     company_id = request.args.get('companyId') or request.company_id
@@ -55,7 +55,7 @@ def list_visits():
 
 
 @visits_bp.route('/<visit_id>', methods=['GET'])
-@require_auth
+@require_company_access
 def get_visit(visit_id):
     """Get single visit"""
     visit = visits_collection.find_one({'_id': ObjectId(visit_id)})
@@ -65,7 +65,7 @@ def get_visit(visit_id):
 
 
 @visits_bp.route('', methods=['POST'])
-@require_auth
+@require_company_access
 def schedule_visit():
     """Schedule a new visit with enterprise fields"""
     data = request.json or {}
@@ -183,7 +183,7 @@ def schedule_visit():
 
 
 @visits_bp.route('/<visit_id>/check-in', methods=['POST'])
-@require_auth
+@require_company_access
 def check_in(visit_id):
     """Check in a visitor with device and method tracking"""
     data = request.json or {}
@@ -216,7 +216,7 @@ def check_in(visit_id):
 
 
 @visits_bp.route('/<visit_id>/check-out', methods=['POST'])
-@require_auth
+@require_company_access
 def check_out(visit_id):
     """Check out a visitor with device and method tracking"""
     data = request.json or {}

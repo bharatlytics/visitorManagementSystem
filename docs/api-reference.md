@@ -1,25 +1,247 @@
 # VMS API Reference - Enterprise Edition
 
-**Version:** 3.0  
+**Version:** 3.1  
 **Base URL:** `http://localhost:5001/api`  
-**Last Updated:** December 2024
+**Last Updated:** January 2026
 
 ---
 
 ## Authentication
 
-All protected endpoints require one of the following:
+VMS supports multiple authentication methods for different client types:
+
+### Browser-Based Access (Dashboard)
 
 | Method | Header | Description |
 |--------|--------|-------------|
-| Session Cookie | `Cookie: session=...` | Browser-based access |
-| Bearer Token | `Authorization: Bearer <JWT>` | API access |
+| Session Cookie | `Cookie: session=...` | Automatic after login |
+| Platform SSO | Query parameter redirect | From main platform |
+
+### API Access (Mobile/Server)
+
+| Method | Header | Description |
+|--------|--------|-------------|
+| Bearer Token | `Authorization: Bearer <JWT>` | VMS JWT token |
 | Platform Token | `X-Platform-Token: <token>` | Platform-to-App calls |
+
+---
+
+## Mobile/Android Authentication (SSO)
+
+### Overview
+
+Mobile apps authenticate using a two-step SSO flow:
+1. Login to main platform → Get platform JWT
+2. Exchange platform JWT for VMS JWT → Access VMS APIs
+
+This is the **same SSO mechanism** used by the dashboard, ensuring consistency and security.
+
+### Authentication Flow
+
+```
+┌─────────────┐
+│ Mobile App  │
+└──────┬──────┘
+       │
+       │ 1. POST /bharatlytics/v1/users/login
+       │    {email, password}
+       ▼
+┌──────────────────────┐
+│  Main Platform       │
+│  (Port 5000)         │
+└──────┬───────────────┘
+       │
+       │ 2. Returns Platform JWT
+       │    {token, user, context}
+       ▼
+┌─────────────┐
+│ Mobile App  │ Stores platform token
+└──────┬──────┘
+       │
+       │ 3. POST /auth/platform-sso
+       │    {token, companyId}
+       ▼
+┌──────────────────────┐
+│  VMS Application     │
+│  (Port 5001)         │
+└──────┬───────────────┘
+       │
+       │ 4. Returns VMS JWT
+       │    {vmsToken, expiresIn, ...}
+       ▼
+┌─────────────┐
+│ Mobile App  │ Stores VMS token
+└──────┬──────┘
+       │
+       │ 5. API Requests
+       │    Authorization: Bearer <vms_token>
+       ▼
+┌──────────────────────┐
+│  VMS APIs            │
+└──────────────────────┘
+```
+
+### Step 1: Platform Login
+
+**Endpoint**: `POST http://localhost:5000/bharatlytics/v1/users/login`
+
+**Request**:
+```json
+{
+  "email": "user@company.com",
+  "password": "your-password"
+}
+```
+
+**Response**:
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "_id": "user_id",
+    "email": "user@company.com",
+    "roles": ["user"]
+  },
+  "context": {
+    "companyId": "company_id",
+    "companyName": "Company Name",
+    "companyLogo": "https://..."
+  }
+}
+```
+
+**Save**: `token` (platform JWT) and `context.companyId`
+
+### Step 2: VMS SSO Authentication
+
+**Endpoint**: `POST /auth/platform-sso`
+
+**Request**:
+```json
+{
+  "token": "<platform_jwt_from_step_1>",
+  "companyId": "<company_id_from_step_1>"
+}
+```
+
+**Response**:
+```json
+{
+  "message": "Platform SSO successful",
+  "vmsToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 86400,
+  "companyId": "company_id",
+  "company": {
+    "id": "company_id",
+    "name": "Company Name",
+    "logo": "https://..."
+  },
+  "user": {
+    "id": "user_id",
+    "email": "user@company.com",
+    "name": "User Name"
+  }
+}
+```
+
+**Save**: `vmsToken` for all subsequent VMS API calls
+
+### Step 3: Using VMS APIs
+
+Include the VMS token in the `Authorization` header for all API requests:
+
+```http
+GET /api/visitors?companyId=<company_id>
+Authorization: Bearer <vms_token>
+```
+
+```http
+POST /api/visitors/register
+Authorization: Bearer <vms_token>
+Content-Type: multipart/form-data
+```
+
+### Android/Kotlin Example
+
+```kotlin
+// 1. Login to Platform
+val platformResponse = platformApi.login(
+    LoginRequest(email = "user@company.com", password = "password")
+)
+val platformToken = platformResponse.token
+val companyId = platformResponse.context.companyId
+
+// 2. Get VMS Token
+val vmsResponse = vmsApi.platformSso(
+    SsoRequest(token = platformToken, companyId = companyId)
+)
+val vmsToken = vmsResponse.vmsToken
+
+// 3. Use VMS APIs
+val visitors = vmsApi.getVisitors(
+    companyId = companyId,
+    authorization = "Bearer $vmsToken"
+)
+```
+
+### Token Management
+
+**Token Expiration**:
+- VMS tokens expire after 24 hours (86400 seconds)
+- Check `expiresIn` field in SSO response
+- Implement token refresh or re-authentication before expiry
+
+**Secure Storage** (Android):
+```kotlin
+// Use EncryptedSharedPreferences
+val masterKey = MasterKey.Builder(context)
+    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+    .build()
+
+val sharedPreferences = EncryptedSharedPreferences.create(
+    context,
+    "vms_auth",
+    masterKey,
+    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+)
+
+sharedPreferences.edit()
+    .putString("vms_token", vmsToken)
+    .putLong("token_expiry", System.currentTimeMillis() + (expiresIn * 1000))
+    .apply()
+```
+
+### Error Handling
+
+| Error | Code | Response | Action |
+|-------|------|----------|--------|
+| Invalid credentials | 401 | `{"message": "Invalid email or password"}` | Verify credentials |
+| Token expired | 401 | `{"error": "SSO token expired"}` | Re-login to platform |
+| Invalid SSO token | 401 | `{"error": "Invalid SSO token"}` | Re-login to platform |
+| Missing token | 401 | `{"error": "Authentication required"}` | Provide VMS token |
+
+### Security Best Practices
+
+> [!IMPORTANT]
+> **Production Deployment**
+> 
+> - ✅ Use HTTPS for all API calls
+> - ✅ Store tokens in secure storage (Android Keystore/EncryptedSharedPreferences)
+> - ✅ Implement certificate pinning
+> - ✅ Clear tokens on logout
+> - ✅ Handle token expiration gracefully
+> - ✅ Never log tokens in production
+
 
 ---
 
 ## Table of Contents
 
+0. [Authentication](#authentication)
+   - [Browser-Based Access](#browser-based-access-dashboard)
+   - [API Access (Mobile/Server)](#api-access-mobileserver)
+   - [Mobile/Android SSO](#mobileandroid-authentication-sso)
 1. [Visitors](#1-visitors)
 2. [Visits](#2-visits)
 3. [Employees](#3-employees)
