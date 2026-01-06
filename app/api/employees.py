@@ -653,10 +653,11 @@ def serve_employee_embedding(embedding_id):
     try:
         from flask import Response, session
         
+        # Get companyId from query params OR from authenticated user's token
         company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
         
         if not company_id:
-            return jsonify({'error': 'companyId is required'}), 400
+            return jsonify({'error': 'companyId is required or must be in auth token'}), 400
         
         # Check residency mode
         data_provider = get_data_provider(company_id)

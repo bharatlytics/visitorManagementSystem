@@ -878,10 +878,11 @@ def serve_visitor_embedding(embedding_id):
     try:
         from flask import session
         
+        # Get companyId from query params OR from authenticated user's token
         company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
         
         if not company_id:
-            return jsonify({'error': 'companyId is required'}), 400
+            return jsonify({'error': 'companyId is required or must be in auth token'}), 400
         
         # Check residency mode
         from app.services import get_data_provider
