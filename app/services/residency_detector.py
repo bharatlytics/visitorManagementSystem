@@ -110,10 +110,18 @@ class ResidencyDetector:
                 'appId': 'vms_app_v1'
             }
             
-            # Add auth token if available
+            # Add auth token
             headers = {}
-            platform_token = session.get('platform_token')
-            if platform_token:
+            
+            # Try to get from session first
+            try:
+                platform_token = session.get('platform_token')
+                if platform_token:
+                    headers['Authorization'] = f'Bearer {platform_token}'
+            except RuntimeError:
+                # No Flask context - generate token directly
+                }
+                platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
                 headers['Authorization'] = f'Bearer {platform_token}'
             
             response = requests.get(url, params=params, headers=headers, timeout=5)
