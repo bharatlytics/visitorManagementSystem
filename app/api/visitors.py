@@ -852,5 +852,78 @@ def check_out(visitId):
         return error_response(str(e), 500)
 
 
+@visitor_bp.route('/embeddings/<embedding_id>', methods=['GET'])
+@require_auth
+def serve_visitor_embedding(embedding_id):
+    """
+    Download visitor embedding file.
+    
+    Behavior depends on data residency:
+    - residency=app: Serve from VMS GridFS (default for visitors)
+    - residency=platform: Proxy to Platform API
+    """
+    try:
+        from flask import session
+        
+        company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
+        
+        if not company_id:
+            return jsonify({'error': 'companyId is required'}), 400
+        
+        # Check residency mode
+        from app.services import get_data_provider
+        data_provider = get_data_provider(company_id)
+        config = data_provider._get_residency_config('visitor')
+        residency_mode = config.get('mode', 'app')
+        
+        print(f"[serve_visitor_embedding] embedding_id={embedding_id}, residency={residency_mode}")
+        
+        if residency_mode == 'platform':
+            # PROXY to Platform
+            platform_token = session.get('platform_token')
+            if not platform_token:
+                return jsonify({'error': 'Platform authentication required'}), 401
+            
+            # Fetch from platform
+            platform_url = f"{Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/{embedding_id}"
+            headers = {'Authorization': f'Bearer {platform_token}'}
+            
+            print(f"[serve_visitor_embedding] Proxying to platform: {platform_url}")
+            response = requests.get(platform_url, headers=headers, stream=True, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"[serve_visitor_embedding] Platform returned {response.status_code}")
+                return jsonify({'error': 'Embedding not found on platform'}), 404
+            
+            # Stream the response back to client
+            return Response(
+                response.iter_content(chunk_size=8192),
+                mimetype='application/octet-stream',
+                headers={
+                    'Content-Disposition': response.headers.get('Content-Disposition', f'attachment; filename={embedding_id}.npy'),
+                    'Content-Type': 'application/octet-stream'
+                }
+            )
+        else:
+            # SERVE from VMS GridFS (default for visitors)
+            print(f"[serve_visitor_embedding] Serving from VMS GridFS")
+            file = visitor_embedding_fs.get(ObjectId(embedding_id))
+            filename = file.filename if hasattr(file, 'filename') else f"{embedding_id}.npy"
+            
+            return Response(
+                file.read(),
+                mimetype='application/octet-stream',
+                headers={
+                    'Content-Disposition': f'attachment; filename={filename}',
+                    'Content-Type': 'application/octet-stream'
+                }
+            )
+    except Exception as e:
+        print(f"[serve_visitor_embedding] Error serving embedding {embedding_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Embedding not found'}), 404
+
+
 # Alias blueprint name for compatibility
 visitors_bp = visitor_bp
