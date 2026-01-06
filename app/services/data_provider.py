@@ -224,6 +224,118 @@ class DataProvider:
             visitors = []
         
         return visitors
+    
+    def get_entities(self, company_id=None, types=None):
+        """
+        Get entities (locations/zones) with residency-aware logic.
+        
+        For dashboard dropdowns - fetches locations mapped to zones.
+        
+        Args:
+            company_id: Company ID
+            types: Optional list of entity types to filter
+            
+        Returns:
+            List of entity records
+        """
+        cid = company_id or self.company_id
+        
+        # For now, locations are typically in app mode (local VMS DB)
+        # But we check residency to be safe
+        residency_mode = ResidencyDetector.get_mode(cid, 'location')
+        print(f"[DataProvider.get_entities] Company {cid}, mode: {residency_mode}")
+        
+        if residency_mode == 'app':
+            # Fetch from VMS local database
+            from app.db import entities_collection
+            
+            try:
+                cid_oid = ObjectId(cid)
+                query = {'$or': [{'companyId': cid_oid}, {'companyId': cid}]}
+            except InvalidId:
+                query = {'companyId': cid}
+            
+            if types:
+                query['type'] = {'$in': types}
+            
+            entities = list(entities_collection.find(query))
+            print(f"[DataProvider] Found {len(entities)} entities in VMS DB")
+            return entities
+        
+        # Platform mode - fetch zones from Platform
+        print(f"[DataProvider] Fetching entities from Platform")
+        
+        mapped_actor_type = self._get_mapped_actor_type(cid, 'location')
+        print(f"[DataProvider] VMS 'location' → Platform '{mapped_actor_type}'")
+        
+        entities = []
+        
+        try:
+            if self.is_connected:
+                entities = platform_client.get_actors_by_type(cid, mapped_actor_type)
+            else:
+                # Use Platform client wrapper
+                from app.services.platform_client_wrapper import PlatformClientWrapper
+                import jwt
+                from datetime import datetime, timedelta
+                
+                platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
+                payload = {
+                    'sub': 'vms_app_v1',
+                    'companyId': cid,
+                    'iss': 'vms',
+                    'exp': datetime.utcnow() + timedelta(hours=1)
+                }
+                platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
+                
+                client = PlatformClientWrapper(platform_token)
+                # Fetch zones from Platform
+                entities = client.get_actors_by_type(cid, mapped_actor_type)
+            
+            print(f"[DataProvider] Fetched {len(entities)} entities from Platform")
+            
+        except Exception as e:
+            print(f"[DataProvider] Error fetching from Platform: {e}")
+            entities = []
+        
+        return entities
+    
+    def get_employee_by_id(self, employee_id, company_id=None):
+        """
+        Get single employee by ID with residency-aware logic.
+        
+        Args:
+            employee_id: Employee ID
+            company_id: Company ID
+            
+        Returns:
+            Employee record or None
+        """
+        cid = company_id or self.company_id
+        
+        residency_mode = ResidencyDetector.get_mode(cid, 'employee')
+        
+        if residency_mode == 'app':
+            # Fetch from VMS DB
+            try:
+                employee = employees_collection.find_one({'_id': ObjectId(employee_id)})
+            except:
+                employee = employees_collection.find_one({'employeeId': employee_id})
+            
+            return employee
+        
+        # Platform mode - fetch from Platform
+        try:
+            employees = self.get_employees(cid)
+            
+            # Find by ID
+            for emp in employees:
+                if str(emp.get('_id')) == str(employee_id) or emp.get('employeeId') == employee_id:
+                    return emp
+        except Exception as e:
+            print(f"[DataProvider] Error fetching employee: {e}")
+        
+        return None
 
 
 def get_data_provider(company_id=None):
