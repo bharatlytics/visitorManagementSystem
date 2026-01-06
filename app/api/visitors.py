@@ -894,9 +894,24 @@ def serve_visitor_embedding(embedding_id):
         
         if residency_mode == 'platform':
             # PROXY to Platform
+            # Try to get platform token from session (browser) or generate one (API/mobile)
             platform_token = session.get('platform_token')
+            
             if not platform_token:
-                return jsonify({'error': 'Platform authentication required'}), 401
+                # For API/mobile access, generate a platform token
+                # The user is already authenticated (passed @require_auth)
+                import jwt
+                from datetime import datetime, timedelta
+                
+                platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
+                payload = {
+                    'sub': 'vms_app_v1',
+                    'companyId': company_id,
+                    'iss': 'vms',
+                    'exp': datetime.utcnow() + timedelta(minutes=5)
+                }
+                platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
+                print(f"[serve_visitor_embedding] Generated platform token for API access")
             
             # Fetch from platform
             platform_url = f"{Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/{embedding_id}"
@@ -906,7 +921,7 @@ def serve_visitor_embedding(embedding_id):
             response = requests.get(platform_url, headers=headers, stream=True, timeout=30)
             
             if response.status_code != 200:
-                print(f"[serve_visitor_embedding] Platform returned {response.status_code}")
+                print(f"[serve_visitor_embedding] Platform returned {response.status_code}: {response.text[:200]}")
                 return jsonify({'error': 'Embedding not found on platform'}), 404
             
             # Stream the response back to client
