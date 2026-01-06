@@ -102,12 +102,12 @@ class ResidencyDetector:
     
     @staticmethod
     def _get_from_platform(company_id: str, entity_type: str = None) -> ResidencyMode:
-        """Get residency mode from Platform API"""
+        """Get residency mode from Platform API manifest"""
         try:
             url = f"{Config.PLATFORM_API_URL}/bharatlytics/integration/v1/installations/mapping"
             params = {
                 'companyId': company_id,
-                'appId': 'vms_app_v1'  # TODO: Get from manifest
+                'appId': 'vms_app_v1'
             }
             
             # Add auth token if available
@@ -121,18 +121,38 @@ class ResidencyDetector:
             if response.status_code == 200:
                 data = response.json()
                 mapping = data.get('mapping', {})
-                residency_mode = mapping.get('residencyMode', {})
                 
+                # Check for entity-specific residency mode
                 if entity_type:
+                    # Look for entity requirements in manifest
+                    entity_requirements = mapping.get('entityRequirements', {})
+                    
+                    # Check if this entity type has a specific source configured
+                    for entity_config in entity_requirements:
+                        if entity_config.get('name', '').lower() == entity_type.lower():
+                            source = entity_config.get('source', 'Platform')
+                            
+                            # Map source to residency mode
+                            if source == 'Platform':
+                                print(f"[ResidencyDetector] Manifest: {entity_type} source=Platform → mode=platform")
+                                return 'platform'
+                            elif source == 'Visitor Management System':
+                                print(f"[ResidencyDetector] Manifest: {entity_type} source=VMS → mode=app")
+                                return 'app'
+                    
+                    # Fallback: check old residencyMode structure
+                    residency_mode = mapping.get('residencyMode', {})
                     actor_key = f'actor_{entity_type}'
                     actor_config = residency_mode.get(actor_key, {})
-                    mode = actor_config.get('mode', 'platform')
-                else:
-                    # Get general mode
-                    mode = residency_mode.get('mode', 'platform')
+                    mode = actor_config.get('mode')
+                    
+                    if mode:
+                        print(f"[ResidencyDetector] Platform API returned mode={mode} for {entity_type}")
+                        return mode
                 
-                print(f"[ResidencyDetector] Platform API returned mode={mode}")
-                return mode
+                # No entity-specific config found
+                return None
+                
         except Exception as e:
             print(f"[ResidencyDetector] Platform API failed: {e}")
             return None
