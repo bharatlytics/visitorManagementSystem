@@ -668,16 +668,23 @@ VMS fetches employee data respecting the **Data Mapping** configuration from the
 GET /api/employees?companyId={companyId}
 ```
 
-**Data Source Logic:**
+**Data Source Logic (Residency-Aware):**
 
-| Mapping Mode | Source | Description |
+| Residency Mode | Source | Description |
 |--------------|--------|-------------|
 | `platform` | Platform API | Fetches actors of the **mapped type** from Platform |
 | `app` | Local VMS Database | Returns VMS's local employee records |
 
+**How Residency is Determined:**
+
+1. **Check ResidencyDetector** for company's employee residency mode
+2. **Safe Defaults:**
+   - Employees: `platform` (if company not in VMS DB)
+   - Visitors: `app` (always stay in VMS for safety)
+
 **Actor Type Mapping:**
 
-The platform mapping configuration determines WHICH actor type to fetch. For example:
+The manifest configuration determines WHICH Platform actor type to fetch. For example:
 
 ```json
 {
@@ -687,37 +694,47 @@ The platform mapping configuration determines WHICH actor type to fetch. For exa
 }
 ```
 
-This means VMS's "employee" concept maps to Platform's "shift_supervisor" actor type. VMS will fetch shift_supervisors, not employees.
+This means VMS's "employee" concept maps to Platform's "shift_supervisor" actor type. VMS will fetch shift_supervisors from Platform, not employees.
 
 **Response:**
 ```json
-{
-  "employees": [
-    {
-      "_id": "emp_12345",
-      "employeeId": "EMP001",
-      "employeeName": "Jane Smith",
-      "email": "jane.smith@company.com",
-      "phone": "+919876543210",
-      "department": "Engineering",
-      "designation": "Manager",
-      "actorType": "shift_supervisor"
-    }
-  ],
-  "source": "platform",
-  "mappedType": "shift_supervisor"
-}
+[
+  {
+    "_id": "emp_12345",
+    "employeeId": "EMP001",
+    "employeeName": "Jane Smith",
+    "email": "jane.smith@company.com",
+    "phone": "+919876543210",
+    "department": "Engineering",
+    "designation": "Manager",
+    "actorType": "shift_supervisor"
+  }
+]
 ```
 
 ### 3.2 Data Flow
 
 ```
-VMS Request → _get_full_mapping_config() 
-            → Fetch mapping from Platform API
-            → Determine: mode (platform/app), actorType (mapped type)
-            → If mode=platform: Call platform_client.get_actors_by_type(actorType)
-            → If mode=app: Query local employees_collection
+VMS Request → ResidencyDetector.get_mode(companyId, 'employee')
+            → Returns: 'platform' or 'app'
+            
+If mode = 'app':
+  → Fetch from VMS local database
+  → Query: employees_collection.find({companyId})
+  → Return local employee records
+
+If mode = 'platform':
+  → Check manifest for actor mapping
+  → Get mapped actor type (e.g., 'shift_supervisor')
+  → Call Platform API: GET /actors?actorType={mapped_type}
+  → Return Platform actors (transformed to VMS format)
 ```
+
+**Key Points:**
+- ✅ Always checks residency FIRST
+- ✅ Never hits Platform API without checking residency
+- ✅ Respects manifest-based actor type mappings
+- ✅ No fallback to VMS DB in platform mode (prevents data duplication)
 
 ---
 
