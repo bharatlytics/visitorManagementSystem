@@ -271,7 +271,29 @@ class DataProvider:
         except Exception as e:
             print(f"[_get_full_mapping_config] Error: {e}")
         
-        # Default
+        # Default fallback
+        # If company doesn't exist in VMS database, assume platform residency
+        # This handles cases where VMS is purely a proxy to Platform
+        try:
+            from app.db import companies_collection
+            from bson import ObjectId
+            
+            company_id = session.get('company_id') or self.company_id
+            if company_id:
+                # Try to find company in VMS database
+                try:
+                    company = companies_collection.find_one({'_id': ObjectId(company_id)})
+                except:
+                    company = companies_collection.find_one({'_id': company_id})
+                
+                if not company:
+                    # Company doesn't exist in VMS → must be platform-only
+                    print(f"[_get_full_mapping_config] Company {company_id} not in VMS DB → defaulting to platform mode")
+                    return {'mode': 'platform', 'mapped_type': actor_type, 'syncStatus': 'synced'}
+        except Exception as e:
+            print(f"[_get_full_mapping_config] Error checking company: {e}")
+        
+        # Original default logic
         if self.is_connected:
             return {'mode': 'platform', 'mapped_type': actor_type, 'syncStatus': 'synced'}
         else:
