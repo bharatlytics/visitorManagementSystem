@@ -21,48 +21,84 @@ class ResidencyDetector:
     @staticmethod
     def get_mode(company_id: str, entity_type: str = None) -> ResidencyMode:
         """
-        Get residency mode for a company.
+        Get residency mode for a company with SAFE DEFAULTS.
+        
+        CRITICAL SAFETY RULES:
+        1. Visitors ALWAYS default to 'app' (stay in VMS)
+        2. Employees default to 'platform' only if explicitly configured
+        3. Never delete data without explicit confirmation
         
         Priority:
-        1. Check Platform API for configuration
+        1. Check Platform API for explicit configuration
         2. Check local installations table
         3. Check if company exists in VMS DB
-        4. Default: 'platform'
+        4. Apply SAFE entity-specific defaults
         
         Args:
             company_id: Company ID
-            entity_type: Optional entity type ('employee', 'visitor')
+            entity_type: REQUIRED - 'employee' or 'visitor'
             
         Returns:
             'platform' or 'app'
         """
-        # Try to get from Platform API
+        # SAFETY CHECK: Require entity_type
+        if not entity_type:
+            print(f"[ResidencyDetector] WARNING: No entity_type provided, defaulting to 'app' for safety")
+            return 'app'
+        
+        # SAFETY RULE 1: Visitors ALWAYS stay in VMS unless explicitly configured otherwise
+        if entity_type == 'visitor':
+            print(f"[ResidencyDetector] Visitor entity - checking for explicit platform configuration")
+        
+        # Try to get from Platform API (most authoritative)
         try:
             mode = ResidencyDetector._get_from_platform(company_id, entity_type)
             if mode:
+                print(f"[ResidencyDetector] Platform API returned mode={mode} for {entity_type}")
                 return mode
         except Exception as e:
             print(f"[ResidencyDetector] Platform API error: {e}")
         
-        # Try local installations
+        # Try local installations (second priority)
         try:
-            mode = ResidencyDetector._get_from_installations(company_id)
+            mode = ResidencyDetector._get_from_installations(company_id, entity_type)
             if mode:
+                print(f"[ResidencyDetector] Local installation mode={mode} for {entity_type}")
                 return mode
         except Exception as e:
             print(f"[ResidencyDetector] Installations check error: {e}")
         
         # Check if company exists in VMS DB
+        company_exists = False
         try:
-            if ResidencyDetector._company_exists_in_vms(company_id):
+            company_exists = ResidencyDetector._company_exists_in_vms(company_id)
+            if company_exists:
                 print(f"[ResidencyDetector] Company {company_id} found in VMS DB → app mode")
                 return 'app'
         except Exception as e:
             print(f"[ResidencyDetector] VMS DB check error: {e}")
         
-        # Default to platform
-        print(f"[ResidencyDetector] Company {company_id} not in VMS DB → platform mode (default)")
-        return 'platform'
+        # SAFE DEFAULTS based on entity type
+        if entity_type == 'visitor':
+            # SAFETY RULE: Visitors default to 'app' (stay in VMS)
+            # This prevents accidental deletion of visitor data
+            print(f"[ResidencyDetector] SAFE DEFAULT: Visitors stay in VMS (app mode)")
+            return 'app'
+        
+        elif entity_type == 'employee':
+            # Employees can default to platform if company not in VMS
+            # This is safe because employees are typically managed centrally
+            if not company_exists:
+                print(f"[ResidencyDetector] Company {company_id} not in VMS DB → platform mode for employees")
+                return 'platform'
+            else:
+                print(f"[ResidencyDetector] Company {company_id} in VMS DB → app mode for employees")
+                return 'app'
+        
+        else:
+            # Unknown entity type - safest is 'app'
+            print(f"[ResidencyDetector] WARNING: Unknown entity_type '{entity_type}' → defaulting to 'app' for safety")
+            return 'app'
     
     @staticmethod
     def _get_from_platform(company_id: str, entity_type: str = None) -> ResidencyMode:
@@ -102,7 +138,7 @@ class ResidencyDetector:
             return None
     
     @staticmethod
-    def _get_from_installations(company_id: str) -> ResidencyMode:
+    def _get_from_installations(company_id: str, entity_type: str = None) -> ResidencyMode:
         """Get residency mode from local installations table"""
         from app.db import db
         
