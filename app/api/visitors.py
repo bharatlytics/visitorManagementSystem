@@ -159,7 +159,7 @@ def list_visitors():
         visitors = convert_objectids(visitors)
         
         # Add downloadUrl to embeddings
-        from app.utils.embedding_helpers import format_embedding_response
+        from app.utils import format_embedding_response
         base_url = request.url_root.rstrip('/')
         
         for visitor in visitors:
