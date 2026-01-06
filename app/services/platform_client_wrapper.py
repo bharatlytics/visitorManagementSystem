@@ -159,6 +159,32 @@ class PlatformClientWrapper:
         print(f"[PlatformClient] Deleting visitor {visitor_id} from Platform")
         return self._make_request('DELETE', endpoint)
     
+    # ==================== Generic Actor Methods ====================
+    
+    def get_actors_by_type(self, company_id: str, actor_type: str) -> List[Dict[str, Any]]:
+        """
+        Fetch actors of any type from Platform.
+        
+        This is used for manifest-based actor mapping.
+        Example: VMS 'location' → Platform 'organization'
+        
+        Args:
+            company_id: Company ID
+            actor_type: Platform actor type (e.g., 'employee', 'organization', 'zone')
+            
+        Returns:
+            List of actors from Platform
+        """
+        endpoint = '/bharatlytics/v1/actors'
+        params = {
+            'companyId': company_id,
+            'actorType': actor_type
+        }
+        
+        print(f"[PlatformClient] Fetching actors of type '{actor_type}' from Platform for company {company_id}")
+        result = self._make_request('GET', endpoint, params=params)
+        return result if isinstance(result, list) else []
+    
     # ==================== Embedding Methods ====================
     
     def upload_embedding(self, actor_id: str, embedding_file, model: str = 'buffalo_l'):
