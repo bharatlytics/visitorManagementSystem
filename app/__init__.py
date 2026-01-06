@@ -111,6 +111,7 @@ def sync_manifest_to_platform():
                 print(f"[VMS] Manifest synced to Platform: v{manifest.get('version')}")
             else:
                 print(f"[VMS] Manifest sync failed: {response.status_code}")
+                print(f"[VMS] Response: {response.text[:500]}")  # Show error details
                 
         except Exception as e:
             print(f"[VMS] Manifest sync error (Platform may be down): {e}")
