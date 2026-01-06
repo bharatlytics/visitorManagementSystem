@@ -282,7 +282,10 @@ def create_employee():
 @require_company_access
 def register_employee():
     """
-    Register employee with face images - matches faceRecognitionServer format.
+    Register employee with face images - RESIDENCY-AWARE.
+    
+    Platform mode: Creates employee directly on Platform (no VMS DB copy)
+    App mode: Creates employee only in VMS DB (no Platform interaction)
     
     Accepts multipart/form-data with:
     - companyId (required)
@@ -295,6 +298,10 @@ def register_employee():
     - front/side OR left/right/center - face images
     """
     try:
+        from app.services.residency_detector import ResidencyDetector
+        from app.services.platform_client_wrapper import PlatformClientWrapper, PlatformDownError
+        from app.services.sync_queue import SyncQueue
+        
         # Validate required fields
         required_fields = ['companyId', 'employeeId', 'employeeName']
         valid, msg = validate_required_fields(request.form, required_fields)
@@ -323,131 +330,191 @@ def register_employee():
             if not validate_phone_format(data['employeeMobile']):
                 return error_response('Invalid phone number format.', 400)
         
-        # Check for duplicate employeeId
-        existing = employees_collection.find_one({
-            'employeeId': data['employeeId'],
-            'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id
-        })
-        if existing:
-            return error_response(f"Employee with ID {data['employeeId']} already exists.", 409)
+        # ========== RESIDENCY-AWARE LOGIC ==========
+        residency_mode = ResidencyDetector.get_mode(company_id, 'employee')
+        print(f"[register_employee] Residency mode: {residency_mode}")
         
-        # Process face images (support both naming conventions)
-        face_positions_v1 = ['front', 'side']  # faceRecognitionServer format
-        face_positions_v2 = ['left', 'right', 'center']  # VMS visitor format
+        if residency_mode == 'platform':
+            # ========== PLATFORM MODE ==========
+            # Send directly to Platform, NO VMS DB storage
+            
+            # Process images (Platform expects multipart upload)
+            # For now, we'll send employee data and queue image upload separately
+            # TODO: Implement image upload to Platform
+            
+            try:
+                # Get platform token from session or generate one
+                from flask import session
+                import jwt
+                from datetime import datetime, timedelta
+                
+                platform_token = session.get('platform_token')
+                if not platform_token:
+                    # Generate token for API access
+                    platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
+                    payload = {
+                        'sub': 'vms_app_v1',
+                        'companyId': company_id,
+                        'iss': 'vms',
+                        'exp': datetime.utcnow() + timedelta(hours=1)
+                    }
+                    platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
+                
+                # Create employee on Platform
+                client = PlatformClientWrapper(platform_token)
+                result = client.create_employee(company_id, data)
+                
+                print(f"[register_employee] Created employee on Platform: {result}")
+                
+                return jsonify({
+                    'message': 'Employee registered successfully on Platform',
+                    'employee': result,
+                    'residencyMode': 'platform'
+                }), 201
+                
+            except PlatformDownError as e:
+                # Platform is down, queue for retry
+                print(f"[register_employee] Platform down, queueing: {e}")
+                queue_id = SyncQueue.enqueue(
+                    operation='create',
+                    entity_type='employee',
+                    entity_id=data['employeeId'],
+                    data=data,
+                    company_id=company_id
+                )
+                
+                return jsonify({
+                    'message': 'Platform temporarily unavailable. Employee queued for registration.',
+                    'queueId': queue_id,
+                    'status': 'queued',
+                    'residencyMode': 'platform'
+                }), 202
         
-        has_images = (
-            any(pos in request.files and request.files[pos] for pos in face_positions_v1) or
-            any(pos in request.files and request.files[pos] for pos in face_positions_v2)
-        )
-        
-        image_dict = {}
-        if has_images:
-            for position in face_positions_v1 + face_positions_v2:
-                if position in request.files:
-                    face_image = request.files[position]
-                    if face_image.filename:
-                        image_id = employee_image_fs.put(
-                            face_image.stream,
-                            filename=f"{company_id}_{data['employeeId']}_{position}.jpg",
+        else:
+            # ========== APP MODE ==========
+            # Store ONLY in VMS DB, NO Platform interaction
+            
+            # Check for duplicate employeeId in VMS DB
+            existing = employees_collection.find_one({
+                'employeeId': data['employeeId'],
+                'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id
+            })
+            if existing:
+                return error_response(f"Employee with ID {data['employeeId']} already exists.", 409)
+            
+            # Process face images
+            face_positions_v1 = ['front', 'side']
+            face_positions_v2 = ['left', 'right', 'center']
+            
+            has_images = (
+                any(pos in request.files and request.files[pos] for pos in face_positions_v1) or
+                any(pos in request.files and request.files[pos] for pos in face_positions_v2)
+            )
+            
+            image_dict = {}
+            if has_images:
+                for position in face_positions_v1 + face_positions_v2:
+                    if position in request.files:
+                        face_image = request.files[position]
+                        if face_image.filename:
+                            image_id = employee_image_fs.put(
+                                face_image.stream,
+                                filename=f"{company_id}_{data['employeeId']}_{position}.jpg",
+                                metadata={
+                                    'companyId': company_id,
+                                    'employeeId': data['employeeId'],
+                                    'type': f'face_{position}',
+                                    'timestamp': get_current_utc()
+                                }
+                            )
+                            image_dict[position] = image_id
+            
+            # Build employee document
+            employee = {
+                '_id': ObjectId(),
+                'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                'employeeId': data['employeeId'],
+                'employeeName': data['employeeName'],
+                'email': data.get('employeeEmail'),
+                'phone': data.get('employeeMobile'),
+                'department': data.get('department'),
+                'designation': data.get('employeeDesignation') or data.get('designation'),
+                'gender': data.get('gender'),
+                'joiningDate': data.get('joiningDate'),
+                'employeeReportingId': data.get('employeeReportingId'),
+                'status': data.get('status', 'active'),
+                'blacklisted': False,
+                'employeeImages': image_dict,
+                'employeeEmbeddings': {},
+                'createdAt': get_current_utc(),
+                'updatedAt': get_current_utc(),
+                'sourceApp': 'vms_app_v1',
+                'residencyMode': 'app'
+            }
+            
+            # Insert employee into VMS DB
+            employees_collection.insert_one(employee)
+            employee_id = employee['_id']
+            
+            # Queue embedding jobs if images provided
+            embeddings_dict = {}
+            if has_images:
+                for model in Config.ALLOWED_MODELS:
+                    job = {
+                        'employeeId': employee_id,
+                        'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                        'model': model,
+                        'status': 'queued',
+                        'createdAt': get_current_utc(),
+                        'params': {}
+                    }
+                    embedding_jobs_collection.insert_one(job)
+                    embeddings_dict[model] = {'status': 'queued', 'queuedAt': get_current_utc()}
+                
+                employees_collection.update_one(
+                    {'_id': employee_id},
+                    {'$set': {'employeeEmbeddings': embeddings_dict}}
+                )
+            
+            # Handle pre-computed embedding upload
+            embedding_attached = request.form.get('embeddingAttached', 'false').lower() == 'true'
+            embedding_version = request.form.get('embeddingVersion')
+            if embedding_attached and 'embedding' in request.files:
+                if embedding_version and embedding_version in Config.ALLOWED_MODELS:
+                    embedding_file = request.files['embedding']
+                    try:
+                        file_content = embedding_file.read()
+                        emb_id = employee_embedding_fs.put(
+                            file_content,
+                            filename=f"{company_id}_{data['employeeId']}_{embedding_version}.npy",
                             metadata={
                                 'companyId': company_id,
-                                'employeeId': data['employeeId'],
-                                'type': f'face_{position}',
+                                'employeeId': str(employee_id),
+                                'model': embedding_version,
+                                'type': 'embedding',
                                 'timestamp': get_current_utc()
                             }
                         )
-                        image_dict[position] = image_id
-        
-        # Build employee document
-        employee = {
-            '_id': ObjectId(),
-            'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
-            'employeeId': data['employeeId'],
-            'employeeName': data['employeeName'],
-            'email': data.get('employeeEmail'),
-            'phone': data.get('employeeMobile'),
-            'department': data.get('department'),
-            'designation': data.get('employeeDesignation') or data.get('designation'),
-            'gender': data.get('gender'),
-            'joiningDate': data.get('joiningDate'),
-            'employeeReportingId': data.get('employeeReportingId'),
-            'status': data.get('status', 'active'),
-            'blacklisted': False,
-            'employeeImages': image_dict,
-            'employeeEmbeddings': {},
-            'createdAt': get_current_utc(),
-            'updatedAt': get_current_utc(),
-            'sourceApp': 'vms_app_v1'
-        }
-        
-        # Insert employee
-        employees_collection.insert_one(employee)
-        employee_id = employee['_id']
-        
-        # Queue embedding jobs if images provided
-        embeddings_dict = {}
-        if has_images:
-            for model in Config.ALLOWED_MODELS:
-                job = {
-                    'employeeId': employee_id,
-                    'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
-                    'model': model,
-                    'status': 'queued',
-                    'createdAt': get_current_utc(),
-                    'params': {}
-                }
-                embedding_jobs_collection.insert_one(job)
-                embeddings_dict[model] = {'status': 'queued', 'queuedAt': get_current_utc()}
-            
-            employees_collection.update_one(
-                {'_id': employee_id},
-                {'$set': {'employeeEmbeddings': embeddings_dict}}
-            )
-        
-        # Handle pre-computed embedding upload
-        embedding_attached = request.form.get('embeddingAttached', 'false').lower() == 'true'
-        embedding_version = request.form.get('embeddingVersion')
-        if embedding_attached and 'embedding' in request.files:
-            if embedding_version and embedding_version in Config.ALLOWED_MODELS:
-                embedding_file = request.files['embedding']
-                try:
-                    file_content = embedding_file.read()
-                    emb_id = employee_embedding_fs.put(
-                        file_content,
-                        filename=f"{company_id}_{data['employeeId']}_{embedding_version}.npy",
-                        metadata={
-                            'companyId': company_id,
-                            'employeeId': str(employee_id),
+                        
+                        emb_entry = {
+                            'embeddingId': str(emb_id),
                             'model': embedding_version,
-                            'type': 'embedding',
-                            'timestamp': get_current_utc()
+                            'status': 'done',
+                            'finishedAt': get_current_utc()
                         }
-                    )
-                    
-                    emb_entry = {
-                        'embeddingId': str(emb_id),
-                        'model': embedding_version,
-                        'status': 'done',
-                        'finishedAt': get_current_utc()
-                    }
-                    embeddings_dict[embedding_version] = emb_entry
-                    
-                    employees_collection.update_one(
-                        {'_id': employee_id},
-                        {'$set': {f'employeeEmbeddings.{embedding_version}': emb_entry}}
-                    )
-                except Exception as e:
-                    print(f"Error storing embedding: {e}")
-        
-        # Sync to platform as employee actor (always sync when images present)
-        residency_mode = get_residency_mode(company_id)
-        platform_sync_result = None
-        if has_images or residency_mode == 'platform':
-            # Sync with images so platform embedding worker can process
-            platform_sync_result = sync_employee_to_platform(employee, company_id, include_images=has_images)
-            print(f"[register_employee] Platform sync result: {platform_sync_result}")
-        
-        # Publish event
+                        embeddings_dict[embedding_version] = emb_entry
+                        
+                        employees_collection.update_one(
+                            {'_id': employee_id},
+                            {'$set': {f'employeeEmbeddings.{embedding_version}': emb_entry}}
+                        )
+                    except Exception as e:
+                        print(f"Error storing embedding: {e}")
+            
+            # NO Platform sync in app mode
+            print(f"[register_employee] Created employee in VMS DB (app mode)")
+            
+            # Publish event
         integration_client.publish_event('employee.registered', {
             'employeeId': str(employee_id),
             'employeeCode': data['employeeId'],
