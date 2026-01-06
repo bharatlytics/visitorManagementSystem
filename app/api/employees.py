@@ -173,7 +173,24 @@ def list_employees():
     employees = data_provider.get_employees(company_id)
     
     print(f"[API/employees] Got {len(employees)} employees")
-    return jsonify(convert_objectids(employees))
+    
+    # Convert ObjectIds
+    employees = convert_objectids(employees)
+    
+    # Add downloadUrl to embeddings
+    from app.utils.embedding_helpers import format_embedding_response
+    base_url = request.url_root.rstrip('/')
+    
+    for employee in employees:
+        if 'employeeEmbeddings' in employee and employee['employeeEmbeddings']:
+            # Format embeddings with download URLs
+            employee['employeeEmbeddings'] = format_embedding_response(
+                employee['employeeEmbeddings'],
+                'employee',
+                base_url
+            )
+    
+    return jsonify(employees)
 
 
 @employees_bp.route('/<employee_id>', methods=['GET'])

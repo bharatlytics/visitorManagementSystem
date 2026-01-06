@@ -157,6 +157,19 @@ def list_visitors():
         
         # Convert all ObjectIds recursively
         visitors = convert_objectids(visitors)
+        
+        # Add downloadUrl to embeddings
+        from app.utils.embedding_helpers import format_embedding_response
+        base_url = request.url_root.rstrip('/')
+        
+        for visitor in visitors:
+            if 'visitorEmbeddings' in visitor and visitor['visitorEmbeddings']:
+                # Format embeddings with download URLs
+                visitor['visitorEmbeddings'] = format_embedding_response(
+                    visitor['visitorEmbeddings'],
+                    'visitor',
+                    base_url
+                )
 
         return jsonify({'visitors': visitors}), 200
     except Exception as e:
