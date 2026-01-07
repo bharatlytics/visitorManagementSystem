@@ -120,6 +120,19 @@ class ResidencyDetector:
                     headers['Authorization'] = f'Bearer {platform_token}'
             except RuntimeError:
                 # No Flask context - generate token directly
+                pass
+            
+            # If no session token, generate one
+            if 'Authorization' not in headers:
+                import jwt
+                from datetime import timedelta
+                
+                platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
+                payload = {
+                    'sub': 'vms_app_v1',
+                    'companyId': company_id,
+                    'iss': 'vms',
+                    'exp': datetime.utcnow() + timedelta(hours=1)
                 }
                 platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
                 headers['Authorization'] = f'Bearer {platform_token}'
