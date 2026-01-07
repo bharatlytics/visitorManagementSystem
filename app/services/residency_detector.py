@@ -95,6 +95,16 @@ class ResidencyDetector:
                 print(f"[ResidencyDetector] Company {company_id} in VMS DB → app mode for employees")
                 return 'app'
         
+        elif entity_type == 'location':
+            # Locations/zones typically come from Platform (per manifest configuration)
+            # Default to platform mode since entities are managed centrally
+            if not company_exists:
+                print(f"[ResidencyDetector] Company {company_id} not in VMS DB → platform mode for locations")
+                return 'platform'
+            else:
+                print(f"[ResidencyDetector] Company {company_id} in VMS DB → app mode for locations")
+                return 'app'
+        
         else:
             # Unknown entity type - safest is 'app'
             print(f"[ResidencyDetector] WARNING: Unknown entity_type '{entity_type}' → defaulting to 'app' for safety")
