@@ -19,51 +19,60 @@ class ResidencyDetector:
     """Detects and manages data residency mode"""
     
     @staticmethod
-    def get_mode(company_id: str, entity_type: str = None) -> ResidencyMode:
+    def get_mode(company_id: str, data_type: str = None) -> ResidencyMode:
         """
         Get residency mode for a company with SAFE DEFAULTS.
         
+        IMPORTANT: Actors and Entities are different concepts:
+        - ACTORS (people): 'employee', 'visitor'
+        - ENTITIES (things/places): 'location', 'zone', 'organization'
+        
         CRITICAL SAFETY RULES:
         1. Visitors ALWAYS default to 'app' (stay in VMS)
-        2. Employees default to 'platform' only if explicitly configured
-        3. Never delete data without explicit confirmation
+        2. Employees default to 'platform' only if company not in VMS DB
+        3. Entities (locations) default to 'platform' (come from Platform)
         
         Priority:
-        1. Check Platform API for explicit configuration
+        1. Check Platform API/manifest for explicit configuration
         2. Check local installations table
         3. Check if company exists in VMS DB
-        4. Apply SAFE entity-specific defaults
+        4. Apply SAFE type-specific defaults
         
         Args:
             company_id: Company ID
-            entity_type: REQUIRED - 'employee' or 'visitor'
+            data_type: REQUIRED - Actor type ('employee', 'visitor') or 
+                       Entity type ('location', 'zone', 'organization')
             
         Returns:
             'platform' or 'app'
         """
-        # SAFETY CHECK: Require entity_type
-        if not entity_type:
-            print(f"[ResidencyDetector] WARNING: No entity_type provided, defaulting to 'app' for safety")
+        # SAFETY CHECK: Require data_type
+        if not data_type:
+            print(f"[ResidencyDetector] WARNING: No data_type provided, defaulting to 'app' for safety")
             return 'app'
         
+        # Check if this is an ACTOR or ENTITY
+        ACTOR_TYPES = ['employee', 'visitor']
+        ENTITY_TYPES = ['location', 'zone', 'organization', 'plant', 'building', 'gate']
+        
         # SAFETY RULE 1: Visitors ALWAYS stay in VMS unless explicitly configured otherwise
-        if entity_type == 'visitor':
-            print(f"[ResidencyDetector] Visitor entity - checking for explicit platform configuration")
+        if data_type == 'visitor':
+            print(f"[ResidencyDetector] Actor 'visitor' - checking for explicit platform configuration")
         
         # Try to get from Platform API (most authoritative)
         try:
-            mode = ResidencyDetector._get_from_platform(company_id, entity_type)
+            mode = ResidencyDetector._get_from_platform(company_id, data_type)
             if mode:
-                print(f"[ResidencyDetector] Platform API returned mode={mode} for {entity_type}")
+                print(f"[ResidencyDetector] Platform API returned mode={mode} for {data_type}")
                 return mode
         except Exception as e:
             print(f"[ResidencyDetector] Platform API error: {e}")
         
         # Try local installations (second priority)
         try:
-            mode = ResidencyDetector._get_from_installations(company_id, entity_type)
+            mode = ResidencyDetector._get_from_installations(company_id, data_type)
             if mode:
-                print(f"[ResidencyDetector] Local installation mode={mode} for {entity_type}")
+                print(f"[ResidencyDetector] Local installation mode={mode} for {data_type}")
                 return mode
         except Exception as e:
             print(f"[ResidencyDetector] Installations check error: {e}")
@@ -78,36 +87,35 @@ class ResidencyDetector:
         except Exception as e:
             print(f"[ResidencyDetector] VMS DB check error: {e}")
         
-        # SAFE DEFAULTS based on entity type
-        if entity_type == 'visitor':
+        # SAFE DEFAULTS based on data type (ACTORS vs ENTITIES)
+        
+        # ACTORS (people)
+        if data_type == 'visitor':
             # SAFETY RULE: Visitors default to 'app' (stay in VMS)
             # This prevents accidental deletion of visitor data
-            print(f"[ResidencyDetector] SAFE DEFAULT: Visitors stay in VMS (app mode)")
+            print(f"[ResidencyDetector] SAFE DEFAULT: Actor 'visitor' stays in VMS (app mode)")
             return 'app'
         
-        elif entity_type == 'employee':
+        elif data_type == 'employee':
             # Employees can default to platform if company not in VMS
             # This is safe because employees are typically managed centrally
             if not company_exists:
-                print(f"[ResidencyDetector] Company {company_id} not in VMS DB → platform mode for employees")
+                print(f"[ResidencyDetector] Actor 'employee': Company not in VMS DB → platform mode")
                 return 'platform'
             else:
-                print(f"[ResidencyDetector] Company {company_id} in VMS DB → app mode for employees")
+                print(f"[ResidencyDetector] Actor 'employee': Company in VMS DB → app mode")
                 return 'app'
         
-        elif entity_type == 'location':
-            # Locations/zones typically come from Platform (per manifest configuration)
-            # Default to platform mode since entities are managed centrally
-            if not company_exists:
-                print(f"[ResidencyDetector] Company {company_id} not in VMS DB → platform mode for locations")
-                return 'platform'
-            else:
-                print(f"[ResidencyDetector] Company {company_id} in VMS DB → app mode for locations")
-                return 'app'
+        # ENTITIES (things/places) - always from Platform per manifest
+        elif data_type in ENTITY_TYPES:
+            # Entities (location, zone, organization, etc.) come from Platform
+            # Per manifest configuration, VMS reads entities from Platform
+            print(f"[ResidencyDetector] Entity '{data_type}': Always from Platform (platform mode)")
+            return 'platform'
         
         else:
-            # Unknown entity type - safest is 'app'
-            print(f"[ResidencyDetector] WARNING: Unknown entity_type '{entity_type}' → defaulting to 'app' for safety")
+            # Unknown data type - safest is 'app'
+            print(f"[ResidencyDetector] WARNING: Unknown data_type '{data_type}' → defaulting to 'app' for safety")
             return 'app'
     
     @staticmethod
