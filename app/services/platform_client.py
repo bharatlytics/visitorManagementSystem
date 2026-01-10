@@ -76,11 +76,11 @@ class PlatformClient:
         """
         cid = company_id or self._get_company_id()
         
-        # Pass actorType to server for proper filtering based on data mapping
-        # This ensures that when mapped to 'shift_supervisor', we only get shift supervisors
+        # Pass actorType and appId to server for proper filtering based on data mapping
         data = self._request('GET', '/bharatlytics/v1/actors', params={
             'companyId': cid,
-            'actorType': actor_type  # Let server filter by actor type
+            'actorType': actor_type,
+            'appId': 'vms_app_v1'  # For manifest-based filtering
         })
         if not data:
             return []
@@ -107,13 +107,22 @@ class PlatformClient:
     def get_entities(self, company_id=None, types=None):
         """Get entities from platform"""
         cid = company_id or self._get_company_id()
-        data = self._request('GET', '/bharatlytics/v1/entities', params={'companyId': cid})
+        params = {
+            'companyId': cid,
+            'appId': 'vms_app_v1'  # Required for manifest-based filtering
+        }
+        
+        # Add entity types if specified
+        if types:
+            params['entityType'] = ','.join(types) if isinstance(types, list) else types
+        
+        data = self._request('GET', '/bharatlytics/v1/entities', params=params)
         if not data:
             return []
         
         entities = data if isinstance(data, list) else []
         
-        # Filter by types if specified
+        # Client-side filter as backup (platform should already filter)
         if types:
             entities = [e for e in entities if e.get('type') in types]
         

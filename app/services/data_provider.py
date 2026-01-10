@@ -154,6 +154,46 @@ class DataProvider:
         # Default: 1:1 mapping (VMS entity type = Platform actor type)
         return vms_entity_type
     
+    def _get_mapped_entity_types(self, company_id, vms_entity_type):
+        """
+        Get Platform entity types from manifest mapping.
+        
+        Checks manifest entityMappings to see which Platform entity types 
+        map to VMS entity type.
+        Example: VMS 'location' → Platform ['organization']
+        
+        Args:
+            company_id: Company ID
+            vms_entity_type: VMS entity type ('location', 'zone')
+            
+        Returns:
+            List of Platform entity type strings
+        """
+        try:
+            if self.is_connected:
+                # Get manifest from Platform
+                manifest = platform_client.get_app_manifest('vms_app_v1', company_id)
+                
+                if manifest and 'entityMappings' in manifest:
+                    mappings = manifest['entityMappings']
+                    
+                    if vms_entity_type in mappings:
+                        platform_types = mappings[vms_entity_type]
+                        
+                        if platform_types:
+                            if isinstance(platform_types, list):
+                                print(f"[DataProvider] Entity mapping: '{vms_entity_type}' → {platform_types}")
+                                return platform_types
+                            else:
+                                print(f"[DataProvider] Entity mapping: '{vms_entity_type}' → ['{platform_types}']")
+                                return [platform_types]
+        except Exception as e:
+            print(f"[DataProvider] Error getting entity mapping from manifest: {e}")
+        
+        # Default: return None (no filtering)
+        return None
+
+    
     def get_visitors(self, company_id=None):
         """
         Get visitors with residency-aware logic.
@@ -244,6 +284,7 @@ class DataProvider:
         # But we check residency to be safe
         residency_mode = ResidencyDetector.get_mode(cid, 'location')
         print(f"[DataProvider.get_entities] Company {cid}, mode: {residency_mode}")
+        print(f"[DataProvider.get_entities] ⚠️ CRITICAL: Mode should be 'platform' for entities!")
         
         if residency_mode == 'app':
             # Fetch from VMS local database
@@ -262,40 +303,47 @@ class DataProvider:
             print(f"[DataProvider] Found {len(entities)} entities in VMS DB")
             return entities
         
-        # Platform mode - fetch zones from Platform
+        # Platform mode - fetch entities from Platform
         print(f"[DataProvider] Fetching entities from Platform")
         
-        mapped_actor_type = self._get_mapped_actor_type(cid, 'location')
-        print(f"[DataProvider] VMS 'location' → Platform '{mapped_actor_type}'")
+        # Get allowed entity types from manifest
+        allowed_entity_types = self._get_mapped_entity_types(cid, 'location')
+        print(f"[DataProvider] Allowed entity types from manifest: {allowed_entity_types}")
         
         entities = []
         
         try:
-            if self.is_connected:
-                entities = platform_client.get_actors_by_type(cid, mapped_actor_type)
-            else:
-                # Use Platform client wrapper
-                from app.services.platform_client_wrapper import PlatformClientWrapper
-                import jwt
-                from datetime import datetime, timedelta
-                
-                platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
-                payload = {
-                    'sub': 'vms_app_v1',
-                    'companyId': cid,
-                    'iss': 'vms',
-                    'exp': datetime.utcnow() + timedelta(hours=1)
-                }
-                platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
-                
-                client = PlatformClientWrapper(platform_token)
-                # Fetch zones from Platform
-                entities = client.get_actors_by_type(cid, mapped_actor_type)
+            # Always use PlatformClientWrapper with JWT token for proper authentication
+            from app.services.platform_client_wrapper import PlatformClientWrapper
+            import jwt
+            from datetime import datetime, timedelta
             
-            print(f"[DataProvider] Fetched {len(entities)} entities from Platform")
+            # Always generate a fresh token to avoid expiration issues
+            platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
+            payload = {
+                'sub': Config.APP_ID,  # Use configured app ID
+                'companyId': cid,
+                'iss': 'vms',
+                'exp': datetime.utcnow() + timedelta(hours=1)
+            }
+            platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
+            print(f"[DataProvider] Generated fresh JWT token for Platform API")
+            
+            client = PlatformClientWrapper(platform_token)
+            # Fetch entities from Platform - includes appId for filtering
+            entities = client.get_entities(cid, allowed_entity_types)
+            
+            # Filter by allowed types if we have them (client-side safety filter)
+            if allowed_entity_types and entities:
+                entities = [e for e in entities if e.get('type') in allowed_entity_types]
+                print(f"[DataProvider] After filtering: {len(entities)} entities of types {allowed_entity_types}")
+            else:
+                print(f"[DataProvider] Fetched {len(entities)} entities from Platform")
             
         except Exception as e:
-            print(f"[DataProvider] Error fetching from Platform: {e}")
+            print(f"[DataProvider] Error fetching entities from Platform: {e}")
+            import traceback
+            traceback.print_exc()
             entities = []
         
         return entities

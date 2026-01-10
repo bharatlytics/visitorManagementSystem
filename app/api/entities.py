@@ -46,23 +46,15 @@ def list_entities():
     """
     company_id = request.args.get('companyId') or request.company_id
     entity_type = request.args.get('type')
-    print(f"[API/entities] GET /entities?companyId={company_id}&type={entity_type}")
+    app_id = request.args.get('appId')  # Get appId from query params
+    print(f"[API/entities] GET /entities?companyId={company_id}&type={entity_type}&appId={app_id}")
     
-    # Map VMS entity types to platform types
-    type_mapping = {
-        'location': ['location', 'plant', 'office', 'building'],
-        'zone': ['zone', 'area'],
-        'gate': ['gate', 'entry_point'],
-    }
-    
-    types = None
-    if entity_type:
-        types = type_mapping.get(entity_type, [entity_type])
-    
+    # Don't use hardcoded type mapping - let data_provider handle it based on manifest
     data_provider = get_data_provider(company_id)
     print(f"[API/entities] data_provider.is_connected = {data_provider.is_connected}")
     
-    entities = data_provider.get_entities(company_id, types)
+    # Pass None for types to let data_provider use manifest mapping
+    entities = data_provider.get_entities(company_id, types=None)
     print(f"[API/entities] Got {len(entities)} entities")
     
     return jsonify(convert_objectids(entities))

@@ -185,6 +185,36 @@ class PlatformClientWrapper:
         result = self._make_request('GET', endpoint, params=params)
         return result if isinstance(result, list) else []
     
+    # ==================== Entity Methods ====================
+    
+    def get_entities(self, company_id: str, types: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch entities from Platform.
+        
+        Used for entity data like locations/zones/organizations.
+        Includes appId so platform can optionally filter by manifest.
+        
+        Args:
+            company_id: Company ID
+            types: Optional list of entity types to filter by
+            
+        Returns:
+            List of entities from Platform
+        """
+        endpoint = '/bharatlytics/v1/entities'
+        params = {
+            'companyId': company_id,
+            'appId': Config.APP_ID  # Use configured app ID for manifest-based filtering
+        }
+        
+        if types:
+            # Pass types for server-side filtering if supported
+            params['entityType'] = ','.join(types) if isinstance(types, list) else types
+        
+        print(f"[PlatformClient] Fetching entities from Platform for company {company_id}, types={types}")
+        result = self._make_request('GET', endpoint, params=params)
+        return result if isinstance(result, list) else []
+    
     # ==================== Embedding Methods ====================
     
     def upload_embedding(self, actor_id: str, embedding_file, model: str = 'buffalo_l'):

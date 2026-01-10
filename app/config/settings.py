@@ -26,6 +26,9 @@ class Config:
     # Platform JWT Secret (for validating SSO tokens from platform - must match platform's JWT_SECRET)
     PLATFORM_JWT_SECRET = os.getenv('PLATFORM_JWT_SECRET', 'supersecret')
     
+    # VMS App ID - must match the Platform's registered app ID
+    APP_ID = os.getenv('VMS_APP_ID', 'app_bharatlytics_vms_366865a4')
+    
     # Platform API (used when user comes via platform SSO)
     PLATFORM_API_URL = os.getenv('PLATFORM_API_URL', 'http://localhost:5000')
     

@@ -77,7 +77,15 @@ class ResidencyDetector:
         except Exception as e:
             print(f"[ResidencyDetector] Installations check error: {e}")
         
-        # Check if company exists in VMS DB
+        # CRITICAL: Check entity types FIRST before company existence
+        # Entities (location, zone, organization, etc.) ALWAYS come from Platform
+        # This must be checked BEFORE the company existence check
+        if data_type in ENTITY_TYPES:
+            # Entities come from Platform per manifest configuration
+            print(f"[ResidencyDetector] Entity '{data_type}': Always from Platform (platform mode)")
+            return 'platform'
+        
+        # Check if company exists in VMS DB (only for actors, not entities)
         company_exists = False
         try:
             company_exists = ResidencyDetector._company_exists_in_vms(company_id)
@@ -87,7 +95,7 @@ class ResidencyDetector:
         except Exception as e:
             print(f"[ResidencyDetector] VMS DB check error: {e}")
         
-        # SAFE DEFAULTS based on data type (ACTORS vs ENTITIES)
+        # SAFE DEFAULTS based on data type (ACTORS only at this point)
         
         # ACTORS (people)
         if data_type == 'visitor':
@@ -105,13 +113,6 @@ class ResidencyDetector:
             else:
                 print(f"[ResidencyDetector] Actor 'employee': Company in VMS DB → app mode")
                 return 'app'
-        
-        # ENTITIES (things/places) - always from Platform per manifest
-        elif data_type in ENTITY_TYPES:
-            # Entities (location, zone, organization, etc.) come from Platform
-            # Per manifest configuration, VMS reads entities from Platform
-            print(f"[ResidencyDetector] Entity '{data_type}': Always from Platform (platform mode)")
-            return 'platform'
         
         else:
             # Unknown data type - safest is 'app'

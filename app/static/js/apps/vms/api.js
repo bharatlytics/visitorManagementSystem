@@ -86,11 +86,11 @@ const VMS_API = {
     getVisitQR: (visitId) => `${VMS_API.basePath}/visitors/visits/qr/${visitId}`,
     getVisitBadge: (visitId) => `${VMS_API.basePath}/badge/visits/${visitId}/badge`,
 
-    // Employees (for host selection)
-    getEmployees: (companyId) => VMS_API.call(`/employees?companyId=${companyId}`),
+    // Employees (for host selection) - Pass appId for mapping
+    getEmployees: (companyId) => VMS_API.call(`/employees?companyId=${companyId}&appId=app_bharatlytics_vms_366865a4`),
 
-    // Entities (for filtering)
-    getEntities: (companyId) => VMS_API.call(`/entities?companyId=${companyId}`),
+    // Entities (for filtering) - Pass appId for mapping
+    getEntities: (companyId) => VMS_API.call(`/entities?companyId=${companyId}&appId=app_bharatlytics_vms_366865a4`),
 
     // Settings
     getSettings: (companyId) => VMS_API.call(`/settings?companyId=${companyId}`),
