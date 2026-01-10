@@ -30,6 +30,32 @@ cp .env.example .env
 python run.py
 ```
 
+## Project Structure
+
+```
+visitorManagementSystem/
+├── app/                          # Main application code
+│   ├── api/                      # API routes and endpoints
+│   ├── templates/                # HTML templates
+│   └── ...
+├── docs/                         # Documentation
+│   ├── api-reference.md          # Complete API reference
+│   ├── mobile-apis.md            # Mobile app integration guide
+│   ├── android-sso-quickstart.md # Android SSO setup
+│   ├── deployment/               # Deployment guides
+│   ├── security/                 # Security documentation
+│   └── troubleshooting/          # Debugging & fix guides
+├── scripts/                      # Utility scripts
+│   ├── seed/                     # Database seeding scripts
+│   ├── cleanup/                  # Data cleanup utilities
+│   └── debug/                    # Debugging & verification tools
+├── tests/                        # Test files
+├── manifest.json                 # App manifest for Platform integration
+├── requirements.txt              # Python dependencies
+├── run.py                        # Application entry point
+└── vercel.json                   # Vercel deployment config
+```
+
 ## Deployment
 
 Deploy to Vercel:

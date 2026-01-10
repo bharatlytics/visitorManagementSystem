@@ -245,14 +245,15 @@ sharedPreferences.edit()
 1. [Visitors](#1-visitors)
 2. [Visits](#2-visits)
 3. [Employees](#3-employees)
-4. [Dashboard](#4-dashboard)
-5. [Analytics](#5-analytics)
-6. [Settings](#6-settings)
-7. [Security](#7-security)
-8. [Data Residency](#8-data-residency)
-9. [Webhooks](#9-webhooks)
-10. [Error Codes](#10-error-codes)
-11. [Data Models](#11-data-models)
+4. [Locations](#4-locations)
+5. [Dashboard](#5-dashboard)
+6. [Analytics](#6-analytics)
+7. [Settings](#7-settings)
+8. [Security](#8-security)
+9. [Data Residency & Mapping](#9-data-residency--mapping)
+10. [Webhooks](#10-webhooks)
+11. [Error Codes](#11-error-codes)
+12. [Data Models](#12-data-models)
 
 ---
 
@@ -788,11 +789,158 @@ curl -X POST http://localhost:5001/api/employees/register \
 
 ---
 
-## 4. Dashboard
+## 4. Locations
+
+**Base Path:** `/api/entities`
+
+VMS uses "location" as its app-specific term for places where visits occur. Internally, this maps to **entity** types in the Platform (e.g., `organization`, `plant`, `building`, `zone`, `line`). The exact Platform entity type used is configured in the **Data Mapping** settings.
+
+### 4.1 App-Centric Design
+
+VMS APIs use **app-specific terminology**:
+
+| VMS Term | Internal Type | Platform Mapping (Configurable) |
+|----------|---------------|--------------------------------|
+| `location` | Entity | `organization`, `plant`, `building`, `line`, etc. |
+| `employee` | Actor | `employee`, `shift_supervisor`, `manager`, etc. |
+| `visitor` | Actor | `visitor` (managed by VMS) |
+
+This design allows VMS to work with different Platform entity structures without code changes.
+
+### 5.2 List Locations
+
+```http
+GET /api/entities?companyId={companyId}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+
+**Data Source Logic (Residency-Aware):**
+
+| Residency Mode | Source | Description |
+|--------------|--------|-------------|
+| `platform` | Platform API | Fetches entities of the **mapped type** from Platform |
+| `app` | Local VMS Database | Returns VMS's local location records |
+
+**How Mapping Works:**
+
+1. VMS checks `installationMappings` for entity type configuration
+2. Gets the mapped Platform entity types (e.g., `location → ['organization']`)
+3. Fetches those entity types from Platform
+4. Returns results using VMS terminology
+
+**Example Mapping Configuration:**
+
+```json
+{
+  "entityMappings": {
+    "location": ["organization"]
+  }
+}
+```
+
+This means VMS's "location" concept maps to Platform's "organization" entity type.
+
+**Response:**
+
+```json
+{
+  "entities": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "JBM Group Holdings",
+      "type": "organization",
+      "status": "active",
+      "companyId": "company_id",
+      "parentId": null,
+      "path": ["root"]
+    },
+    {
+      "_id": "507f1f77bcf86cd799439012",
+      "name": "Manesar Plant",
+      "type": "plant",
+      "status": "active",
+      "companyId": "company_id",
+      "parentId": "507f1f77bcf86cd799439011",
+      "path": ["root", "507f1f77bcf86cd799439011"]
+    }
+  ],
+  "count": 2
+}
+```
+
+### 5.3 Get Single Location
+
+```http
+GET /api/entities/{entity_id}?companyId={companyId}
+```
+
+**Response:**
+
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "JBM Group Holdings",
+  "type": "organization",
+  "status": "active",
+  "companyId": "company_id",
+  "metadata": {
+    "address": "Delhi NCR",
+    "capacity": 5000
+  }
+}
+```
+
+### 5.4 Data Flow
+
+```
+VMS Request → GET /api/entities?companyId=...
+            ↓
+ResidencyDetector.get_mode(companyId, 'location')
+            ↓
+Returns: 'platform' or 'app'
+            
+If mode = 'app':
+  → Fetch from VMS local database
+  → Query: entities_collection.find({companyId})
+  → Return local location records
+
+If mode = 'platform':
+  → Check installationMappings for entity mapping
+  → Get mapped entity types (e.g., ['organization'])
+  → Call Platform API: GET /entities?companyId=...&appId=...
+  → Platform filters by mapping → Returns organizations
+  → VMS returns results (transformed to VMS format)
+```
+
+**Key Points:**
+- ✅ VMS uses app-specific terminology (`location`)
+- ✅ Platform entity types are configurable via Data Mapping
+- ✅ No hardcoded entity types in VMS code
+- ✅ Respects residency mode for data source selection
+- ✅ Platform filters entities based on `appId` and `installationMappings`
+
+### 5.5 Changing Entity Mappings
+
+Entity mappings are configured in the **Platform UI** under:
+1. Navigate to Company → Installed Apps
+2. Click on VMS → Data Mapping
+3. Under "Entity Requirements", select the Platform entity type
+4. Click Save
+
+Changes take effect immediately on the next API request.
+
+---
+
+## 5. Dashboard
 
 **Base Path:** `/api/dashboard`
 
-### 4.1 Get Stats
+### 5.1 Get Stats
 
 ```http
 GET /api/dashboard/stats?companyId={companyId}
@@ -819,7 +967,7 @@ GET /api/dashboard/stats?companyId={companyId}
 
 ---
 
-### 4.2 Get Trends
+### 5.2 Get Trends
 
 ```http
 GET /api/dashboard/trends?companyId={companyId}
@@ -842,7 +990,7 @@ GET /api/dashboard/trends?companyId={companyId}
 
 ---
 
-### 4.3 Security Dashboard
+### 5.3 Security Dashboard
 
 ```http
 GET /api/dashboard/security?companyId={companyId}
@@ -878,7 +1026,7 @@ GET /api/dashboard/security?companyId={companyId}
 
 ---
 
-### 4.4 Export Visits Report
+### 5.4 Export Visits Report
 
 ```http
 GET /api/dashboard/reports/visits?companyId={companyId}&format=json
@@ -923,7 +1071,7 @@ GET /api/dashboard/reports/visits?companyId={companyId}&format=csv&startDate=202
 
 ---
 
-### 4.5 Summary Report
+### 5.5 Summary Report
 
 ```http
 GET /api/dashboard/reports/summary?companyId={companyId}
@@ -954,7 +1102,7 @@ GET /api/dashboard/reports/summary?companyId={companyId}
 
 ---
 
-### 4.6 Approve Visit
+### 5.6 Approve Visit
 
 ```http
 POST /api/dashboard/approvals/{visit_id}/approve
@@ -977,7 +1125,7 @@ Content-Type: application/json
 
 ---
 
-### 4.7 Deny Visit
+### 5.7 Deny Visit
 
 ```http
 POST /api/dashboard/approvals/{visit_id}/deny
@@ -1919,3 +2067,4 @@ When connected to Bharatlytics Platform, VMS integrates as follows:
 ---
 
 *End of API Reference*
+
