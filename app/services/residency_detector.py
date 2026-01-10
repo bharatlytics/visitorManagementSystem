@@ -90,7 +90,7 @@ class ResidencyDetector:
         try:
             company_exists = ResidencyDetector._company_exists_in_vms(company_id)
             if company_exists:
-                print(f"[ResidencyDetector] Company {company_id} found in VMS DB → app mode")
+                print(f"[ResidencyDetector] Company {company_id} found in VMS DB -> app mode")
                 return 'app'
         except Exception as e:
             print(f"[ResidencyDetector] VMS DB check error: {e}")
@@ -108,10 +108,10 @@ class ResidencyDetector:
             # Employees can default to platform if company not in VMS
             # This is safe because employees are typically managed centrally
             if not company_exists:
-                print(f"[ResidencyDetector] Actor 'employee': Company not in VMS DB → platform mode")
+                print(f"[ResidencyDetector] Actor 'employee': Company not in VMS DB -> platform mode")
                 return 'platform'
             else:
-                print(f"[ResidencyDetector] Actor 'employee': Company in VMS DB → app mode")
+                print(f"[ResidencyDetector] Actor 'employee': Company in VMS DB -> app mode")
                 return 'app'
         
         else:
@@ -174,10 +174,10 @@ class ResidencyDetector:
                             
                             # Map source to residency mode
                             if source == 'Platform':
-                                print(f"[ResidencyDetector] Manifest: {entity_type} source=Platform → mode=platform")
+                                print(f"[ResidencyDetector] Manifest: {entity_type} source=Platform -> mode=platform")
                                 return 'platform'
                             elif source == 'Visitor Management System':
-                                print(f"[ResidencyDetector] Manifest: {entity_type} source=VMS → mode=app")
+                                print(f"[ResidencyDetector] Manifest: {entity_type} source=VMS -> mode=app")
                                 return 'app'
                     
                     # Fallback: check old residencyMode structure

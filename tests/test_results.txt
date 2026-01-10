@@ -1,0 +1,134 @@
+﻿
+======================================================================
+VMS COMPLETE END-TO-END TEST SUITE
+======================================================================
+Base URL: http://localhost:5001
+Company ID: 6827296ab6e06b08639107c4
+Started: 2026-01-10 19:47:23
+======================================================================
+
+============================================================
+[HEALTH & AUTH TESTS]
+============================================================
+[PASS]: Server Health Check
+   -> Status: 200
+[PASS]: Auth Token Verification
+   -> User: test_user_e2e, Company: 6827296ab6e06b08639107c4
+
+============================================================
+[EMPLOYEE CRUD TESTS]
+============================================================
+[FAIL]: Employee CREATE
+   -> Status: 0
+   -> Details: {'error': 'Expecting value: line 1 column 1 (char 0)'}
+[PASS]: Employee LIST
+   -> Found 8 employees
+   -> Using existing employee for tests: 6932756beb97da6ad865a747
+[PASS]: Employee GET (single)
+   -> Retrieved: N/A
+[PASS]: Employee UPDATE
+   -> Skipped (platform mode - employee on Platform)
+[PASS]: Employee BLACKLIST
+   -> Skipped (platform mode - employee on Platform)
+[PASS]: Employee UNBLACKLIST
+   -> Skipped (platform mode)
+
+============================================================
+[VISITOR CRUD TESTS]
+============================================================
+[PASS]: Visitor CREATE
+   -> Created: 69625f9569330bbe1fb098da
+[PASS]: Visitor LIST
+   -> Found 4 visitors
+[PASS]: Visitor UPDATE
+   -> Visitor organization updated
+[PASS]: Visitor BLACKLIST
+   -> Visitor blacklisted
+[PASS]: Visitor UNBLACKLIST
+   -> Visitor unblacklisted
+
+============================================================
+[VISIT MANAGEMENT TESTS]
+============================================================
+[PASS]: Visit SCHEDULE
+   -> Scheduled: 69625fa669330bbe1fb098db
+[PASS]: Visit LIST
+   -> Found 54 visits
+[PASS]: Visit CHECK-IN
+   -> Checked in at: N/A
+[PASS]: Visit QR CODE
+   -> QR generated, size: 551 bytes
+[PASS]: Visit CHECK-OUT
+   -> Checked out at: N/A
+
+============================================================
+[ENTITY/LOCATION TESTS]
+============================================================
+[PASS]: Entity CREATE
+   -> Created: 69625fb169330bbe1fb098dc
+[PASS]: Entity LIST
+   -> Found 7 entities
+[PASS]: Location LIST
+   -> Found 17 locations
+
+============================================================
+[DATA RESIDENCY TESTS]
+============================================================
+[DB] Connecting to URI: mongodb+srv://bharatlytics:nN9AEW7exNdqoQ3r@cluster0.tato9.mongodb.net/blGroup_visitorManagementSystem?retryWrites=true&w=majority
+[ResidencyDetector] Platform API failed: 'NoneType' object has no attribute 'get'
+[ResidencyDetector] Actor 'employee': Company not in VMS DB -> platform mode
+[ResidencyDetector] Actor 'visitor' - checking for explicit platform configuration
+[ResidencyDetector] Platform API failed: 'NoneType' object has no attribute 'get'
+[ResidencyDetector] SAFE DEFAULT: Actor 'visitor' stays in VMS (app mode)
+[PASS]: Residency Detection
+   -> Employee: platform, Visitor: app
+[PASS]: Data Source Consistency
+   -> Employees: 8, Visitors: error
+
+============================================================
+[PLATFORM INTEGRATION TESTS]
+============================================================
+[ResidencyDetector] Platform API failed: 'NoneType' object has no attribute 'get'
+[ResidencyDetector] Actor 'employee': Company not in VMS DB -> platform mode
+[PASS]: Platform Mode Active
+   -> Company is in platform-integrated mode
+[PlatformClient] Fetching employees from Platform for company 6827296ab6e06b08639107c4
+[PASS]: Platform Data Fetch
+   -> Fetched 8 employees from platform
+
+======================================================================
+TEST SUMMARY
+======================================================================
+   [PASS]: Server Health Check
+   [PASS]: Auth Token Verification
+   [FAIL]: Employee CREATE
+   [PASS]: Employee LIST
+   [PASS]: Employee GET (single)
+   [PASS]: Employee UPDATE
+   [PASS]: Employee BLACKLIST
+   [PASS]: Employee UNBLACKLIST
+   [PASS]: Visitor CREATE
+   [PASS]: Visitor LIST
+   [PASS]: Visitor UPDATE
+   [PASS]: Visitor BLACKLIST
+   [PASS]: Visitor UNBLACKLIST
+   [PASS]: Visit SCHEDULE
+   [PASS]: Visit LIST
+   [PASS]: Visit CHECK-IN
+   [PASS]: Visit QR CODE
+   [PASS]: Visit CHECK-OUT
+   [PASS]: Entity CREATE
+   [PASS]: Entity LIST
+   [PASS]: Location LIST
+   [PASS]: Residency Detection
+   [PASS]: Data Source Consistency
+   [PASS]: Platform Mode Active
+   [PASS]: Platform Data Fetch
+
+----------------------------------------------------------------------
+   TOTAL: 24/25 tests passed (96%)
+----------------------------------------------------------------------
+
+   [WARNING] 1 test(s) failed - review above
+======================================================================
+
