@@ -365,10 +365,44 @@ def register_visitor():
                 )
                 document_dict[doc_type] = doc_id
         
+        # Check for existing visitor with same phone in this company
+        company_id = data['companyId']
+        existing_visitor = visitor_collection.find_one({
+            'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+            'phone': data['phone']
+        })
+        
+        if existing_visitor:
+            # Return existing visitor info instead of creating duplicate
+            return jsonify({
+                'message': 'Visitor already registered with this phone number',
+                '_id': str(existing_visitor['_id']),
+                'visitorId': str(existing_visitor['_id']),
+                'visitorName': existing_visitor.get('visitorName'),
+                'existing': True
+            }), 200
+        
         # Build and insert visitor document
         visitor_doc = build_visitor_doc(data, image_dict, {}, document_dict)
-        result = visitor_collection.insert_one(visitor_doc)
-        visitor_id = result.inserted_id
+        
+        try:
+            result = visitor_collection.insert_one(visitor_doc)
+            visitor_id = result.inserted_id
+        except Exception as insert_error:
+            # Handle duplicate key error (race condition)
+            if 'duplicate key' in str(insert_error).lower():
+                existing = visitor_collection.find_one({
+                    'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                    'phone': data['phone']
+                })
+                if existing:
+                    return jsonify({
+                        'message': 'Visitor already registered with this phone number',
+                        '_id': str(existing['_id']),
+                        'visitorId': str(existing['_id']),
+                        'existing': True
+                    }), 200
+            raise insert_error
         
         if not visitor_id:
             return error_response('Failed to register visitor.', 500)
