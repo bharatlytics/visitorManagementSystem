@@ -177,13 +177,27 @@ def list_employees():
     # Convert ObjectIds
     employees = convert_objectids(employees)
     
-    # Add downloadUrl to embeddings
-    from app.utils import format_embedding_response
+    # Get VMS base URL for transforming download URLs
     base_url = request.url_root.rstrip('/')
     
     for employee in employees:
+        # Transform Platform actorEmbeddings URLs to VMS proxy URLs
+        # Platform stores: http://platform:5000/bharatlytics/v1/actors/embeddings/<id>
+        # VMS should serve: http://vms:5001/api/employees/embeddings/<id>
+        if 'actorEmbeddings' in employee and employee['actorEmbeddings']:
+            for model, emb_data in employee['actorEmbeddings'].items():
+                if isinstance(emb_data, dict) and emb_data.get('downloadUrl'):
+                    # Extract embedding ID from Platform URL
+                    platform_url = emb_data['downloadUrl']
+                    # Extract the embedding ID (last part of the URL path)
+                    if '/embeddings/' in platform_url:
+                        embedding_id = platform_url.split('/embeddings/')[-1]
+                        # Transform to VMS proxy URL
+                        emb_data['downloadUrl'] = f"{base_url}/api/employees/embeddings/{embedding_id}"
+        
+        # Also handle legacy VMS employeeEmbeddings (app mode)
         if 'employeeEmbeddings' in employee and employee['employeeEmbeddings']:
-            # Format embeddings with download URLs
+            from app.utils import format_embedding_response
             employee['employeeEmbeddings'] = format_embedding_response(
                 employee['employeeEmbeddings'],
                 'employee',
@@ -205,7 +219,19 @@ def get_employee(employee_id):
     if not employee:
         return jsonify({'error': 'Employee not found'}), 404
     
-    return jsonify(convert_objectids(employee))
+    employee = convert_objectids(employee)
+    
+    # Transform Platform actorEmbeddings URLs to VMS proxy URLs
+    base_url = request.url_root.rstrip('/')
+    if 'actorEmbeddings' in employee and employee['actorEmbeddings']:
+        for model, emb_data in employee['actorEmbeddings'].items():
+            if isinstance(emb_data, dict) and emb_data.get('downloadUrl'):
+                platform_url = emb_data['downloadUrl']
+                if '/embeddings/' in platform_url:
+                    embedding_id = platform_url.split('/embeddings/')[-1]
+                    emb_data['downloadUrl'] = f"{base_url}/api/employees/embeddings/{embedding_id}"
+    
+    return jsonify(employee)
 
 
 @employees_bp.route('', methods=['POST'])
@@ -339,11 +365,14 @@ def register_employee():
             # Send directly to Platform, NO VMS DB storage
             
             # Process images - encode as base64 for Platform
-            # Platform's actor_embedding_worker will process base64 photos
+            # Platform's unified_actors.py will process base64 photos
             import base64
             
             face_positions = ['center', 'front', 'left', 'right', 'side']
             print(f"[register_employee] DEBUG: request.files keys = {list(request.files.keys())}")
+            
+            # Store ALL images (not just one) - Platform supports multiple poses
+            photos_dict = {}
             for position in face_positions:
                 print(f"[register_employee] DEBUG: checking position '{position}' in request.files")
                 if position in request.files:
@@ -353,12 +382,17 @@ def register_employee():
                         # Read and encode image as base64
                         img_bytes = face_image.read()
                         img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                        # Store in data with data URI format for Platform
-                        data['photo'] = f"data:image/jpeg;base64,{img_base64}"
+                        # Store in photos dict with pose as key
+                        photos_dict[position] = f"data:image/jpeg;base64,{img_base64}"
                         print(f"[register_employee] Encoded {position} image as base64 ({len(img_bytes)} bytes)")
-                        break  # Only need one image for Platform embedding
             
-            print(f"[register_employee] DEBUG: 'photo' in data = {'photo' in data}")
+            # Add photos to data - 'photos' is a dict of pose -> base64
+            if photos_dict:
+                data['photos'] = photos_dict
+                # Also keep 'photo' for backward compatibility (first available image)
+                data['photo'] = list(photos_dict.values())[0]
+            
+            print(f"[register_employee] DEBUG: 'photos' in data = {'photos' in data}, count = {len(photos_dict)}")
             
             try:
                 # Get platform token from session or generate one
