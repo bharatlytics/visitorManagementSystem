@@ -338,9 +338,22 @@ def register_employee():
             # ========== PLATFORM MODE ==========
             # Send directly to Platform, NO VMS DB storage
             
-            # Process images (Platform expects multipart upload)
-            # For now, we'll send employee data and queue image upload separately
-            # TODO: Implement image upload to Platform
+            # Process images - encode as base64 for Platform
+            # Platform's actor_embedding_worker will process base64 photos
+            import base64
+            
+            face_positions = ['center', 'front', 'left', 'right', 'side']
+            for position in face_positions:
+                if position in request.files:
+                    face_image = request.files[position]
+                    if face_image.filename:
+                        # Read and encode image as base64
+                        img_bytes = face_image.read()
+                        img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                        # Store in data with data URI format for Platform
+                        data['photo'] = f"data:image/jpeg;base64,{img_base64}"
+                        print(f"[register_employee] Encoded {position} image as base64 ({len(img_bytes)} bytes)")
+                        break  # Only need one image for Platform embedding
             
             try:
                 # Get platform token from session or generate one
@@ -360,16 +373,23 @@ def register_employee():
                     }
                     platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
                 
-                # Create employee on Platform
+                # Create employee on Platform (with photo in attributes)
                 client = PlatformClientWrapper(platform_token)
                 result = client.create_employee(company_id, data)
                 
                 print(f"[register_employee] Created employee on Platform: {result}")
                 
+                # Queue embedding generation if photo was included
+                if data.get('photo'):
+                    actor_id = result.get('actor', {}).get('_id')
+                    if actor_id:
+                        print(f"[register_employee] Photo included - Platform will queue embedding for actor {actor_id}")
+                
                 return jsonify({
                     'message': 'Employee registered successfully on Platform',
                     'employee': result,
-                    'residencyMode': 'platform'
+                    'residencyMode': 'platform',
+                    'hasPhoto': bool(data.get('photo'))
                 }), 201
                 
             except PlatformDownError as e:

@@ -83,7 +83,7 @@ class PlatformClientWrapper:
         Raises:
             PlatformDownError: If Platform is down (caller should queue)
         """
-        endpoint = '/bharatlytics/v1/actors'
+        endpoint = '/bharatlytics/v1/actors/'  # Trailing slash required for unified_actor_bp route
         payload = {
             'companyId': company_id,
             'actorType': 'employee',
