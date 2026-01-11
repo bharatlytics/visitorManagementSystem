@@ -1,0 +1,60 @@
+﻿============================================================
+SRK Employee Registration E2E Test
+============================================================
+Platform: http://localhost:5000
+VMS: http://localhost:5001
+Company ID: 6827296ab6e06b08639107c4
+
+--- Step 1: Login to Platform ---
+   Status: 200
+python : Traceback (most recent call last):
+At line:1 char:1
++ python scripts/test_srk_vms_api.py 2>&1 | 
+Out-File -Encoding utf8 tes ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Trace 
+   back (most recent call last)::String) [], Remo  
+  teException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\sahil\OneDrive\Documents\GitHub\vi
+sitorManagementSystem\scripts\test_srk_vms_api.py",
+ line 45, in step_1_platform_login
+    print(f"\u2705 Platform login successful")
+  File "C:\Users\sahil\anaconda3\Lib\encodings\cp12
+52.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,
+encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode 
+character '\u2705' in position 0: character maps 
+to <undefined>
+
+During handling of the above exception, another 
+exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\sahil\OneDrive\Documents\GitHub\vi
+sitorManagementSystem\scripts\test_srk_vms_api.py",
+ line 256, in <module>
+    success = main()
+              ^^^^^^
+  File "C:\Users\sahil\OneDrive\Documents\GitHub\vi
+sitorManagementSystem\scripts\test_srk_vms_api.py",
+ line 212, in main
+    platform_token = step_1_platform_login()
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sahil\OneDrive\Documents\GitHub\vi
+sitorManagementSystem\scripts\test_srk_vms_api.py",
+ line 54, in step_1_platform_login
+    print(f"\u274c Error: {e}")
+  File "C:\Users\sahil\anaconda3\Lib\encodings\cp12
+52.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,
+encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode 
+character '\u274c' in position 0: character maps 
+to <undefined>

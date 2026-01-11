@@ -343,9 +343,12 @@ def register_employee():
             import base64
             
             face_positions = ['center', 'front', 'left', 'right', 'side']
+            print(f"[register_employee] DEBUG: request.files keys = {list(request.files.keys())}")
             for position in face_positions:
+                print(f"[register_employee] DEBUG: checking position '{position}' in request.files")
                 if position in request.files:
                     face_image = request.files[position]
+                    print(f"[register_employee] DEBUG: found {position}, filename={face_image.filename}")
                     if face_image.filename:
                         # Read and encode image as base64
                         img_bytes = face_image.read()
@@ -354,6 +357,8 @@ def register_employee():
                         data['photo'] = f"data:image/jpeg;base64,{img_base64}"
                         print(f"[register_employee] Encoded {position} image as base64 ({len(img_bytes)} bytes)")
                         break  # Only need one image for Platform embedding
+            
+            print(f"[register_employee] DEBUG: 'photo' in data = {'photo' in data}")
             
             try:
                 # Get platform token from session or generate one

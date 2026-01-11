@@ -117,39 +117,44 @@ def step_3_register_employee(vms_token):
     }
     
     with open(SRK_IMAGE_PATH, 'rb') as img_file:
-        files = {
-            'center': ('srk.jpg', img_file, 'image/jpeg')
-        }
+        image_bytes = img_file.read()
+    
+    # Upload 3 images (left, right, center) as mandated
+    files = {
+        'left': ('srk_left.jpg', image_bytes, 'image/jpeg'),
+        'right': ('srk_right.jpg', image_bytes, 'image/jpeg'),
+        'center': ('srk_center.jpg', image_bytes, 'image/jpeg')
+    }
+    
+    try:
+        resp = requests.post(
+            f"{VMS_URL}/api/employees/register",
+            headers=headers,
+            data=form_data,
+            files=files,
+            timeout=30
+        )
         
-        try:
-            resp = requests.post(
-                f"{VMS_URL}/api/employees/register",
-                headers=headers,
-                data=form_data,
-                files=files,
-                timeout=30
-            )
-            
-            print(f"   Response status: {resp.status_code}")
-            
-            if resp.status_code in [200, 201]:
-                data = resp.json()
-                print(f"✅ Employee registered successfully!")
-                print(f"   MongoDB _id: {data.get('_id')}")
-                print(f"   Employee ID: {data.get('employeeId')}")
-                print(f"   Has Biometric: {data.get('hasBiometric')}")
-                print(f"   Embedding Status: {data.get('embeddingStatus')}")
-                print(f"   Residency Mode: {data.get('residencyMode')}")
-                return data
-            else:
-                print(f"❌ Registration failed: {resp.text[:500]}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            import traceback
-            traceback.print_exc()
+        print(f"   Response status: {resp.status_code}")
+        
+        if resp.status_code in [200, 201]:
+            data = resp.json()
+            print(f"✅ Employee registered successfully!")
+            print(f"   MongoDB _id: {data.get('_id')}")
+            print(f"   Employee ID: {data.get('employeeId')}")
+            print(f"   Has Biometric: {data.get('hasBiometric')}")
+            print(f"   Embedding Status: {data.get('embeddingStatus')}")
+            print(f"   Residency Mode: {data.get('residencyMode')}")
+            return data
+        else:
+            print(f"❌ Registration failed: {resp.text[:500]}")
             return None
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def step_4_verify_employee(vms_token):
