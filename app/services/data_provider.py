@@ -376,9 +376,14 @@ class DataProvider:
         try:
             employees = self.get_employees(cid)
             
-            # Find by ID
+            # Find by ID - check _id, employeeId, and attributes.employeeId
             for emp in employees:
-                if str(emp.get('_id')) == str(employee_id) or emp.get('employeeId') == employee_id:
+                emp_id_match = str(emp.get('_id')) == str(employee_id)
+                top_level_match = emp.get('employeeId') == employee_id
+                # Platform stores employeeId in attributes
+                attr_match = emp.get('attributes', {}).get('employeeId') == employee_id
+                
+                if emp_id_match or top_level_match or attr_match:
                     return emp
         except Exception as e:
             print(f"[DataProvider] Error fetching employee: {e}")
