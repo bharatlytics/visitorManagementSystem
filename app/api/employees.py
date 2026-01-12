@@ -177,23 +177,27 @@ def list_employees():
     # Convert ObjectIds
     employees = convert_objectids(employees)
     
-    # Get VMS base URL for transforming download URLs
+    # Get VMS base URL for constructing download URLs
     base_url = request.url_root.rstrip('/')
     
     for employee in employees:
-        # Transform Platform actorEmbeddings URLs to VMS proxy URLs
-        # Platform stores: http://platform:5000/bharatlytics/v1/actors/embeddings/<id>
-        # VMS should serve: http://vms:5001/api/employees/embeddings/<id>
+        # Handle Platform actorEmbeddings - construct VMS proxy URLs
         if 'actorEmbeddings' in employee and employee['actorEmbeddings']:
             for model, emb_data in employee['actorEmbeddings'].items():
-                if isinstance(emb_data, dict) and emb_data.get('downloadUrl'):
-                    # Extract embedding ID from Platform URL
-                    platform_url = emb_data['downloadUrl']
-                    # Extract the embedding ID (last part of the URL path)
-                    if '/embeddings/' in platform_url:
-                        embedding_id = platform_url.split('/embeddings/')[-1]
-                        # Transform to VMS proxy URL
-                        emb_data['downloadUrl'] = f"{base_url}/api/employees/embeddings/{embedding_id}"
+                if isinstance(emb_data, dict):
+                    # Only provide downloadUrl for completed embeddings
+                    if emb_data.get('status') == 'done':
+                        embedding_id = emb_data.get('embeddingId')
+                        
+                        if emb_data.get('downloadUrl'):
+                            # Transform existing Platform URL to VMS proxy URL
+                            platform_url = emb_data['downloadUrl']
+                            if '/embeddings/' in platform_url:
+                                embedding_id = platform_url.split('/embeddings/')[-1]
+                        
+                        if embedding_id:
+                            # Construct VMS proxy URL
+                            emb_data['downloadUrl'] = f"{base_url}/api/employees/embeddings/{embedding_id}"
         
         # Also handle legacy VMS employeeEmbeddings (app mode)
         if 'employeeEmbeddings' in employee and employee['employeeEmbeddings']:
@@ -221,14 +225,19 @@ def get_employee(employee_id):
     
     employee = convert_objectids(employee)
     
-    # Transform Platform actorEmbeddings URLs to VMS proxy URLs
+    # Construct VMS proxy URLs for embeddings
     base_url = request.url_root.rstrip('/')
     if 'actorEmbeddings' in employee and employee['actorEmbeddings']:
         for model, emb_data in employee['actorEmbeddings'].items():
-            if isinstance(emb_data, dict) and emb_data.get('downloadUrl'):
-                platform_url = emb_data['downloadUrl']
-                if '/embeddings/' in platform_url:
-                    embedding_id = platform_url.split('/embeddings/')[-1]
+            if isinstance(emb_data, dict) and emb_data.get('status') == 'done':
+                embedding_id = emb_data.get('embeddingId')
+                
+                if emb_data.get('downloadUrl'):
+                    platform_url = emb_data['downloadUrl']
+                    if '/embeddings/' in platform_url:
+                        embedding_id = platform_url.split('/embeddings/')[-1]
+                
+                if embedding_id:
                     emb_data['downloadUrl'] = f"{base_url}/api/employees/embeddings/{embedding_id}"
     
     return jsonify(employee)
