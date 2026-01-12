@@ -38,8 +38,8 @@ class Config:
     # File uploads
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
     
-    # Allowed embedding models
-    ALLOWED_MODELS = ['facenet', 'arcface', 'vggface']
+    # Allowed embedding models (includes both legacy and new Platform models)
+    ALLOWED_MODELS = ['facenet', 'arcface', 'vggface', 'buffalo_l', 'mobile_facenet_v1']
 
     # SMTP Configuration (for Host Notifications)
     MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
