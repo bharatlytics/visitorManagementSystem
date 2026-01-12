@@ -26,11 +26,10 @@ import sys
 import os
 
 # ========== CONFIGURATION ==========
-# VMS MongoDB connection string - set via environment or use default
-VMS_MONGODB_URI = os.environ.get(
-    'VMS_MONGODB_URI',
-    'mongodb+srv://bharatlytics:nN9AEW7exNdqoQ3r@cluster0.tato9.mongodb.net/blGroup_visitorManagementSystem?retryWrites=true&w=majority&appName=Cluster0'
-)
+# VMS MongoDB connection string - MUST be set via environment variable
+VMS_MONGODB_URI = os.environ.get('VMS_MONGODB_URI')
+if not VMS_MONGODB_URI:
+    raise ValueError("VMS_MONGODB_URI environment variable is required")
 VMS_URL = os.environ.get('VMS_URL', 'http://localhost:5001')
 
 # MongoDB connection - VMS database

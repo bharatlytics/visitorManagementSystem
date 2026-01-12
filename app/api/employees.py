@@ -776,86 +776,53 @@ def sync_from_platform():
 
 
 @employees_bp.route('/embeddings/<embedding_id>', methods=['GET'])
-@require_auth
 def serve_employee_embedding(embedding_id):
     """
     Download employee embedding file.
-    
-    Behavior depends on data residency:
-    - residency=app: Serve from VMS GridFS
-    - residency=platform: Proxy to Platform API
+    Public endpoint - embeddings are stored on Platform and proxied here.
     """
     try:
         from flask import Response, session
         
-        # Get companyId from query params OR from authenticated user's token
-        company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
+        # Default company for auth token generation
+        company_id = request.args.get('companyId', '6827296ab6e06b08639107c4')
         
-        if not company_id:
-            return jsonify({'error': 'companyId is required or must be in auth token'}), 400
+        print(f"[serve_employee_embedding] embedding_id={embedding_id}")
         
-        # Check residency mode
-        data_provider = get_data_provider(company_id)
-        config = data_provider._get_full_mapping_config('employee')
-        residency_mode = config.get('mode', 'app')
+        # Always proxy to Platform - all embeddings are stored there
+        # Generate a platform token for the API call
+        import jwt
+        from datetime import datetime, timedelta
         
-        print(f"[serve_employee_embedding] embedding_id={embedding_id}, residency={residency_mode}")
+        platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
+        payload = {
+            'sub': 'vms_app_v1',
+            'companyId': company_id,
+            'iss': 'vms',
+            'exp': datetime.utcnow() + timedelta(minutes=5)
+        }
+        platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
         
-        if residency_mode == 'platform':
-            # PROXY to Platform
-            # Try to get platform token from session (browser) or generate one (API/mobile)
-            platform_token = session.get('platform_token')
-            
-            if not platform_token:
-                # For API/mobile access, generate a platform token
-                # The user is already authenticated (passed @require_auth)
-                import jwt
-                from datetime import datetime, timedelta
-                
-                platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
-                payload = {
-                    'sub': 'vms_app_v1',
-                    'companyId': company_id,
-                    'iss': 'vms',
-                    'exp': datetime.utcnow() + timedelta(minutes=5)
-                }
-                platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
-                print(f"[serve_employee_embedding] Generated platform token for API access")
-            
-            # Fetch from platform
-            platform_url = f"{Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/{embedding_id}"
-            headers = {'Authorization': f'Bearer {platform_token}'}
-            
-            print(f"[serve_employee_embedding] Proxying to platform: {platform_url}")
-            response = requests.get(platform_url, headers=headers, stream=True, timeout=30)
-            
-            if response.status_code != 200:
-                print(f"[serve_employee_embedding] Platform returned {response.status_code}: {response.text[:200]}")
-                return jsonify({'error': 'Embedding not found on platform'}), 404
-            
-            # Stream the response back to client
-            return Response(
-                response.iter_content(chunk_size=8192),
-                mimetype='application/octet-stream',
-                headers={
-                    'Content-Disposition': response.headers.get('Content-Disposition', f'attachment; filename={embedding_id}.npy'),
-                    'Content-Type': 'application/octet-stream'
-                }
-            )
-        else:
-            # SERVE from VMS GridFS
-            print(f"[serve_employee_embedding] Serving from VMS GridFS")
-            file = employee_embedding_fs.get(ObjectId(embedding_id))
-            filename = file.filename if hasattr(file, 'filename') else f"{embedding_id}.npy"
-            
-            return Response(
-                file.read(),
-                mimetype='application/octet-stream',
-                headers={
-                    'Content-Disposition': f'attachment; filename={filename}',
-                    'Content-Type': 'application/octet-stream'
-                }
-            )
+        # Fetch from platform
+        platform_url = f"{Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/{embedding_id}"
+        headers = {'Authorization': f'Bearer {platform_token}'}
+        
+        print(f"[serve_employee_embedding] Proxying to platform: {platform_url}")
+        response = requests.get(platform_url, headers=headers, stream=True, timeout=30)
+        
+        if response.status_code != 200:
+            print(f"[serve_employee_embedding] Platform returned {response.status_code}: {response.text[:200]}")
+            return jsonify({'error': 'Embedding not found on platform'}), 404
+        
+        # Stream the response back to client
+        return Response(
+            response.iter_content(chunk_size=8192),
+            mimetype='application/octet-stream',
+            headers={
+                'Content-Disposition': response.headers.get('Content-Disposition', f'attachment; filename={embedding_id}.npy'),
+                'Content-Type': 'application/octet-stream'
+            }
+        )
     except Exception as e:
         print(f"[serve_employee_embedding] Error serving embedding {embedding_id}: {e}")
         import traceback
