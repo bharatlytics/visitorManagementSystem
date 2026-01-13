@@ -524,20 +524,24 @@ def register_employee():
             employees_collection.insert_one(employee)
             employee_id = employee['_id']
             
-            # Queue embedding jobs if images provided
+            # Queue embedding job for buffalo_l (VMS worker model) if images provided
             embeddings_dict = {}
             if has_images:
-                for model in Config.ALLOWED_MODELS:
-                    job = {
-                        'employeeId': employee_id,
-                        'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
-                        'model': model,
-                        'status': 'queued',
-                        'createdAt': get_current_utc(),
-                        'params': {}
-                    }
-                    embedding_jobs_collection.insert_one(job)
-                    embeddings_dict[model] = {'status': 'queued', 'queuedAt': get_current_utc()}
+                # Set buffalo_l status to queued - VMS worker will pick this up
+                embeddings_dict['buffalo_l'] = {
+                    'status': 'queued',
+                    'queuedAt': get_current_utc()
+                }
+                # Also create a job in embedding_jobs collection for tracking
+                job = {
+                    'employeeId': employee_id,
+                    'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                    'model': 'buffalo_l',
+                    'status': 'queued',
+                    'createdAt': get_current_utc(),
+                    'params': {}
+                }
+                embedding_jobs_collection.insert_one(job)
                 
                 employees_collection.update_one(
                     {'_id': employee_id},

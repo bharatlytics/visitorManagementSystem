@@ -407,21 +407,24 @@ def register_visitor():
         if not visitor_id:
             return error_response('Failed to register visitor.', 500)
         
-        # Enqueue embedding jobs only if images provided
+        # Enqueue embedding job only for buffalo_l (VMS worker model)
         embeddings_dict = {}
         if has_images:
-            for model in Config.ALLOWED_MODELS:
-                job = {
-                    "employeeId": ObjectId(host_employee['_id']),
-                    "companyId": ObjectId(data['companyId']),
-                    "visitorId": visitor_id,
-                    "model": model,
-                    "status": "queued",
-                    "createdAt": get_current_utc(),
-                    "params": {}
-                }
-                embedding_jobs_collection.insert_one(job)
-                embeddings_dict[model] = {'status': 'queued', 'queuedAt': get_current_utc()}
+            # Set buffalo_l status to queued - VMS worker will pick this up
+            embeddings_dict['buffalo_l'] = {
+                'status': 'queued',
+                'queuedAt': get_current_utc()
+            }
+            # Also create a job in embedding_jobs collection for tracking
+            job = {
+                "companyId": ObjectId(data['companyId']),
+                "visitorId": visitor_id,
+                "model": "buffalo_l",
+                "status": "queued",
+                "createdAt": get_current_utc(),
+                "params": {}
+            }
+            embedding_jobs_collection.insert_one(job)
         
         # Handle embedding file upload if present
         embedding_attached = request.form.get('embeddingAttached', 'false').lower() == 'true'
