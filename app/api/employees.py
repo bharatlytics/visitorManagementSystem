@@ -177,7 +177,7 @@ def employee_attendance():
         records = data if isinstance(data, list) else [data]
         
         now = get_current_utc()
-        docs_to_insert = []
+        upserted_ids = []
         
         for record in records:
             company_id = record.get('companyId')
@@ -200,32 +200,64 @@ def employee_attendance():
                     print(f"[attendance] Error parsing time: {e}")
                     attendance_time = now
             
-            attendance_doc = {
+            # Parse createdAt from client (used for matching)
+            created_at = now
+            if record.get('createdAt'):
+                try:
+                    time_str = record['createdAt']
+                    if '+0000' in time_str:
+                        time_str = time_str.replace('+0000', '+00:00')
+                    created_at = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                except Exception:
+                    created_at = now
+            
+            # Build upsert filter - match on employeeId + attendanceTime to avoid duplicates
+            filter_query = {
                 'companyId': ObjectId(company_id),
-                'employeeId': ObjectId(employee_id) if employee_id else None,
-                'visitorId': ObjectId(visitor_id) if visitor_id else None,
                 'attendanceTime': attendance_time,
-                'attendanceType': record.get('attendanceType', 'IN').upper(),
-                'personType': record.get('personType', 'EMPLOYEE'),
-                'shiftId': record.get('shiftId'),
-                'location': record.get('location'),
-                'recognition': record.get('recognition'),
-                'device': record.get('device'),
-                'syncStatus': record.get('syncStatus', 1),
-                'transactionFrom': record.get('transactionFrom', 'androidApplication'),
-                'remarks': record.get('remarks', ''),
-                'createdAt': now,
-                'updatedAt': now
+                'attendanceType': record.get('attendanceType', 'IN').upper()
             }
-            docs_to_insert.append(attendance_doc)
+            if employee_id:
+                filter_query['employeeId'] = ObjectId(employee_id)
+            if visitor_id:
+                filter_query['visitorId'] = ObjectId(visitor_id)
+            
+            # Build update document
+            update_doc = {
+                '$set': {
+                    'companyId': ObjectId(company_id),
+                    'employeeId': ObjectId(employee_id) if employee_id else None,
+                    'visitorId': ObjectId(visitor_id) if visitor_id else None,
+                    'attendanceTime': attendance_time,
+                    'attendanceType': record.get('attendanceType', 'IN').upper(),
+                    'personType': record.get('personType', 'EMPLOYEE'),
+                    'shiftId': record.get('shiftId'),
+                    'location': record.get('location'),
+                    'recognition': record.get('recognition'),
+                    'device': record.get('device'),
+                    'syncStatus': record.get('syncStatus', 1),
+                    'transactionFrom': record.get('transactionFrom', 'androidApplication'),
+                    'remarks': record.get('remarks', ''),
+                    'updatedAt': now
+                },
+                '$setOnInsert': {
+                    'createdAt': created_at
+                }
+            }
+            
+            # Upsert - update if exists, insert if not
+            result = attendance_collection.update_one(filter_query, update_doc, upsert=True)
+            
+            if result.upserted_id:
+                upserted_ids.append(str(result.upserted_id))
+            elif result.modified_count > 0:
+                # Record was updated - find and return its ID
+                existing = attendance_collection.find_one(filter_query, {'_id': 1})
+                if existing:
+                    upserted_ids.append(str(existing['_id']))
         
-        if not docs_to_insert:
-            return error_response('No valid records to insert', 400)
-        
-        result = attendance_collection.insert_many(docs_to_insert)
-        
-        # Return array of inserted IDs for mobile app compatibility
-        return jsonify([str(id) for id in result.inserted_ids]), 201
+        # Return array of IDs for mobile app compatibility
+        return jsonify(upserted_ids), 201
     
     # GET request - retrieve attendance
     """
