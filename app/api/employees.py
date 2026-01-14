@@ -248,12 +248,9 @@ def get_employee_attendance():
     # Get total count
     total = attendance_collection.count_documents(query)
     
-    return jsonify({
-        'attendance': result,
-        'total': total,
-        'limit': limit,
-        'skip': skip
-    })
+    # Return array directly for mobile app compatibility
+    # Total/pagination info available via response headers or separate endpoint if needed
+    return jsonify(result)
 
 
 @employees_bp.route('', methods=['GET'])
