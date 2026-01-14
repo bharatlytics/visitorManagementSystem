@@ -568,11 +568,20 @@ def register_employee():
                             }
                         )
                         
+                        # Build download URL using VMS base URL
+                        base_url = request.url_root.rstrip('/')
+                        download_url = f"{base_url}/api/employees/embeddings/{emb_id}"
+                        
                         emb_entry = {
-                            'embeddingId': str(emb_id),
+                            'embeddingId': emb_id,  # Keep as ObjectId (matches buffalo_l worker format)
+                            'downloadUrl': download_url,  # Direct download URL for mobile clients
                             'model': embedding_version,
+                            'dimensions': None,  # Unknown for uploaded embeddings
+                            'createdAt': get_current_utc(),
+                            'updatedAt': get_current_utc(),
                             'status': 'done',
-                            'finishedAt': get_current_utc()
+                            'finishedAt': get_current_utc(),
+                            'corrupt': False
                         }
                         embeddings_dict[embedding_version] = emb_entry
                         
