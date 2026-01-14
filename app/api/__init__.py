@@ -17,6 +17,7 @@ def register_blueprints(app):
     from app.api.federated_query import federated_query_bp
     from app.api.actor_registration import actor_registration_bp
     from app.api.sync_pull import sync_pull_bp
+    from app.api.attendance import attendance_bp
     
     # VMS core APIs
     app.register_blueprint(visitor_bp, url_prefix='/api/visitors')
@@ -34,6 +35,7 @@ def register_blueprints(app):
     # Data APIs (use DataProvider for dual-mode)
     app.register_blueprint(employees_bp, url_prefix='/api/employees')
     app.register_blueprint(entities_bp, url_prefix='/api/entities')
+    app.register_blueprint(attendance_bp, url_prefix='/api/attendance')
     
     # Platform Integration APIs
     app.register_blueprint(federated_query_bp)  # Federated query endpoints

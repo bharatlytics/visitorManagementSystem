@@ -158,6 +158,104 @@ def sync_employee_to_platform(employee_data, company_id, include_images=True):
         return {'success': False, 'error': str(e)}
 
 
+@employees_bp.route('/attendance', methods=['GET'])
+def get_employee_attendance():
+    """
+    Get attendance records for employees.
+    This is a convenience endpoint that redirects to /api/attendance.
+    
+    Query params:
+    - companyId (required)
+    - employeeId (optional)
+    - startDate (optional)
+    - endDate (optional)
+    """
+    from app.db import attendance_collection, employee_collection
+    
+    company_id = request.args.get('companyId')
+    if not company_id:
+        return error_response('companyId is required', 400)
+    
+    try:
+        company_oid = ObjectId(company_id)
+    except InvalidId:
+        return error_response('Invalid companyId format', 400)
+    
+    # Build query
+    query = {'companyId': company_oid}
+    
+    # Optional filters
+    employee_id = request.args.get('employeeId')
+    if employee_id:
+        try:
+            query['employeeId'] = ObjectId(employee_id)
+        except InvalidId:
+            return error_response('Invalid employeeId format', 400)
+    
+    start_date = request.args.get('startDate')
+    end_date = request.args.get('endDate')
+    if start_date or end_date:
+        query['attendanceTime'] = {}
+        if start_date:
+            query['attendanceTime']['$gte'] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        if end_date:
+            query['attendanceTime']['$lte'] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+    
+    attendance_type = request.args.get('attendanceType')
+    if attendance_type:
+        query['attendanceType'] = attendance_type.upper()
+    
+    # Pagination
+    limit = int(request.args.get('limit', 100))
+    skip = int(request.args.get('skip', 0))
+    
+    # Fetch attendance records
+    cursor = attendance_collection.find(query).sort('attendanceTime', -1).skip(skip).limit(limit)
+    records = list(cursor)
+    
+    # Enrich with employee names
+    employee_ids = list(set(r.get('employeeId') for r in records if r.get('employeeId')))
+    employees = {}
+    if employee_ids:
+        emp_cursor = employee_collection.find({'_id': {'$in': employee_ids}}, {'employeeName': 1, 'name': 1})
+        for emp in emp_cursor:
+            employees[emp['_id']] = emp.get('employeeName') or emp.get('name', 'Unknown')
+    
+    # Format response
+    result = []
+    for record in records:
+        emp_id = record.get('employeeId')
+        formatted = {
+            '_id': str(record['_id']),
+            'employeeId': str(emp_id) if emp_id else None,
+            'employeeName': employees.get(emp_id, 'Unknown') if emp_id else None,
+            'visitorId': str(record.get('visitorId')) if record.get('visitorId') else None,
+            'personType': 'employee' if emp_id else 'visitor',
+            'attendanceTime': record.get('attendanceTime').isoformat() if record.get('attendanceTime') else None,
+            'attendanceType': record.get('attendanceType'),
+            'shiftId': record.get('shiftId'),
+            'location': record.get('location'),
+            'recognition': record.get('recognition'),
+            'device': record.get('device'),
+            'syncStatus': record.get('syncStatus', 1),
+            'transactionFrom': record.get('transactionFrom'),
+            'remarks': record.get('remarks'),
+            'createdAt': record.get('createdAt').isoformat() if record.get('createdAt') else None,
+            'updatedAt': record.get('updatedAt').isoformat() if record.get('updatedAt') else None
+        }
+        result.append(formatted)
+    
+    # Get total count
+    total = attendance_collection.count_documents(query)
+    
+    return jsonify({
+        'attendance': result,
+        'total': total,
+        'limit': limit,
+        'skip': skip
+    })
+
+
 @employees_bp.route('', methods=['GET'])
 @require_company_access
 def list_employees():
