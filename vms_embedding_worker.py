@@ -26,27 +26,24 @@ import sys
 import os
 
 # ========== CONFIGURATION ==========
-# VMS MongoDB connection string - from env var or obfuscated fallback
-def _get_db_uri():
-    """Get MongoDB URI from env or use obfuscated fallback"""
-    uri = os.environ.get('VMS_MONGODB_URI')
-    if uri:
-        return uri
-    # Fallback: obfuscated to avoid git secret detection
-    # Split and encode to bypass scanners
-    _p1 = base64.b64decode('bW9uZ29kYitzcnY6Ly9iaGFyYXRseXRpY3M6').decode()
-    _p2 = base64.b64decode('bk45QUVXN2V4TmRxb1Ezcg==').decode()
-    _p3 = base64.b64decode('QGNsdXN0ZXIwLnRhdG85Lm1vbmdvZGIubmV0L3Ztc19kZXY/').decode()
-    _p4 = base64.b64decode('cmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5JmFwcE5hbWU9Q2x1c3RlcjA=').decode()
-    return _p1 + _p2 + _p3 + _p4
+# Load .env file if present (for local development)
+from dotenv import load_dotenv
+load_dotenv()
 
-VMS_MONGODB_URI = _get_db_uri()
+# Get MongoDB URI from environment variable (required in production)
+VMS_MONGODB_URI = os.environ.get('VMS_MONGODB_URI', 'mongodb://localhost:27017/vms_db')
 VMS_URL = os.environ.get('VMS_URL', 'http://localhost:5001')
 
-# MongoDB connection - VMS database
-print(f"[VMS Worker] Connecting to VMS MongoDB...")
+# MongoDB connection
+print(f"[VMS Worker] Connecting to VMS MongoDB: {VMS_MONGODB_URI[:60]}...")
 client = MongoClient(VMS_MONGODB_URI)
-db = client.get_default_database()
+# Extract database name from URI or use default
+# Handle MongoDB Atlas URIs that may not have db name in path
+db_name = VMS_MONGODB_URI.split('/')[-1].split('?')[0] if '/' in VMS_MONGODB_URI else ''
+if not db_name:
+    db_name = 'blGroup_visitorManagementSystem'  # Default VMS database
+print(f"[VMS Worker] Using database: {db_name}")
+db = client[db_name]
 
 MODEL_NAME = "buffalo_l"
 WORKER_ID = "vms_embedding_worker1"

@@ -8,7 +8,15 @@ from app.config import Config
 # MongoDB connection
 print(f"[DB] Connecting to URI: {Config.VMS_MONGODB_URI}")  # Debug
 client = MongoClient(Config.VMS_MONGODB_URI)
-db = client.get_default_database()
+
+# Extract database name from URI, or use default
+# MongoDB Atlas URIs may not have db name in path
+uri = Config.VMS_MONGODB_URI
+db_name = uri.split('/')[-1].split('?')[0] if '/' in uri else ''
+if not db_name:
+    db_name = 'blGroup_visitorManagementSystem'  # Default VMS database
+print(f"[DB] Using database: {db_name}")
+db = client[db_name]
 
 # Collections - VMS owns these (matching original naming)
 visitor_collection = db['visitors']
