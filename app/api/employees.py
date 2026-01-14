@@ -224,11 +224,8 @@ def employee_attendance():
         
         result = attendance_collection.insert_many(docs_to_insert)
         
-        return jsonify({
-            'message': f'Successfully synced {len(result.inserted_ids)} attendance records',
-            'insertedCount': len(result.inserted_ids),
-            'insertedIds': [str(id) for id in result.inserted_ids]
-        }), 201
+        # Return array of inserted IDs for mobile app compatibility
+        return jsonify([str(id) for id in result.inserted_ids]), 201
     
     # GET request - retrieve attendance
     """
