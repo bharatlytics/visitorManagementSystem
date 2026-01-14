@@ -245,73 +245,6 @@ def serve_visitor_image(image_id):
         return error_response('Image not found', 404)
 
 
-@visitor_bp.route('/embeddings/<embedding_id>', methods=['GET'])
-def serve_visitor_embedding(embedding_id):
-    """
-    Download visitor embedding file.
-    Public endpoint - serves embeddings from VMS GridFS.
-    """
-    try:
-        import bson
-        import pickle
-        
-        print(f"[serve_visitor_embedding] embedding_id={embedding_id}")
-        
-        # Try to get embedding from VMS GridFS
-        try:
-            emb_oid = bson.ObjectId(embedding_id)
-            file = visitor_embedding_fs.get(emb_oid)
-            
-            return Response(
-                file.read(),
-                mimetype='application/octet-stream',
-                headers={
-                    'Content-Disposition': f'attachment; filename={embedding_id}.pkl',
-                    'Content-Type': 'application/octet-stream'
-                }
-            )
-        except Exception as gridfs_err:
-            print(f"[serve_visitor_embedding] GridFS error: {gridfs_err}")
-            
-            # Fallback: try proxying to Platform
-            import jwt
-            from datetime import datetime, timedelta
-            
-            company_id = request.args.get('companyId', '6827296ab6e06b08639107c4')
-            platform_secret = Config.PLATFORM_JWT_SECRET or Config.JWT_SECRET
-            payload = {
-                'sub': 'vms_app_v1',
-                'companyId': company_id,
-                'iss': 'vms',
-                'exp': datetime.utcnow() + timedelta(minutes=5)
-            }
-            platform_token = jwt.encode(payload, platform_secret, algorithm='HS256')
-            
-            platform_url = f"{Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/{embedding_id}"
-            headers = {'Authorization': f'Bearer {platform_token}'}
-            
-            print(f"[serve_visitor_embedding] Proxying to platform: {platform_url}")
-            response = requests.get(platform_url, headers=headers, stream=True, timeout=30)
-            
-            if response.status_code != 200:
-                print(f"[serve_visitor_embedding] Platform returned {response.status_code}")
-                return error_response('Embedding not found', 404)
-            
-            return Response(
-                response.iter_content(chunk_size=8192),
-                mimetype='application/octet-stream',
-                headers={
-                    'Content-Disposition': f'attachment; filename={embedding_id}.pkl',
-                    'Content-Type': 'application/octet-stream'
-                }
-            )
-    except Exception as e:
-        print(f"[serve_visitor_embedding] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return error_response('Embedding not found', 404)
-
-
 @visitor_bp.route('/visits/qr/<visit_id>', methods=['GET'])
 def serve_visit_qr(visit_id):
     """Generate and serve QR code for a visit"""
@@ -1012,7 +945,6 @@ def check_out(visitId):
 
 
 @visitor_bp.route('/embeddings/<embedding_id>', methods=['GET'])
-@require_auth
 def serve_visitor_embedding(embedding_id):
     """
     Download visitor embedding file.
