@@ -956,17 +956,21 @@ def serve_visitor_embedding(embedding_id):
     try:
         from flask import session
         
-        # Get companyId from query params OR from authenticated user's token
+        # Get companyId from query params OR from authenticated user's token (optional)
         company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
         
-        if not company_id:
-            return jsonify({'error': 'companyId is required or must be in auth token'}), 400
-        
-        # Check residency mode
-        from app.services import get_data_provider
-        data_provider = get_data_provider(company_id)
-        config = data_provider._get_residency_config('visitor')
-        residency_mode = config.get('mode', 'app')
+        # Default: serve from VMS GridFS (visitors always stored locally)
+        # Only check residency if companyId is provided
+        residency_mode = 'app'
+        if company_id:
+            try:
+                from app.services import get_data_provider
+                data_provider = get_data_provider(company_id)
+                config = data_provider._get_residency_config('visitor')
+                residency_mode = config.get('mode', 'app')
+            except Exception as e:
+                print(f"[serve_visitor_embedding] Error getting residency config: {e}")
+                residency_mode = 'app'  # Default to app
         
         print(f"[serve_visitor_embedding] embedding_id={embedding_id}, residency={residency_mode}")
         
