@@ -158,8 +158,79 @@ def sync_employee_to_platform(employee_data, company_id, include_images=True):
         return {'success': False, 'error': str(e)}
 
 
-@employees_bp.route('/attendance', methods=['GET'])
-def get_employee_attendance():
+@employees_bp.route('/attendance', methods=['GET', 'POST'])
+def employee_attendance():
+    """
+    GET: Retrieve attendance records for employees.
+    POST: Upload/sync attendance records from mobile app.
+    """
+    from app.db import attendance_collection, employee_collection
+    from app.utils import get_current_utc
+    
+    if request.method == 'POST':
+        # Handle bulk attendance upload from mobile app
+        data = request.get_json()
+        if not data:
+            return error_response('Request body is required', 400)
+        
+        # Mobile app sends array of records directly
+        records = data if isinstance(data, list) else [data]
+        
+        now = get_current_utc()
+        docs_to_insert = []
+        
+        for record in records:
+            company_id = record.get('companyId')
+            employee_id = record.get('employeeId')
+            visitor_id = record.get('visitorId')
+            
+            if not company_id:
+                continue  # Skip records without companyId
+            
+            # Parse attendance time - handle multiple formats
+            attendance_time = now
+            if record.get('attendanceTime'):
+                try:
+                    time_str = record['attendanceTime']
+                    # Handle format like "2026-01-14T11:07:28.660+0000"
+                    if '+0000' in time_str:
+                        time_str = time_str.replace('+0000', '+00:00')
+                    attendance_time = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                except Exception as e:
+                    print(f"[attendance] Error parsing time: {e}")
+                    attendance_time = now
+            
+            attendance_doc = {
+                'companyId': ObjectId(company_id),
+                'employeeId': ObjectId(employee_id) if employee_id else None,
+                'visitorId': ObjectId(visitor_id) if visitor_id else None,
+                'attendanceTime': attendance_time,
+                'attendanceType': record.get('attendanceType', 'IN').upper(),
+                'personType': record.get('personType', 'EMPLOYEE'),
+                'shiftId': record.get('shiftId'),
+                'location': record.get('location'),
+                'recognition': record.get('recognition'),
+                'device': record.get('device'),
+                'syncStatus': record.get('syncStatus', 1),
+                'transactionFrom': record.get('transactionFrom', 'androidApplication'),
+                'remarks': record.get('remarks', ''),
+                'createdAt': now,
+                'updatedAt': now
+            }
+            docs_to_insert.append(attendance_doc)
+        
+        if not docs_to_insert:
+            return error_response('No valid records to insert', 400)
+        
+        result = attendance_collection.insert_many(docs_to_insert)
+        
+        return jsonify({
+            'message': f'Successfully synced {len(result.inserted_ids)} attendance records',
+            'insertedCount': len(result.inserted_ids),
+            'insertedIds': [str(id) for id in result.inserted_ids]
+        }), 201
+    
+    # GET request - retrieve attendance
     """
     Get attendance records for employees.
     This is a convenience endpoint that redirects to /api/attendance.
