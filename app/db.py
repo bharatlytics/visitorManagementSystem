@@ -31,6 +31,7 @@ employee_collection = db['employees']
 locations_collection = db['locations']  # VMS Locations (maps to platform entities)
 users_collection = db['users']
 attendance_collection = db['attendance']  # Employee attendance records
+sync_audit_log_collection = db['sync_audit_logs']  # Audit logs for sync operations
 
 # GridFS for visitor images and embeddings
 visitor_image_fs = GridFS(db, collection='visitor_images')
