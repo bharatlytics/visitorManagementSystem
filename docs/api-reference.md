@@ -1,6 +1,6 @@
 # VMS API Reference - Enterprise Edition
 
-**Version:** 3.1  
+**Version:** 4.0  
 **Base URL:** `http://localhost:5001/api`  
 **Last Updated:** January 2026
 
@@ -3309,6 +3309,233 @@ GET /api/keys/{key_id}/usage
 ```
 
 Returns usage statistics and current rate limit status.
+
+---
+
+## 26. Device Management
+
+**Base Path:** `/api/devices`
+
+Device management for tracking check-in kiosks, tablets, and desktops across locations.
+
+### 26.1 List Devices
+
+```http
+GET /api/devices?companyId={companyId}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+| `locationId` | string | No | Filter by location |
+| `status` | string | No | Filter: `active`, `inactive`, `maintenance` |
+| `deviceType` | string | No | Filter: `kiosk`, `tablet`, `desktop`, `mobile` |
+
+**Response:**
+```json
+{
+  "devices": [
+    {
+      "_id": "device_123",
+      "deviceId": "VMS-A1B2C3D4",
+      "deviceName": "Reception Kiosk 1",
+      "deviceType": "kiosk",
+      "locationId": "loc_123",
+      "locationName": "Main Lobby",
+      "status": "active",
+      "lastSeen": "2026-01-18T10:30:00Z",
+      "isOnline": true,
+      "ipAddress": "192.168.1.100",
+      "appVersion": "1.0.0",
+      "features": {
+        "faceRecognition": true,
+        "badgePrinting": false,
+        "qrScanning": true
+      }
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### 26.2 Register Device
+
+```http
+POST /api/devices/register
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "deviceName": "Reception Kiosk 1",
+  "deviceType": "kiosk",
+  "locationId": "loc_123",
+  "locationName": "Main Lobby",
+  "features": {
+    "faceRecognition": true,
+    "badgePrinting": false,
+    "qrScanning": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Device registered successfully",
+  "device": {
+    "_id": "device_123",
+    "deviceId": "VMS-A1B2C3D4",
+    "deviceName": "Reception Kiosk 1"
+  }
+}
+```
+
+---
+
+### 26.3 Device Heartbeat
+
+```http
+POST /api/devices/{device_id}/heartbeat
+```
+
+Called periodically by devices to report status. No authentication required.
+
+**Request Body:**
+```json
+{
+  "ipAddress": "192.168.1.100",
+  "status": "active",
+  "appVersion": "1.0.0",
+  "metrics": {
+    "cpu": 45,
+    "memory": 60
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Heartbeat received",
+  "serverTime": "2026-01-18T10:30:00Z"
+}
+```
+
+---
+
+### 26.4 Get Device Statistics
+
+```http
+GET /api/devices/stats?companyId={companyId}
+```
+
+**Response:**
+```json
+{
+  "stats": {
+    "total": 10,
+    "online": 8,
+    "offline": 1,
+    "maintenance": 1,
+    "byType": {
+      "kiosk": 5,
+      "tablet": 3,
+      "desktop": 2
+    },
+    "byLocation": {
+      "Main Lobby": 3,
+      "Building A": 4,
+      "Building B": 3
+    }
+  }
+}
+```
+
+---
+
+### 26.5 Generate Activation Code
+
+```http
+POST /api/devices/activation-codes
+```
+
+Generate a code for device self-activation.
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "locationId": "loc_123",
+  "locationName": "Main Lobby",
+  "expiresIn": 24
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Activation code created",
+  "code": "A1B2C3D4",
+  "expiresAt": "2026-01-19T10:30:00Z"
+}
+```
+
+---
+
+### 26.6 Activate Device
+
+```http
+POST /api/devices/activate
+```
+
+Activate a device using an activation code.
+
+**Request Body:**
+```json
+{
+  "activationCode": "A1B2C3D4",
+  "deviceInfo": {
+    "name": "Kiosk 5",
+    "type": "kiosk",
+    "os": "Android 12",
+    "appVersion": "1.0.0"
+  }
+}
+```
+
+---
+
+### 26.7 Update Device
+
+```http
+PATCH /api/devices/{device_id}
+```
+
+**Request Body:**
+```json
+{
+  "deviceName": "Updated Name",
+  "locationId": "new_loc_id",
+  "status": "maintenance",
+  "features": {
+    "badgePrinting": true
+  }
+}
+```
+
+---
+
+### 26.8 Delete Device
+
+```http
+DELETE /api/devices/{device_id}?companyId={companyId}
+```
 
 ---
 

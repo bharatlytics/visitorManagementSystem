@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard, Users, Calendar, ShieldCheck, AlertTriangle,
-    BarChart3, FileText, Settings, Menu, LogOut, Bell, Search
+    BarChart3, FileText, Settings, Menu, LogOut, Bell, Search, Monitor
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
@@ -14,6 +14,7 @@ const navigation = [
     { name: 'Watchlist', href: '/watchlist', icon: AlertTriangle },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'Reports', href: '/reports', icon: FileText },
+    { name: 'Devices', href: '/devices', icon: Monitor },
     { name: 'Settings', href: '/settings', icon: Settings },
 ]
 

@@ -8,6 +8,7 @@ import Approvals from './pages/Approvals'
 import Watchlist from './pages/Watchlist'
 import Analytics from './pages/Analytics'
 import Reports from './pages/Reports'
+import Devices from './pages/Devices'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import { useAuthStore } from './store/authStore'
@@ -45,6 +46,7 @@ function App() {
                   <Route path="/watchlist" element={<Watchlist />} />
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/reports" element={<Reports />} />
+                  <Route path="/devices" element={<Devices />} />
                   <Route path="/settings" element={<Settings />} />
                 </Routes>
               </Layout>

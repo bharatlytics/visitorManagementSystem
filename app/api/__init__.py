@@ -34,6 +34,8 @@ def register_blueprints(app):
     from app.api.reports import reports_bp
     from app.api.webhooks import webhooks_bp
     from app.api.api_keys import api_keys_bp
+    # Phase 5: Device Management
+    from app.api.devices import devices_bp
     
     # VMS core APIs
     app.register_blueprint(visitor_bp, url_prefix='/api/visitors')
@@ -63,6 +65,9 @@ def register_blueprints(app):
     app.register_blueprint(reports_bp, url_prefix='/api/reports')
     app.register_blueprint(webhooks_bp, url_prefix='/api/webhooks')
     app.register_blueprint(api_keys_bp, url_prefix='/api/keys')
+    
+    # Phase 5: Device Management
+    app.register_blueprint(devices_bp, url_prefix='/api/devices')
     
     # Company API
     app.register_blueprint(company_bp, url_prefix='/api/company')
