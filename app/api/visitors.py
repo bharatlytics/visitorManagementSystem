@@ -364,7 +364,7 @@ def register_visitor():
         required_face_positions = ['left', 'right', 'center']
         has_images = any(pos in request.files and request.files[pos] for pos in required_face_positions)
         
-        # Process visitor face images only if provided
+        # Process visitor face images only if provided via file upload
         image_dict = {}
         document_dict = {}
         if has_images:
@@ -381,6 +381,34 @@ def register_visitor():
                         }
                     )
                     image_dict[position] = face_image_id
+        
+        # Handle base64 images from browser webcam capture (faceCenter, faceLeft, faceRight)
+        base64_mapping = {'faceCenter': 'center', 'faceLeft': 'left', 'faceRight': 'right'}
+        for form_key, position in base64_mapping.items():
+            if form_key in request.form and request.form[form_key]:
+                base64_data = request.form[form_key]
+                try:
+                    # Parse data URL format: "data:image/jpeg;base64,..."
+                    if ',' in base64_data:
+                        base64_data = base64_data.split(',')[1]
+                    image_bytes = base64.b64decode(base64_data)
+                    
+                    # Store in GridFS
+                    from io import BytesIO
+                    face_image_id = visitor_image_fs.put(
+                        BytesIO(image_bytes),
+                        filename=f"{data['companyId']}_{position}_face.jpg",
+                        metadata={
+                            'companyId': data['companyId'],
+                            'type': f'face_image_{position}',
+                            'source': 'webcam',
+                            'timestamp': get_current_utc()
+                        }
+                    )
+                    image_dict[position] = face_image_id
+                    has_images = True
+                except Exception as b64_err:
+                    print(f"Error processing base64 image for {position}: {b64_err}")
         
         # Process ID documents if provided
         id_documents = ['pan_card', 'aadhar_card', 'driving_license', 'passport']
@@ -846,6 +874,54 @@ def schedule_visit(visitorId):
         result = visit_collection.insert_one(visit_doc)
         visit_id = result.inserted_id
         
+        # Handle approval workflow
+        requires_approval = data.get('requiresApproval', False)
+        if requires_approval:
+            # Update visit status to pending_approval
+            visit_collection.update_one(
+                {'_id': visit_id},
+                {'$set': {'status': 'pending_approval', 'approvalRequired': True}}
+            )
+            
+            # Create approval record
+            from app.db import get_db
+            db = get_db()
+            approval_doc = {
+                '_id': ObjectId(),
+                'companyId': company_obj_id,
+                'visitId': visit_id,
+                'visitorId': visitor_obj_ids[0],
+                'visitorName': visitor.get('visitorName'),
+                'visitorPhone': visitor.get('phone'),
+                'visitorEmail': visitor.get('email'),
+                'hostEmployeeId': host_obj_id,
+                'hostEmployeeName': host_employee.get('employeeName'),
+                'purpose': data.get('purpose', ''),
+                'visitType': data.get('visitType', 'guest'),
+                'expectedArrival': arrival,
+                'expectedDeparture': new_end,
+                'status': 'pending',
+                'requestedAt': get_current_utc(),
+                'requestedBy': getattr(request, 'user_id', 'system'),
+                'notes': data.get('notes', ''),
+                'approvalChain': [{
+                    'approverId': str(host_obj_id),
+                    'approverName': host_employee.get('employeeName'),
+                    'status': 'pending',
+                    'level': 1
+                }]
+            }
+            db['approvals'].insert_one(approval_doc)
+            
+            # Notify host of pending approval
+            integration_client.publish_event('approval.requested', {
+                'approvalId': str(approval_doc['_id']),
+                'visitId': str(visit_id),
+                'visitorName': visitor.get('visitorName'),
+                'hostId': str(host_obj_id),
+                'companyId': data['companyId']
+            })
+        
         # Update each visitor's visits list
         for vid in visitor_obj_ids:
             visitor_collection.update_one(
@@ -883,12 +959,18 @@ def schedule_visit(visitorId):
             'visitorId': str(primary_visitor_id),
             'hostId': str(host_obj_id),
             'expectedArrival': arrival.isoformat(),
-            'companyId': data['companyId']
+            'companyId': data['companyId'],
+            'requiresApproval': requires_approval
         })
+        
+        response_message = 'Visit scheduled successfully'
+        if requires_approval:
+            response_message = 'Visit scheduled - pending host approval'
                 
         return jsonify({
-            'message': 'Visit scheduled successfully',
-            'visit': visit_dict
+            'message': response_message,
+            'visit': visit_dict,
+            'requiresApproval': requires_approval
         }), 201
         
     except Exception as e:

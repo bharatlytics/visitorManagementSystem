@@ -1,0 +1,15 @@
+{
+    "name": "vms-enterprise",
+    "version": "4.0.0",
+    "description": "Visitor Management System - Enterprise Edition",
+    "scripts": {
+        "dev": "concurrently --kill-others \"npm run dev:backend\" \"npm run dev:frontend\"",
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev:backend": "python run.py",
+        "build": "cd frontend && npm run build",
+        "preview": "cd frontend && npm run preview"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}

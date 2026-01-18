@@ -32,22 +32,25 @@ def create_app():
     app.register_blueprint(residency_bp, url_prefix='/api')
 
     
-    # Main routes
+    # Main routes - Redirect to React frontend in development
+    from flask import redirect
+    
     @app.route('/')
     def index():
-        return app.send_static_file('index.html')
+        # In development, redirect to React dev server
+        return redirect('http://localhost:5173')
     
     @app.route('/dashboard.html')
     def dashboard():
-        return app.send_static_file('dashboard.html')
+        return redirect('http://localhost:5173')
     
     @app.route('/visitors.html')
     def visitors():
-        return app.send_static_file('visitors.html')
+        return redirect('http://localhost:5173/visitors')
     
     @app.route('/visits.html')
     def visits():
-        return app.send_static_file('visits.html')
+        return redirect('http://localhost:5173/visits')
     
     @app.route('/health')
     def health():

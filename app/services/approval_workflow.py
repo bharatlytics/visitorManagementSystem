@@ -296,10 +296,15 @@ def process_approval_action(approval_id: str, approver_id: str, action: str,
             approval['status'] = ApprovalStatus.APPROVED
             approval['completedAt'] = now
             
-            # Update visit status
+            # Update visit status - change from pending_approval to scheduled
             visit_collection.update_one(
                 {'_id': approval['visitId']},
-                {'$set': {'approvalStatus': ApprovalStatus.APPROVED}}
+                {'$set': {
+                    'approvalStatus': ApprovalStatus.APPROVED,
+                    'status': 'scheduled',  # Change from pending_approval to scheduled
+                    'approvedAt': now,
+                    'approvedBy': approver_id
+                }}
             )
         else:
             # Move to next level

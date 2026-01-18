@@ -81,7 +81,7 @@ class DataProvider:
         
         # Get actor mapping from manifest
         mapped_actor_type = self._get_mapped_actor_type(company_id, 'employee')
-        print(f"[DataProvider] VMS 'employee' → Platform '{mapped_actor_type}'")
+        print(f"[DataProvider] VMS 'employee' -> Platform '{mapped_actor_type}'")
         
         employees = []
         
@@ -182,10 +182,10 @@ class DataProvider:
                         
                         if platform_types:
                             if isinstance(platform_types, list):
-                                print(f"[DataProvider] Entity mapping: '{vms_entity_type}' → {platform_types}")
+                                print(f"[DataProvider] Entity mapping: '{vms_entity_type}' -> {platform_types}")
                                 return platform_types
                             else:
-                                print(f"[DataProvider] Entity mapping: '{vms_entity_type}' → ['{platform_types}']")
+                                print(f"[DataProvider] Entity mapping: '{vms_entity_type}' -> ['{platform_types}']")
                                 return [platform_types]
         except Exception as e:
             print(f"[DataProvider] Error getting entity mapping from manifest: {e}")
@@ -232,7 +232,7 @@ class DataProvider:
         print(f"[DataProvider] Fetching visitors from Platform")
         
         mapped_actor_type = self._get_mapped_actor_type(company_id, 'visitor')
-        print(f"[DataProvider] VMS 'visitor' → Platform '{mapped_actor_type}'")
+        print(f"[DataProvider] VMS 'visitor' -> Platform '{mapped_actor_type}'")
         
         visitors = []
         
@@ -284,7 +284,7 @@ class DataProvider:
         # But we check residency to be safe
         residency_mode = ResidencyDetector.get_mode(cid, 'location')
         print(f"[DataProvider.get_entities] Company {cid}, mode: {residency_mode}")
-        print(f"[DataProvider.get_entities] ⚠️ CRITICAL: Mode should be 'platform' for entities!")
+        print(f"[DataProvider.get_entities] WARNING: Mode should be 'platform' for entities!")
         
         if residency_mode == 'app':
             # Fetch from VMS local database
