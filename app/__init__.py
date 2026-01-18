@@ -27,13 +27,10 @@ def create_app():
     from app.auth import auth_bp
     app.register_blueprint(auth_bp)
     
-    # Register webhooks
-    from app.api.webhooks import webhooks_bp
-    app.register_blueprint(webhooks_bp, url_prefix='/api/webhooks')
-    
     # Register residency API (Data Residency v3)
     from app.api.residency_api import residency_bp
     app.register_blueprint(residency_bp, url_prefix='/api')
+
     
     # Main routes
     @app.route('/')
@@ -108,7 +105,8 @@ def sync_manifest_to_platform():
             )
             
             if response.status_code in [200, 201]:
-                print(f"[VMS] Manifest synced to Platform: v{manifest.get('version')}")
+                version = manifest.get('app', {}).get('version', 'unknown')
+                print(f"[VMS] Manifest synced to Platform: v{version}")
             else:
                 print(f"[VMS] Manifest sync failed: {response.status_code}")
                 print(f"[VMS] Response: {response.text[:500]}")  # Show error details

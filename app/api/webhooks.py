@@ -1,225 +1,280 @@
 """
 Webhooks API
-Handles platform lifecycle events (install, uninstall).
+
+Webhook management for event notifications:
+- Subscribe to VMS events
+- Configure delivery endpoints
+- Retry policies
+- Webhook history and logs
 """
-import json
-import os
 from flask import Blueprint, request, jsonify
-from app.db import db
-from app.services.integration_helper import integration_client
-from app.config import Config
+from bson import ObjectId
+from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
+import secrets
+import json
+
+from app.db import get_db
+from app.auth import require_auth, require_company_access
+from app.utils import get_current_utc
 
 webhooks_bp = Blueprint('webhooks', __name__)
 
-@webhooks_bp.route('/install', methods=['POST'])
-def handle_install():
-    """
-    Handle app installation webhook.
-    Receives client_id and client_secret from the platform.
-    """
-    data = request.json
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-        
-    company_id = data.get('company_id')
-    installation_id = data.get('installation_id')
-    credentials = data.get('credentials', {})
-    
-    if not company_id or not credentials:
-        return jsonify({'error': 'Missing required fields'}), 400
-        
-    # Store installation details securely
-    # In a real app, encrypt the client_secret
-    installation_doc = {
-        'company_id': company_id,
-        'installation_id': installation_id,
-        'app_id': data.get('app_id') or credentials.get('app_id'),  # Platform-generated app ID
-        'client_id': credentials.get('client_id'),
-        'client_secret': credentials.get('client_secret'),
-        'status': 'active',
-        'installed_at': data.get('timestamp')
-    }
-    
-    print(f"[Webhook/Install] Storing installation: app_id={installation_doc.get('app_id')}, company_id={company_id}")
-    
-    # Update or insert
-    db['installations'].update_one(
-        {'company_id': company_id},
-        {'$set': installation_doc},
-        upsert=True
-    )
-    
-    # Initialize/Verify connection
+
+# Available webhook events
+WEBHOOK_EVENTS = [
+    'visitor.registered',
+    'visitor.updated',
+    'visitor.deleted',
+    'visitor.blacklisted',
+    'visit.scheduled',
+    'visit.checked_in',
+    'visit.checked_out',
+    'visit.cancelled',
+    'approval.requested',
+    'approval.approved',
+    'approval.rejected',
+    'evacuation.triggered',
+    'evacuation.ended',
+    'security.blacklist_match',
+    'security.alert'
+]
+
+
+def convert_objectids(obj):
+    """Recursively convert ObjectIds to strings"""
+    if isinstance(obj, dict):
+        return {k: convert_objectids(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectids(i) for i in obj]
+    elif isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
+
+
+def generate_webhook_secret():
+    """Generate a secure webhook secret"""
+    return secrets.token_hex(32)
+
+
+def sign_payload(payload: dict, secret: str) -> str:
+    """Create HMAC signature for webhook payload"""
+    payload_bytes = json.dumps(payload, sort_keys=True, default=str).encode('utf-8')
+    signature = hmac.new(secret.encode('utf-8'), payload_bytes, hashlib.sha256).hexdigest()
+    return f"sha256={signature}"
+
+
+@webhooks_bp.route('/events', methods=['GET'])
+@require_company_access
+def list_available_events():
+    """List all available webhook events"""
+    return jsonify({
+        'events': WEBHOOK_EVENTS,
+        'count': len(WEBHOOK_EVENTS)
+    }), 200
+
+
+@webhooks_bp.route('/subscriptions', methods=['GET'])
+@require_company_access
+def list_subscriptions():
+    """List all webhook subscriptions for a company."""
     try:
-        integration_client.initialize(
-            client_id=credentials.get('client_id'),
-            client_secret=credentials.get('client_secret'),
-            company_id=company_id
-        )
-        # Register schemas immediately upon install
-        integration_client.register_schemas()
+        company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
         
-        # Register data contract with the platform for dashboard integration
-        _register_data_contract()
+        if not company_id:
+            return jsonify({'error': 'Company ID is required'}), 400
+        
+        db = get_db()
+        webhooks = db['webhooks']
+        
+        subs = list(webhooks.find({'companyId': company_id}))
+        
+        for sub in subs:
+            sub.pop('secret', None)
+        
+        return jsonify({
+            'subscriptions': convert_objectids(subs),
+            'count': len(subs)
+        }), 200
         
     except Exception as e:
-        print(f"Warning: Failed to initialize integration on install: {e}")
-    
-    print(f"✅ App installed for company {company_id}")
-    return jsonify({'status': 'success', 'message': 'Installation completed'})
+        print(f"Error listing webhooks: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-def _register_data_contract():
-    """
-    Register VMS data contract with the platform.
-    This enables VMS metrics to appear in Custom Dashboards.
-    """
+@webhooks_bp.route('/subscriptions', methods=['POST'])
+@require_company_access
+def create_subscription():
+    """Create a new webhook subscription."""
     try:
-        # Load manifest to get data exchange config
-        manifest_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'manifest.json')
-        with open(manifest_path, 'r') as f:
-            manifest = json.load(f)
+        data = request.json or {}
+        company_id = data.get('companyId') or getattr(request, 'company_id', None)
+        url = data.get('url')
+        events = data.get('events', [])
         
-        # Build data contract from manifest
-        data_contract = {
-            'appId': manifest.get('appId', 'vms_app_v1'),
-            'appName': manifest.get('name', 'Visitor Management System'),
-            'category': manifest.get('category', 'operations'),
-            'industries': ['healthcare', 'corporate', 'manufacturing', 'education'],
-            'consumes': {
-                'actors': {
-                    'types': [a['actorType'] for a in manifest.get('requiredActors', [])],
-                    'usage': 'Link visitors to hosts and manage visitor data'
-                },
-                'entities': {
-                    'types': [e['entityType'] for e in manifest.get('requiredEntities', [])],
-                    'usage': 'Assign visits to locations'
-                }
-            },
-            'produces': manifest.get('dataExchange', {}).get('produces', {})
+        if not company_id:
+            return jsonify({'error': 'Company ID is required'}), 400
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+        if not events:
+            return jsonify({'error': 'At least one event is required'}), 400
+        
+        invalid_events = [e for e in events if e not in WEBHOOK_EVENTS and e != '*']
+        if invalid_events:
+            return jsonify({'error': f'Invalid events: {invalid_events}'}), 400
+        
+        secret = generate_webhook_secret()
+        
+        db = get_db()
+        webhooks = db['webhooks']
+        
+        webhook_doc = {
+            '_id': ObjectId(),
+            'companyId': company_id,
+            'name': data.get('name', f'Webhook for {url}'),
+            'url': url,
+            'events': events,
+            'secret': secret,
+            'headers': data.get('headers', {}),
+            'retryPolicy': data.get('retryPolicy', {
+                'maxRetries': 3,
+                'retryDelaySeconds': [60, 300, 900]
+            }),
+            'active': True,
+            'createdAt': get_current_utc(),
+            'createdBy': getattr(request, 'user_id', 'system'),
+            'lastDelivery': None,
+            'deliveryCount': 0,
+            'failureCount': 0
         }
         
-        # Register with platform
-        headers = integration_client._get_auth_headers()
-        import requests
-        response = requests.post(
-            f"{Config.PLATFORM_API_URL}/bharatlytics/integration/v1/registry/contracts",
-            headers=headers,
-            json=data_contract,
-            timeout=10
-        )
+        webhooks.insert_one(webhook_doc)
         
-        if response.status_code in [200, 201]:
-            print("✅ Data contract registered with platform")
-        else:
-            print(f"Warning: Failed to register data contract: {response.text}")
-            
+        return jsonify({
+            'message': 'Webhook subscription created',
+            'subscriptionId': str(webhook_doc['_id']),
+            'secret': secret,
+            'events': events,
+            'note': 'Store the secret securely. It will not be shown again.'
+        }), 201
+        
     except Exception as e:
-        print(f"Warning: Could not register data contract: {e}")
+        print(f"Error creating webhook: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
-@webhooks_bp.route('/uninstall', methods=['POST'])
-def handle_uninstall():
-    """
-    Handle app uninstallation webhook.
-    """
-    data = request.json
-    company_id = data.get('company_id')
-    
-    if not company_id:
-        return jsonify({'error': 'Missing company_id'}), 400
+@webhooks_bp.route('/subscriptions/<subscription_id>', methods=['DELETE'])
+@require_company_access
+def delete_subscription(subscription_id):
+    """Delete a webhook subscription"""
+    try:
+        db = get_db()
+        webhooks = db['webhooks']
         
-    # Remove credentials
-    db['installations'].delete_one({'company_id': company_id})
-    
-    print(f"🗑️ App uninstalled for company {company_id}")
-    return jsonify({'status': 'success', 'message': 'Uninstallation completed'})
+        result = webhooks.delete_one({'_id': ObjectId(subscription_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({'error': 'Subscription not found'}), 404
+        
+        return jsonify({'message': 'Subscription deleted'}), 200
+        
+    except Exception as e:
+        print(f"Error deleting webhook: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-@webhooks_bp.route('/residency-change', methods=['POST'])
-def handle_residency_change():
-    """
-    Handle residency mode change from platform.
-    
-    Called when company changes residency mode (platform ↔ app).
-    
-    Request format:
-    {
-        "dataType": "actor_visitor",
-        "oldMode": "app",
-        "newMode": "platform",
-        "company_id": "company_123"
-    }
-    """
-    data = request.json
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    data_type = data.get('dataType')
-    old_mode = data.get('oldMode')
-    new_mode = data.get('newMode')
-    company_id = data.get('company_id')
-    
-    if not all([data_type, new_mode, company_id]):
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    print(f"📦 Residency change: {data_type} {old_mode} → {new_mode} for company {company_id}")
-    
-    if new_mode == 'platform':
-        # Company wants data synced to platform
-        # Schedule a full sync job
+@webhooks_bp.route('/subscriptions/<subscription_id>/test', methods=['POST'])
+@require_company_access
+def test_webhook(subscription_id):
+    """Send a test webhook delivery."""
+    try:
+        import requests as http_requests
+        
+        db = get_db()
+        webhooks = db['webhooks']
+        
+        webhook = webhooks.find_one({'_id': ObjectId(subscription_id)})
+        if not webhook:
+            return jsonify({'error': 'Subscription not found'}), 404
+        
+        test_payload = {
+            'event': 'webhook.test',
+            'timestamp': get_current_utc().isoformat(),
+            'data': {
+                'message': 'This is a test webhook delivery',
+                'subscriptionId': subscription_id
+            }
+        }
+        
+        signature = sign_payload(test_payload, webhook['secret'])
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'X-Webhook-Signature': signature,
+            'X-Webhook-Event': 'webhook.test',
+            'X-Webhook-Delivery-Id': str(ObjectId())
+        }
+        headers.update(webhook.get('headers', {}))
+        
         try:
-            # Trigger sync in background
-            # In production, use Celery or similar task queue
-            from threading import Thread
-            from app.api.residency_api import trigger_sync
+            response = http_requests.post(
+                webhook['url'],
+                json=test_payload,
+                headers=headers,
+                timeout=10
+            )
             
-            def background_sync():
-                # Create app context for background thread
-                from flask import current_app
-                with current_app.app_context():
-                    # Perform full sync
-                    integration_client.update_sync_status(data_type, 'pending_migration')
-                    # Actual sync will be handled by residency_api
+            success = 200 <= response.status_code < 300
             
-            # Note: In production, use proper task queue instead of threading
-            print(f"🔄 Scheduling full sync for {data_type}")
+            return jsonify({
+                'success': success,
+                'statusCode': response.status_code,
+                'message': 'Test delivery successful' if success else 'Test delivery failed'
+            }), 200
             
-        except Exception as e:
-            print(f"Error scheduling sync: {e}")
+        except Exception as delivery_error:
+            return jsonify({
+                'success': False,
+                'error': str(delivery_error),
+                'message': 'Failed to connect to webhook URL'
+            }), 200
         
-    elif new_mode == 'app':
-        # Company wants federated queries
-        # Ensure our query endpoint is ready
-        print(f"📡 Switching to federated mode for {data_type}")
-    
-    return jsonify({
-        'status': 'acknowledged',
-        'dataType': data_type,
-        'newMode': new_mode
-    })
+    except Exception as e:
+        print(f"Error testing webhook: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-@webhooks_bp.route('/data-update', methods=['POST'])
-def handle_data_update():
-    """
-    Handle data update notifications from platform.
-    
-    Called when platform data changes that the app should know about.
-    """
-    data = request.json
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    update_type = data.get('type')
-    entity_type = data.get('entityType')
-    
-    print(f"📥 Data update received: {update_type} for {entity_type}")
-    
-    # Handle different update types
-    # - actor_updated: An actor was modified
-    # - entity_updated: An entity was modified
-    # - mapping_changed: Data mapping was updated
-    
-    return jsonify({'status': 'received'})
-
+@webhooks_bp.route('/deliveries', methods=['GET'])
+@require_company_access
+def get_delivery_history():
+    """Get webhook delivery history."""
+    try:
+        company_id = request.args.get('companyId') or getattr(request, 'company_id', None)
+        subscription_id = request.args.get('subscriptionId')
+        limit = int(request.args.get('limit', 50))
+        
+        if not company_id:
+            return jsonify({'error': 'Company ID is required'}), 400
+        
+        db = get_db()
+        deliveries = db['webhook_deliveries']
+        
+        query = {'companyId': company_id}
+        if subscription_id:
+            query['subscriptionId'] = ObjectId(subscription_id)
+        
+        history = list(deliveries.find(query).sort('timestamp', -1).limit(limit))
+        
+        return jsonify({
+            'deliveries': convert_objectids(history),
+            'count': len(history)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting delivery history: {e}")
+        return jsonify({'error': str(e)}), 500

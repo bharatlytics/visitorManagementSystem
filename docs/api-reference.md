@@ -2362,6 +2362,956 @@ DELETE /api/actors/{actorType}/{actorId}
 
 ---
 
+## 13. Emergency & Evacuation APIs
+
+Critical endpoints for emergency response and visitor safety.
+
+### 13.1 Get Evacuation List
+
+```http
+GET /api/emergency/evacuation-list?companyId={companyId}
+```
+
+Returns real-time list of all currently checked-in visitors for emergency headcount.
+
+**Response:**
+```json
+{
+  "evacuationList": [
+    {
+      "visitId": "visit_123",
+      "visitorName": "John Doe",
+      "visitorPhone": "+91-9876543210",
+      "hostEmployeeName": "Jane Smith",
+      "locationName": "Building A",
+      "checkInTime": "2024-12-13T10:00:00Z",
+      "evacuationStatus": "on_site"
+    }
+  ],
+  "summary": {
+    "totalOnSite": 25,
+    "evacuatedCount": 20,
+    "missingCount": 5,
+    "percentAccountedFor": 80.0
+  }
+}
+```
+
+---
+
+### 13.2 Trigger Evacuation
+
+```http
+POST /api/emergency/trigger
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "reason": "fire_drill",
+  "musterPoints": ["Main Gate", "Parking Lot B"]
+}
+```
+
+---
+
+### 13.3 Muster Check-in
+
+```http
+POST /api/emergency/muster-checkin
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitId": "visit_123",
+  "musterPoint": "Main Gate",
+  "method": "manual"
+}
+```
+
+---
+
+### 13.4 End Evacuation
+
+```http
+POST /api/emergency/end
+Content-Type: application/json
+```
+
+---
+
+## 14. Bulk Operations APIs
+
+For event management and mass operations.
+
+### 14.1 Bulk Register Visitors
+
+```http
+POST /api/visitors/bulk-register
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "visitors": [
+    {
+      "visitorName": "John Doe",
+      "phone": "+91-9876543210",
+      "hostEmployeeId": "emp_001",
+      "email": "john@example.com",
+      "organization": "ABC Corp"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "summary": {
+    "total": 100,
+    "successful": 95,
+    "failed": 5,
+    "existing": 10
+  },
+  "successful": [...],
+  "failed": [...]
+}
+```
+
+---
+
+### 14.2 Bulk Schedule Visits
+
+```http
+POST /api/visitors/bulk-schedule
+Content-Type: application/json
+```
+
+---
+
+### 14.3 Bulk Cancel Visits
+
+```http
+POST /api/visitors/bulk-cancel
+Content-Type: application/json
+```
+
+---
+
+## 15. Pre-Registration Portal APIs
+
+Self-service visitor pre-registration with QR codes.
+
+### 15.1 Create Invite
+
+```http
+POST /api/preregistration/invite
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "hostEmployeeId": "emp_001",
+  "visitorEmail": "visitor@example.com",
+  "expectedArrival": "2024-12-15T10:00:00Z",
+  "purpose": "Business Meeting"
+}
+```
+
+**Response:**
+```json
+{
+  "inviteToken": "abc123xyz...",
+  "inviteUrl": "https://vms.example.com/visitor-registration/abc123xyz",
+  "qrCodeUrl": "/api/preregistration/abc123xyz/qr",
+  "expiresAt": "2024-12-18T10:00:00Z"
+}
+```
+
+---
+
+### 15.2 Get Invite Details (Public)
+
+```http
+GET /api/preregistration/{token}
+```
+
+No authentication required. Returns invite details for visitor.
+
+---
+
+### 15.3 Submit Registration (Public)
+
+```http
+POST /api/preregistration/{token}/submit
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitorName": "John Doe",
+  "phone": "+91-9876543210",
+  "email": "john@example.com",
+  "organization": "ABC Corp"
+}
+```
+
+---
+
+## 16. Approval Workflow APIs
+
+Multi-level approval chains for visitor management.
+
+### 16.1 Get Pending Approvals
+
+```http
+GET /api/approvals/pending?companyId={companyId}&approverId={approverId}
+```
+
+---
+
+### 16.2 Approve Visit
+
+```http
+POST /api/approvals/{approval_id}/approve
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "approverId": "emp_001",
+  "comment": "Approved for meeting"
+}
+```
+
+---
+
+### 16.3 Reject Visit
+
+```http
+POST /api/approvals/{approval_id}/reject
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "approverId": "emp_001",
+  "reason": "Meeting cancelled"
+}
+```
+
+---
+
+### 16.4 Delegate Approval
+
+```http
+POST /api/approvals/{approval_id}/delegate
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "fromApproverId": "emp_001",
+  "toApproverId": "emp_002",
+  "reason": "Out of office"
+}
+```
+
+---
+
+### 16.5 Configure Approval Rules
+
+```http
+POST /api/approvals/rules
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "visitorType": "contractor",
+  "mode": "sequential",
+  "levels": [
+    {"role": "host", "timeoutHours": 24},
+    {"role": "manager", "timeoutHours": 48}
+  ],
+  "requiresApproval": true
+}
+```
+
+---
+
+## 17. Audit Trail APIs
+
+Complete audit logging for compliance.
+
+### 17.1 Search Audit Logs
+
+```http
+GET /api/audit/logs?companyId={companyId}&action={action}&startDate={date}&endDate={date}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `action` | string | Filter by action (visitor.created, visit.checkin, etc.) |
+| `entityType` | string | Filter by entity (visitor, visit, employee) |
+| `severity` | string | Filter by severity (info, warning, critical) |
+| `startDate` | ISO date | Start of date range |
+| `endDate` | ISO date | End of date range |
+
+---
+
+### 17.2 Get Entity History
+
+```http
+GET /api/audit/entity/{entity_type}/{entity_id}
+```
+
+Returns complete audit history for a specific entity.
+
+---
+
+### 17.3 Export Audit Logs
+
+```http
+GET /api/audit/export?companyId={companyId}&format=csv&startDate={date}&endDate={date}
+```
+
+Returns downloadable CSV or JSON file for compliance reporting.
+
+---
+
+### 17.4 Security Events
+
+```http
+GET /api/audit/security-events?companyId={companyId}&days=7
+```
+
+Returns security-related events (login failures, blacklist matches, etc.)
+
+---
+
+## 18. Watchlist APIs
+
+Categorized watchlist management (VIP, Blacklist, Restricted, Banned).
+
+### 18.1 Add to Watchlist
+
+```http
+POST /api/watchlist/entries
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "category": "blacklist",
+  "name": "John Doe",
+  "phone": "+91-9876543210",
+  "reason": "Security violation",
+  "expiresAt": "2025-12-31T23:59:59Z"
+}
+```
+
+**Categories:**
+
+| Category | Behavior |
+|----------|----------|
+| `vip` | Fast-track check-in, notify leadership |
+| `blacklist` | Block entry, alert security |
+| `restricted` | Extra verification required |
+| `banned` | Permanent block, legal hold |
+
+---
+
+### 18.2 Check Against Watchlist
+
+```http
+POST /api/watchlist/check
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "phone": "+91-9876543210",
+  "email": "visitor@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "matches": [...],
+  "hasBlacklist": true,
+  "hasVip": false,
+  "hasRestricted": false
+}
+```
+
+---
+
+### 18.3 List Watchlist Entries
+
+```http
+GET /api/watchlist/entries?companyId={companyId}&category=blacklist
+```
+
+---
+
+### 18.4 Remove from Watchlist
+
+```http
+DELETE /api/watchlist/entries/{entry_id}
+```
+
+---
+
+## 19. GDPR Compliance APIs
+
+Data privacy and compliance endpoints.
+
+### 19.1 Export Visitor Data
+
+```http
+GET /api/gdpr/export/{visitor_id}?format=json&includeVisits=true
+```
+
+GDPR Right to Access - exports all visitor data.
+
+---
+
+### 19.2 Create Deletion Request
+
+```http
+POST /api/gdpr/deletion-request
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "visitorId": "visitor_456",
+  "reason": "Visitor requested data deletion"
+}
+```
+
+---
+
+### 19.3 Purge Visitor Data
+
+```http
+DELETE /api/gdpr/purge/{visitor_id}
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "confirmation": "PERMANENTLY DELETE",
+  "reason": "GDPR deletion request"
+}
+```
+
+> [!CAUTION]
+> This action is **irreversible**. All visitor data, images, embeddings, and visit history will be permanently deleted.
+
+---
+
+### 19.4 Record Consent
+
+```http
+POST /api/gdpr/consent
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitorId": "visitor_456",
+  "consentType": "biometric",
+  "granted": true,
+  "method": "digital"
+}
+```
+
+---
+
+## 20. Mobile API
+
+Optimized endpoints for mobile security guard and host apps.
+
+### 20.1 Sync Visitors (Delta)
+
+```http
+GET /api/mobile/sync/visitors?companyId={companyId}&since={timestamp}&cursor={cursor}
+```
+
+Returns visitor records updated since timestamp for offline sync.
+
+**Response:**
+```json
+{
+  "visitors": [...],
+  "nextCursor": "cursor_string",
+  "hasMore": true,
+  "syncTimestamp": "2024-12-13T10:00:00Z"
+}
+```
+
+---
+
+### 20.2 Sync Visits
+
+```http
+GET /api/mobile/sync/visits?companyId={companyId}&role=guard
+```
+
+Returns today's visits for security guards or host's pending visits.
+
+---
+
+### 20.3 Quick Check-in
+
+```http
+POST /api/mobile/quick-checkin
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitId": "visit_123",
+  "deviceId": "device_abc",
+  "method": "qr"
+}
+```
+
+Supports QR code scan, face recognition, or manual lookup.
+
+---
+
+### 20.4 Quick Check-out
+
+```http
+POST /api/mobile/quick-checkout
+Content-Type: application/json
+```
+
+---
+
+### 20.5 Register Push Device
+
+```http
+POST /api/mobile/push/register
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "userId": "emp_001",
+  "deviceToken": "fcm_token_here",
+  "platform": "android"
+}
+```
+
+---
+
+### 20.6 Dashboard Summary
+
+```http
+GET /api/mobile/dashboard-summary?companyId={companyId}
+```
+
+Returns quick stats for mobile home screen.
+
+---
+
+## 21. Access Control APIs
+
+Physical access control system integration.
+
+### 21.1 Grant Access
+
+```http
+POST /api/access/grant
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitId": "visit_123",
+  "zones": ["main_lobby", "meeting_rooms"],
+  "credentialType": "qr",
+  "validUntil": "2024-12-13T18:00:00Z"
+}
+```
+
+**Response:**
+```json
+{
+  "accessId": "access_456",
+  "credentialCode": "abc123...",
+  "zones": ["main_lobby", "meeting_rooms"],
+  "validUntil": "2024-12-13T18:00:00Z"
+}
+```
+
+---
+
+### 21.2 Revoke Access
+
+```http
+POST /api/access/revoke
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitId": "visit_123",
+  "reason": "Visit ended early"
+}
+```
+
+---
+
+### 21.3 Verify Access
+
+```http
+POST /api/access/verify
+Content-Type: application/json
+```
+
+Called by access control hardware to verify credentials.
+
+**Request Body:**
+```json
+{
+  "credentialCode": "abc123...",
+  "zoneId": "meeting_rooms",
+  "doorId": "door_101"
+}
+```
+
+**Response:**
+```json
+{
+  "authorized": true,
+  "visitorName": "John Doe",
+  "zones": ["main_lobby", "meeting_rooms"]
+}
+```
+
+---
+
+### 21.4 Get Access Zones
+
+```http
+GET /api/access/zones?companyId={companyId}
+```
+
+---
+
+### 21.5 Door Event
+
+```http
+POST /api/access/door-event
+Content-Type: application/json
+```
+
+Receive door open/close events from hardware.
+
+---
+
+## 22. Advanced Analytics APIs
+
+Enterprise analytics for dashboards and insights.
+
+### 22.1 Dashboard Metrics
+
+```http
+GET /api/advanced-analytics/dashboard?companyId={companyId}&period=today
+```
+
+Returns comprehensive dashboard stats: current on-site, today's visits, pending approvals.
+
+---
+
+### 22.2 Visit Trends
+
+```http
+GET /api/advanced-analytics/trends?companyId={companyId}&days=30
+```
+
+Returns daily visit data for trend charts.
+
+---
+
+### 22.3 Peak Hours Analysis
+
+```http
+GET /api/advanced-analytics/peak-hours?companyId={companyId}&days=30
+```
+
+Returns hourly distribution of check-ins for capacity planning.
+
+---
+
+### 22.4 Visitor Type Breakdown
+
+```http
+GET /api/advanced-analytics/visitor-types?companyId={companyId}
+```
+
+---
+
+### 22.5 Host Statistics
+
+```http
+GET /api/advanced-analytics/host-stats?companyId={companyId}&limit=20
+```
+
+Returns visit statistics by host employee.
+
+---
+
+### 22.6 Compliance Metrics
+
+```http
+GET /api/advanced-analytics/compliance?companyId={companyId}
+```
+
+---
+
+### 22.7 Occupancy Data
+
+```http
+GET /api/advanced-analytics/occupancy?companyId={companyId}
+```
+
+Real-time and by-location occupancy data.
+
+---
+
+## 23. Report Builder APIs
+
+Custom report generation and scheduling.
+
+### 23.1 List Report Templates
+
+```http
+GET /api/reports/templates
+```
+
+**Available Templates:**
+
+| Template | Description |
+|----------|-------------|
+| `daily_summary` | Daily visit overview |
+| `visitor_log` | Detailed visitor log |
+| `host_activity` | Visits by host |
+| `security_events` | Security alerts |
+| `compliance` | Compliance metrics |
+
+---
+
+### 23.2 Generate Report
+
+```http
+POST /api/reports/generate
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "templateId": "daily_summary",
+  "startDate": "2024-12-01T00:00:00Z",
+  "endDate": "2024-12-31T23:59:59Z",
+  "format": "csv"
+}
+```
+
+---
+
+### 23.3 Schedule Report
+
+```http
+POST /api/reports/schedule
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "templateId": "daily_summary",
+  "frequency": "weekly",
+  "recipients": ["admin@company.com"],
+  "time": "08:00"
+}
+```
+
+---
+
+### 23.4 List Scheduled Reports
+
+```http
+GET /api/reports/scheduled?companyId={companyId}
+```
+
+---
+
+## 24. Webhooks APIs
+
+Event subscription and delivery.
+
+### 24.1 List Available Events
+
+```http
+GET /api/webhooks/events
+```
+
+**Available Events:**
+- `visitor.registered`, `visitor.updated`, `visitor.deleted`
+- `visit.scheduled`, `visit.checked_in`, `visit.checked_out`
+- `approval.requested`, `approval.approved`, `approval.rejected`
+- `evacuation.triggered`, `security.alert`
+
+---
+
+### 24.2 Create Subscription
+
+```http
+POST /api/webhooks/subscriptions
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "url": "https://your-server.com/webhook",
+  "events": ["visit.checked_in", "visit.checked_out"],
+  "name": "Visit notifications"
+}
+```
+
+**Response:**
+```json
+{
+  "subscriptionId": "sub_123",
+  "secret": "whsec_...",
+  "note": "Store the secret securely. It will not be shown again."
+}
+```
+
+---
+
+### 24.3 Test Webhook
+
+```http
+POST /api/webhooks/subscriptions/{subscription_id}/test
+```
+
+Sends a test delivery to verify endpoint configuration.
+
+---
+
+### 24.4 Delivery History
+
+```http
+GET /api/webhooks/deliveries?companyId={companyId}&subscriptionId={id}
+```
+
+---
+
+## 25. API Keys Management
+
+Programmatic access management.
+
+### 25.1 List API Key Scopes
+
+```http
+GET /api/keys/scopes
+```
+
+**Available Scopes:**
+- `read:visitors`, `write:visitors`
+- `read:visits`, `write:visits`
+- `read:analytics`, `read:audit`
+- `admin`, `*` (full access)
+
+---
+
+### 25.2 Create API Key
+
+```http
+POST /api/keys/
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_123",
+  "name": "Mobile App Integration",
+  "scopes": ["read:visitors", "write:visits"]
+}
+```
+
+**Response:**
+```json
+{
+  "keyId": "key_123",
+  "rawKey": "vms_abc123...",
+  "warning": "Store this key securely. It will NOT be shown again."
+}
+```
+
+---
+
+### 25.3 Revoke API Key
+
+```http
+POST /api/keys/{key_id}/revoke
+```
+
+---
+
+### 25.4 Get Key Usage
+
+```http
+GET /api/keys/{key_id}/usage
+```
+
+Returns usage statistics and current rate limit status.
+
+---
+
 ## Platform Integration
 
 When connected to Bharatlytics Platform, VMS integrates as follows:
@@ -2385,5 +3335,5 @@ When connected to Bharatlytics Platform, VMS integrates as follows:
 
 ---
 
-*End of API Reference*
+*End of API Reference - Enterprise Edition v4.0*
 

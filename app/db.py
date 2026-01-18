@@ -46,6 +46,15 @@ employees_collection = employee_collection
 entities_collection = locations_collection  # Alias for data_provider.py
 
 
+def get_db():
+    """
+    Get the database instance for dynamic collection access.
+    Use this when you need to access collections that aren't predefined.
+    """
+    return db
+
+
+
 # =====================================================
 # DATABASE INDEXES - Ensure uniqueness and performance
 # =====================================================

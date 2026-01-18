@@ -1135,5 +1135,331 @@ def serve_visitor_embedding(embedding_id):
         return jsonify({'error': 'Embedding not found'}), 404
 
 
+# =============================================================================
+# BULK OPERATIONS
+# =============================================================================
+
+@visitor_bp.route('/bulk-register', methods=['POST'])
+@require_company_access
+def bulk_register_visitors():
+    """
+    Bulk register multiple visitors at once.
+    
+    Useful for:
+    - Event pre-registration
+    - Importing visitor lists from CSV
+    - Conference/training attendee registration
+    
+    Request Body (JSON):
+        companyId (required): Company ObjectId
+        visitors (required): Array of visitor objects, each containing:
+            - visitorName (required)
+            - phone (required)
+            - hostEmployeeId (required)
+            - email (optional)
+            - organization (optional)
+            - visitorType (optional)
+            - purpose (optional)
+    
+    Returns:
+        - successful: Array of created visitor IDs
+        - failed: Array of failures with reasons
+        - summary: Count of success/failure
+    """
+    try:
+        data = request.json or {}
+        company_id = data.get('companyId')
+        visitors_data = data.get('visitors', [])
+        
+        if not company_id:
+            return jsonify({'error': 'Company ID is required'}), 400
+        
+        if not visitors_data or not isinstance(visitors_data, list):
+            return jsonify({'error': 'visitors array is required'}), 400
+        
+        if len(visitors_data) > 500:
+            return jsonify({'error': 'Maximum 500 visitors per batch'}), 400
+        
+        successful = []
+        failed = []
+        
+        for idx, visitor_data in enumerate(visitors_data):
+            try:
+                # Validate required fields
+                if not visitor_data.get('visitorName'):
+                    failed.append({'index': idx, 'error': 'visitorName is required'})
+                    continue
+                if not visitor_data.get('phone'):
+                    failed.append({'index': idx, 'error': 'phone is required'})
+                    continue
+                if not visitor_data.get('hostEmployeeId'):
+                    failed.append({'index': idx, 'error': 'hostEmployeeId is required'})
+                    continue
+                
+                # Check for duplicate phone
+                existing = visitor_collection.find_one({
+                    'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                    'phone': visitor_data['phone']
+                })
+                
+                if existing:
+                    successful.append({
+                        'index': idx,
+                        'visitorId': str(existing['_id']),
+                        'visitorName': existing.get('visitorName'),
+                        'existing': True
+                    })
+                    continue
+                
+                # Build visitor document
+                visitor_doc = {
+                    '_id': ObjectId(),
+                    'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                    'visitorName': visitor_data['visitorName'],
+                    'phone': visitor_data['phone'],
+                    'email': visitor_data.get('email', ''),
+                    'organization': visitor_data.get('organization', ''),
+                    'visitorType': visitor_data.get('visitorType', 'guest'),
+                    'purpose': visitor_data.get('purpose', ''),
+                    'hostEmployeeId': visitor_data['hostEmployeeId'],
+                    'status': 'active',
+                    'blacklisted': False,
+                    'createdAt': get_current_utc(),
+                    'lastUpdated': get_current_utc(),
+                    'registrationMethod': 'bulk_import',
+                    'visitorImages': {},
+                    'visitorEmbeddings': {}
+                }
+                
+                visitor_collection.insert_one(visitor_doc)
+                
+                successful.append({
+                    'index': idx,
+                    'visitorId': str(visitor_doc['_id']),
+                    'visitorName': visitor_data['visitorName'],
+                    'existing': False
+                })
+                
+            except Exception as e:
+                failed.append({'index': idx, 'error': str(e)})
+        
+        return jsonify({
+            'message': f'Bulk registration completed',
+            'summary': {
+                'total': len(visitors_data),
+                'successful': len(successful),
+                'failed': len(failed),
+                'existing': sum(1 for s in successful if s.get('existing'))
+            },
+            'successful': successful,
+            'failed': failed
+        }), 201
+        
+    except Exception as e:
+        print(f"Error in bulk_register_visitors: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@visitor_bp.route('/bulk-schedule', methods=['POST'])
+@require_company_access
+def bulk_schedule_visits():
+    """
+    Schedule visits for multiple visitors at once.
+    
+    Request Body (JSON):
+        companyId (required): Company ObjectId
+        visits (required): Array of visit objects, each containing:
+            - visitorId (required)
+            - hostEmployeeId (required)
+            - expectedArrival (required): ISO datetime
+            - expectedDeparture (optional)
+            - purpose (optional)
+            - locationId (optional)
+    
+    Returns:
+        - successful: Array of created visit IDs
+        - failed: Array of failures with reasons
+    """
+    try:
+        data = request.json or {}
+        company_id = data.get('companyId')
+        visits_data = data.get('visits', [])
+        
+        if not company_id:
+            return jsonify({'error': 'Company ID is required'}), 400
+        
+        if not visits_data or not isinstance(visits_data, list):
+            return jsonify({'error': 'visits array is required'}), 400
+        
+        if len(visits_data) > 200:
+            return jsonify({'error': 'Maximum 200 visits per batch'}), 400
+        
+        successful = []
+        failed = []
+        
+        for idx, visit_data in enumerate(visits_data):
+            try:
+                # Validate required fields
+                if not visit_data.get('visitorId'):
+                    failed.append({'index': idx, 'error': 'visitorId is required'})
+                    continue
+                if not visit_data.get('hostEmployeeId'):
+                    failed.append({'index': idx, 'error': 'hostEmployeeId is required'})
+                    continue
+                if not visit_data.get('expectedArrival'):
+                    failed.append({'index': idx, 'error': 'expectedArrival is required'})
+                    continue
+                
+                # Get visitor details
+                visitor = visitor_collection.find_one({'_id': ObjectId(visit_data['visitorId'])})
+                if not visitor:
+                    failed.append({'index': idx, 'error': 'Visitor not found'})
+                    continue
+                
+                # Parse dates
+                expected_arrival = parse_datetime(visit_data['expectedArrival'])
+                expected_departure = parse_datetime(visit_data.get('expectedDeparture')) if visit_data.get('expectedDeparture') else expected_arrival + timedelta(hours=2)
+                
+                # Create visit
+                visit_doc = {
+                    '_id': ObjectId(),
+                    'companyId': ObjectId(company_id) if ObjectId.is_valid(company_id) else company_id,
+                    'visitorId': ObjectId(visit_data['visitorId']),
+                    'visitorName': visitor.get('visitorName'),
+                    'hostEmployeeId': visit_data['hostEmployeeId'],
+                    'purpose': visit_data.get('purpose', ''),
+                    'expectedArrival': expected_arrival,
+                    'expectedDeparture': expected_departure,
+                    'locationId': visit_data.get('locationId'),
+                    'locationName': visit_data.get('locationName', ''),
+                    'status': 'scheduled',
+                    'createdAt': get_current_utc(),
+                    'lastUpdated': get_current_utc(),
+                    'registrationMethod': 'bulk_schedule'
+                }
+                
+                visit_collection.insert_one(visit_doc)
+                
+                # Update visitor's visits array
+                visitor_collection.update_one(
+                    {'_id': ObjectId(visit_data['visitorId'])},
+                    {'$push': {'visits': str(visit_doc['_id'])}}
+                )
+                
+                successful.append({
+                    'index': idx,
+                    'visitId': str(visit_doc['_id']),
+                    'visitorName': visitor.get('visitorName'),
+                    'expectedArrival': format_datetime(expected_arrival)
+                })
+                
+            except Exception as e:
+                failed.append({'index': idx, 'error': str(e)})
+        
+        return jsonify({
+            'message': 'Bulk scheduling completed',
+            'summary': {
+                'total': len(visits_data),
+                'successful': len(successful),
+                'failed': len(failed)
+            },
+            'successful': successful,
+            'failed': failed
+        }), 201
+        
+    except Exception as e:
+        print(f"Error in bulk_schedule_visits: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@visitor_bp.route('/bulk-cancel', methods=['POST'])
+@require_company_access
+def bulk_cancel_visits():
+    """
+    Cancel multiple scheduled visits at once.
+    
+    Request Body (JSON):
+        companyId (required): Company ObjectId
+        visitIds (required): Array of visit ObjectIds to cancel
+        reason (optional): Cancellation reason
+    
+    Returns:
+        - successful: Array of cancelled visit IDs
+        - failed: Array of failures with reasons
+    """
+    try:
+        data = request.json or {}
+        company_id = data.get('companyId')
+        visit_ids = data.get('visitIds', [])
+        reason = data.get('reason', 'Bulk cancellation')
+        
+        if not company_id:
+            return jsonify({'error': 'Company ID is required'}), 400
+        
+        if not visit_ids or not isinstance(visit_ids, list):
+            return jsonify({'error': 'visitIds array is required'}), 400
+        
+        successful = []
+        failed = []
+        
+        for visit_id in visit_ids:
+            try:
+                visit = visit_collection.find_one({'_id': ObjectId(visit_id)})
+                
+                if not visit:
+                    failed.append({'visitId': visit_id, 'error': 'Visit not found'})
+                    continue
+                
+                if visit.get('status') == 'checked_in':
+                    failed.append({'visitId': visit_id, 'error': 'Cannot cancel checked-in visit'})
+                    continue
+                
+                if visit.get('status') in ['cancelled', 'checked_out']:
+                    failed.append({'visitId': visit_id, 'error': f'Visit already {visit.get("status")}'})
+                    continue
+                
+                # Cancel the visit
+                visit_collection.update_one(
+                    {'_id': ObjectId(visit_id)},
+                    {
+                        '$set': {
+                            'status': 'cancelled',
+                            'cancelReason': reason,
+                            'cancelledAt': get_current_utc(),
+                            'lastUpdated': get_current_utc()
+                        }
+                    }
+                )
+                
+                successful.append({
+                    'visitId': visit_id,
+                    'visitorName': visit.get('visitorName')
+                })
+                
+            except Exception as e:
+                failed.append({'visitId': visit_id, 'error': str(e)})
+        
+        return jsonify({
+            'message': 'Bulk cancellation completed',
+            'summary': {
+                'total': len(visit_ids),
+                'successful': len(successful),
+                'failed': len(failed)
+            },
+            'successful': successful,
+            'failed': failed
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in bulk_cancel_visits: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # Alias blueprint name for compatibility
 visitors_bp = visitor_bp
