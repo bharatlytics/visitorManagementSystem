@@ -294,7 +294,44 @@ GET /api/visitors?companyId={companyId}
 
 ---
 
-### 1.2 Register Visitor
+### 1.2 Get Visitor
+
+```http
+GET /api/visitors/{visitor_id}
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `visitor_id` | string | Yes | Visitor ObjectId |
+
+**Response:**
+```json
+{
+  "visitor": {
+    "_id": "507f1f77bcf86cd799439011",
+    "visitorName": "John Doe",
+    "email": "john.doe@example.com",
+    "phone": "+919876543210",
+    "organization": "Acme Corp",
+    "visitorType": "guest",
+    "status": "active",
+    "blacklisted": false,
+    "visitorEmbeddings": {
+      "buffalo_l": {
+        "status": "done",
+        "downloadUrl": "http://localhost:5001/api/visitors/embeddings/emb123"
+      }
+    },
+    "createdAt": "2024-12-10T09:00:00Z"
+  }
+}
+```
+
+---
+
+### 1.3 Register Visitor
 
 ```http
 POST /api/visitors/register
@@ -478,7 +515,38 @@ Content-Type: application/json
 
 ---
 
-### 1.6 Get Visitor Image
+### 1.6 Delete Visitor
+
+```http
+DELETE /api/visitors/delete
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "visitorId": "507f1f77bcf86cd799439012"
+}
+```
+
+**Behavior:**
+- Performs a **soft delete** (sets `status` to `deleted`)
+- Automatically **cancels all scheduled visits** for this visitor
+- Publishes `visitor.deleted` event
+
+**Response:**
+```json
+{
+  "message": "Visitor deleted successfully"
+}
+```
+
+> [!NOTE]
+> Soft-deleted visitors are kept in the database for audit purposes. They will not appear in regular listing queries that filter by `status: 'active'`.
+
+---
+
+### 1.7 Get Visitor Image
 
 ```http
 GET /api/visitors/images/{image_id}
@@ -632,7 +700,125 @@ Same request body as above. Returns additional QR code URL:
 
 ---
 
-### 2.5 Check In
+### 2.5 Update Visit
+
+```http
+PATCH /api/visits/{visit_id}
+Content-Type: application/json
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `visit_id` | string | Yes | Visit ObjectId |
+
+**Request Body (all fields optional):**
+```json
+{
+  "purpose": "Updated purpose",
+  "expectedArrival": "2024-12-13T11:00:00Z",
+  "expectedDeparture": "2024-12-13T14:00:00Z",
+  "hostEmployeeId": "new_host_id",
+  "locationId": "location_xyz",
+  "notes": "Updated notes",
+  "vehicleNumber": "KA01CD5678",
+  "assets": {
+    "laptop": false,
+    "camera": true
+  },
+  "facilities": {
+    "parkingRequired": true
+  },
+  "accessAreas": ["zone_lab"]
+}
+```
+
+**Allowed Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `purpose` | string | Visit purpose |
+| `expectedArrival` | datetime | Scheduled arrival time |
+| `expectedDeparture` | datetime | Scheduled departure time |
+| `durationHours` | number | Expected duration |
+| `hostEmployeeId` | string | New host employee ID |
+| `locationId` | string | Location/zone ID |
+| `locationName` | string | Location name |
+| `notes` | string | Additional notes |
+| `vehicleNumber` | string | Vehicle registration |
+| `vehicleType` | string | Vehicle type |
+| `driverName` | string | Driver name |
+| `requiresApproval` | boolean | Approval requirement |
+| `approvalStatus` | string | `pending`, `approved`, `rejected` |
+| `assets` | object | Asset flags (laptop, camera, etc.) |
+| `facilities` | object | Facility requirements |
+| `compliance` | object | Compliance flags |
+| `vehicle` | object | Vehicle details |
+| `accessAreas` | array | List of allowed zones |
+
+> [!IMPORTANT]
+> Visits can only be updated when in `scheduled` or `pending` status. Once checked-in, visits cannot be modified.
+
+**Response:**
+```json
+{
+  "message": "Visit updated successfully",
+  "visit": {
+    "_id": "visit_abc123",
+    "purpose": "Updated purpose",
+    "expectedArrival": "2024-12-13T11:00:00Z",
+    "status": "scheduled",
+    "lastUpdated": "2024-12-12T15:30:00Z"
+  }
+}
+```
+
+---
+
+### 2.6 Delete/Cancel Visit
+
+```http
+DELETE /api/visits/{visit_id}
+Content-Type: application/json
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `visit_id` | string | Yes | Visit ObjectId |
+
+**Request Body (optional):**
+```json
+{
+  "reason": "Meeting rescheduled"
+}
+```
+
+**Status Transitions:**
+
+| Current Status | New Status | Behavior |
+|----------------|------------|----------|
+| `scheduled` | `cancelled` | Visit is cancelled, can be re-scheduled |
+| `checked_out` | `deleted` | Marked as deleted for audit trail |
+| `checked_in` | ❌ Error | Cannot delete active visits |
+
+**Response:**
+```json
+{
+  "message": "Visit cancelled successfully",
+  "visitId": "visit_abc123",
+  "status": "cancelled"
+}
+```
+
+> [!WARNING]
+> Visits that are currently checked-in cannot be deleted. The visitor must check-out first.
+
+---
+
+### 2.7 Check In
 
 ```http
 POST /api/visits/{visit_id}/check-in
@@ -672,7 +858,7 @@ Content-Type: application/json
 
 ---
 
-### 2.6 Check Out
+### 2.8 Check Out
 
 ```http
 POST /api/visits/{visit_id}/check-out
@@ -707,7 +893,7 @@ Content-Type: application/json
 
 ---
 
-### 2.7 Get Visit QR Code
+### 2.9 Get Visit QR Code
 
 ```http
 GET /api/visits/{visit_id}/qr

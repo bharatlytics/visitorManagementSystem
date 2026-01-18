@@ -179,6 +179,39 @@ def list_visitors():
         return error_response(str(e), 500)
 
 
+@visitor_bp.route('/<visitor_id>', methods=['GET'])
+@require_company_access
+def get_visitor(visitor_id):
+    """Get a single visitor by ID"""
+    try:
+        visitor = visitor_collection.find_one({'_id': ObjectId(visitor_id)})
+        if not visitor:
+            return error_response('Visitor not found', 404)
+        
+        # Convert ObjectIds
+        visitor = convert_objectids(visitor)
+        
+        # Add downloadUrl to embeddings
+        from app.utils import format_embedding_response
+        base_url = request.url_root.rstrip('/')
+        
+        if 'visitorEmbeddings' in visitor and visitor['visitorEmbeddings']:
+            visitor['visitorEmbeddings'] = format_embedding_response(
+                visitor['visitorEmbeddings'],
+                'visitor',
+                base_url
+            )
+        
+        return jsonify({'visitor': visitor}), 200
+    except InvalidId:
+        return error_response('Invalid visitor ID format', 400)
+    except Exception as e:
+        print(f"Error getting visitor: {e}")
+        import traceback
+        traceback.print_exc()
+        return error_response(str(e), 500)
+
+
 @visitor_bp.route('/visits', methods=['GET'])
 @require_company_access
 def list_visits():
@@ -621,6 +654,72 @@ def unblacklist_visitor():
         return jsonify({'message': 'Visitor unblacklisted successfully'}), 200
     except Exception as e:
         print(f"Error unblacklisting visitor: {e}")
+        return error_response(str(e), 500)
+
+
+@visitor_bp.route('/delete', methods=['DELETE'])
+@require_company_access
+def delete_visitor():
+    """
+    Soft delete a visitor.
+    Sets status to 'deleted' rather than removing from database.
+    Also cancels any scheduled visits for this visitor.
+    """
+    try:
+        data = request.json or {}
+        visitor_id = data.get('visitorId')
+        
+        if not visitor_id:
+            return error_response('Visitor ID is required', 400)
+        
+        # Find the visitor
+        visitor = visitor_collection.find_one({'_id': ObjectId(visitor_id)})
+        if not visitor:
+            return error_response('Visitor not found', 404)
+        
+        # Soft delete - set status to deleted
+        result = visitor_collection.update_one(
+            {'_id': ObjectId(visitor_id)},
+            {
+                '$set': {
+                    'status': 'deleted',
+                    'deletedAt': get_current_utc(),
+                    'lastUpdated': get_current_utc()
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            return error_response('Visitor not found', 404)
+        
+        # Cancel any scheduled visits for this visitor
+        visit_collection.update_many(
+            {
+                'visitorId': ObjectId(visitor_id),
+                'status': 'scheduled'
+            },
+            {
+                '$set': {
+                    'status': 'cancelled',
+                    'cancelReason': 'Visitor deleted',
+                    'lastUpdated': get_current_utc()
+                }
+            }
+        )
+        
+        # Publish Event: visitor.deleted
+        integration_client.publish_event('visitor.deleted', {
+            'visitorId': visitor_id,
+            'companyId': str(visitor.get('companyId')),
+            'deletedAt': get_current_utc().isoformat()
+        })
+        
+        return jsonify({'message': 'Visitor deleted successfully'}), 200
+        
+    except Exception as e:
+        print(f"Error deleting visitor: {e}")
+        import traceback
+        traceback.print_exc()
         return error_response(str(e), 500)
 
 

@@ -64,6 +64,136 @@ def get_visit(visit_id):
     return jsonify(convert_objectids(visit))
 
 
+@visits_bp.route('/<visit_id>', methods=['PATCH', 'PUT'])
+@require_company_access
+def update_visit(visit_id):
+    """
+    Update visit details.
+    Only allows updates when visit is in 'scheduled' status.
+    Cannot update after check-in has occurred.
+    """
+    data = request.json or {}
+    
+    visit = visits_collection.find_one({'_id': ObjectId(visit_id)})
+    if not visit:
+        return jsonify({'error': 'Visit not found'}), 404
+    
+    # Only allow updates for scheduled visits
+    if visit.get('status') not in ['scheduled', 'pending']:
+        return jsonify({'error': 'Cannot update visit after check-in'}), 400
+    
+    update_fields = {}
+    
+    # Allowed fields for update
+    allowed_fields = [
+        'purpose', 'expectedArrival', 'expectedDeparture', 'durationHours',
+        'hostEmployeeId', 'locationId', 'locationName', 'notes',
+        'vehicleNumber', 'vehicleType', 'driverName',
+        'requiresApproval', 'approvalStatus'
+    ]
+    
+    for field in allowed_fields:
+        if field in data:
+            # Parse datetime fields
+            if field in ['expectedArrival', 'expectedDeparture'] and data[field]:
+                if isinstance(data[field], str):
+                    update_fields[field] = datetime.fromisoformat(data[field].replace('Z', '+00:00'))
+                else:
+                    update_fields[field] = data[field]
+            else:
+                update_fields[field] = data[field]
+    
+    # Update nested objects (assets, facilities, compliance, vehicle)
+    nested_fields = ['assets', 'facilities', 'compliance', 'vehicle']
+    for nested_field in nested_fields:
+        if nested_field in data and isinstance(data[nested_field], dict):
+            for key, value in data[nested_field].items():
+                update_fields[f'{nested_field}.{key}'] = value
+    
+    # Update accessAreas if provided
+    if 'accessAreas' in data and isinstance(data['accessAreas'], list):
+        update_fields['accessAreas'] = data['accessAreas']
+    
+    # Update host employee name if hostEmployeeId changed
+    if 'hostEmployeeId' in update_fields:
+        data_provider = get_data_provider(str(visit.get('companyId')))
+        host = data_provider.get_employee_by_id(update_fields['hostEmployeeId'], str(visit.get('companyId')))
+        if host:
+            update_fields['hostEmployeeName'] = host.get('employeeName', 'Unknown')
+    
+    if not update_fields:
+        return jsonify({'error': 'No valid fields to update'}), 400
+    
+    update_fields['lastUpdated'] = datetime.utcnow()
+    
+    visits_collection.update_one(
+        {'_id': ObjectId(visit_id)},
+        {'$set': update_fields}
+    )
+    
+    # Fetch updated visit
+    updated_visit = visits_collection.find_one({'_id': ObjectId(visit_id)})
+    
+    return jsonify({
+        'message': 'Visit updated successfully',
+        'visit': convert_objectids(updated_visit)
+    })
+
+
+@visits_bp.route('/<visit_id>', methods=['DELETE'])
+@require_company_access
+def delete_visit(visit_id):
+    """
+    Delete/cancel a visit.
+    - Scheduled visits: Set status to 'cancelled'
+    - Checked-in visits: Cannot be deleted (must check-out first)
+    - Already completed visits: Set status to 'deleted' for audit trail
+    """
+    data = request.json or {}
+    cancel_reason = data.get('reason', 'Cancelled by user')
+    
+    visit = visits_collection.find_one({'_id': ObjectId(visit_id)})
+    if not visit:
+        return jsonify({'error': 'Visit not found'}), 404
+    
+    current_status = visit.get('status')
+    
+    # Cannot delete a visit that is currently checked in
+    if current_status == 'checked_in':
+        return jsonify({'error': 'Cannot delete an active visit. Please check-out first.'}), 400
+    
+    # Determine new status based on current status
+    if current_status == 'scheduled':
+        new_status = 'cancelled'
+    else:
+        new_status = 'deleted'
+    
+    update_data = {
+        'status': new_status,
+        'cancelReason': cancel_reason,
+        'cancelledAt': datetime.utcnow(),
+        'lastUpdated': datetime.utcnow()
+    }
+    
+    visits_collection.update_one(
+        {'_id': ObjectId(visit_id)},
+        {'$set': update_data}
+    )
+    
+    # Remove visit reference from visitor's visits array
+    if visit.get('visitorId'):
+        visitors_collection.update_one(
+            {'_id': visit['visitorId']},
+            {'$pull': {'visits': str(visit_id)}}
+        )
+    
+    return jsonify({
+        'message': f'Visit {new_status} successfully',
+        'visitId': visit_id,
+        'status': new_status
+    })
+
+
 @visits_bp.route('', methods=['POST'])
 @require_company_access
 def schedule_visit():

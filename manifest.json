@@ -1,45 +1,456 @@
 {
-  "name": "Visitor Management System",
-  "appId": "vms_app_v1",
-  "version": "1.4.0",
-  "description": "Complete Visitor Management System with facial recognition, digital badges, and host notifications. Provides employee and visitor data with biometric embeddings to other platform apps via federated queries.",
-  "icon": "fas fa-user-check",
+  "app": {
+    "id": "vms_app_v1",
+    "name": "Visitor Management System",
+    "version": "2.0.0",
+    "appType": "web_application",
+    "description": "Enterprise-grade Visitor Management with facial recognition, digital badges, host notifications, and compliance reporting.",
+    "longDescription": "Complete VMS with pre-registration, check-in kiosks, host notifications, emergency evacuation lists, compliance audit trails, and integration with access control systems."
+  },
+  "developer": {
+    "name": "Bharatlytics Solutions",
+    "company": "Bharatlytics Private Limited",
+    "email": "developer@bharatlytics.com",
+    "supportEmail": "support@bharatlytics.com",
+    "website": "https://bharatlytics.com",
+    "documentation": "https://docs.bharatlytics.com/vms",
+    "privacyPolicy": "https://bharatlytics.com/privacy",
+    "termsOfService": "https://bharatlytics.com/terms"
+  },
+  "industry": [
+    "manufacturing",
+    "healthcare",
+    "corporate",
+    "education",
+    "government"
+  ],
   "category": "operations",
-  "requiredActors": [
+  "icon": "fas fa-user-check",
+  "localization": {
+    "defaultLocale": "en-US",
+    "supportedLocales": [
+      "en-US",
+      "en-GB",
+      "hi-IN",
+      "ja-JP",
+      "de-DE"
+    ],
+    "rtlSupport": false
+  },
+  "compliance": {
+    "gdpr": true,
+    "ccpa": true,
+    "hipaa": false,
+    "dataRetention": {
+      "visitorRecords": "365d",
+      "visitLogs": "730d",
+      "biometricData": "90d",
+      "auditLogs": "1095d"
+    },
+    "auditLogging": true,
+    "encryption": {
+      "atRest": true,
+      "inTransit": true,
+      "algorithm": "AES-256"
+    }
+  },
+  "requiredActors": {
+    "legacy": [
+      {
+        "actorType": "employee",
+        "collection": "employees",
+        "capabilities": [
+          "read",
+          "write"
+        ],
+        "fields": [
+          "employeeId",
+          "name",
+          "email",
+          "phone",
+          "department",
+          "photo",
+          "embedding",
+          "status",
+          "blacklisted"
+        ],
+        "excludePII": false,
+        "ownedByApp": false,
+        "justification": "Manage employee records as potential hosts for visitors with biometric data for verification"
+      },
+      {
+        "actorType": "visitor",
+        "collection": "visitors",
+        "capabilities": [
+          "read",
+          "write",
+          "delete"
+        ],
+        "fields": [
+          "name",
+          "phone",
+          "email",
+          "organization",
+          "visitorType",
+          "idType",
+          "idNumber",
+          "photo",
+          "embedding",
+          "purpose",
+          "blacklisted"
+        ],
+        "excludePII": false,
+        "ownedByApp": true,
+        "justification": "Full visitor lifecycle management including registration, check-in, and biometric verification"
+      }
+    ],
+    "framework": []
+  },
+  "requiredEntityDefinitions": [
     {
-      "actorType": "visitor",
-      "access": "write",
-      "justification": "To manage visitor records, check-ins, and history with biometric data",
-      "fields": [
-        "name",
-        "phone",
-        "email",
-        "photo",
-        "company"
-      ]
+      "definitionName": "Location Management",
+      "entityTypes": [
+        "organization",
+        "plant",
+        "building",
+        "zone",
+        "gate",
+        "floor",
+        "room"
+      ],
+      "capabilities": [
+        "read"
+      ],
+      "justification": "Assign visitors to specific locations and control access at zone and gate level"
+    }
+  ],
+  "requiredEntityActorMappings": [
+    {
+      "entityType": "gate",
+      "actorType": "employee",
+      "actorCollection": "employees",
+      "roleContext": "security_guard",
+      "capabilities": [
+        "read"
+      ],
+      "justification": "Identify security guards assigned to gates for visitor verification"
     },
     {
+      "entityType": "organization",
       "actorType": "employee",
-      "access": "write",
-      "justification": "To manage employee records with biometric data for host verification and access control",
-      "fields": [
-        "name",
-        "email",
-        "department",
-        "phone",
-        "code",
-        "photo",
-        "embedding"
+      "actorCollection": "employees",
+      "roleContext": "host",
+      "capabilities": [
+        "read"
+      ],
+      "justification": "Find employees who can act as hosts for visitors at each organization"
+    }
+  ],
+  "dataContract": {
+    "consumes": {
+      "actors": {
+        "types": [
+          "employee"
+        ],
+        "fields": [
+          "name",
+          "email",
+          "department",
+          "status"
+        ],
+        "usage": "Display available hosts and send notifications"
+      },
+      "entities": {
+        "types": [
+          "organization",
+          "zone",
+          "gate"
+        ],
+        "fields": [
+          "name",
+          "code",
+          "type",
+          "parentId"
+        ],
+        "usage": "Location selection and access control"
+      },
+      "events": [
+        "entity.updated",
+        "entity.deleted",
+        "actor.employee.status_changed",
+        "actor.employee.created",
+        "actor.employee.updated",
+        "platform.maintenance_scheduled",
+        "platform.config_changed"
+      ]
+    },
+    "produces": {
+      "events": [
+        {
+          "type": "visit.scheduled",
+          "description": "Visitor pre-registered for expected arrival"
+        },
+        {
+          "type": "visit.checked_in",
+          "description": "Visitor completed check-in at reception"
+        },
+        {
+          "type": "visit.checked_out",
+          "description": "Visitor manually checked out or auto-checkout"
+        },
+        {
+          "type": "visitor.registered",
+          "description": "New visitor record created"
+        },
+        {
+          "type": "visitor.updated",
+          "description": "Visitor profile updated"
+        },
+        {
+          "type": "visitor.blacklisted",
+          "description": "Visitor added to blacklist"
+        },
+        {
+          "type": "employee.registered",
+          "description": "Employee registered via VMS"
+        },
+        {
+          "type": "employee.updated",
+          "description": "Employee profile updated"
+        },
+        {
+          "type": "host.approval_requested",
+          "description": "Host notified for visitor approval"
+        },
+        {
+          "type": "host.approved",
+          "description": "Host approved visitor"
+        },
+        {
+          "type": "host.rejected",
+          "description": "Host rejected visitor"
+        },
+        {
+          "type": "security.alert",
+          "description": "Security alert triggered (blacklisted visitor, tailgating)"
+        },
+        {
+          "type": "badge.printed",
+          "description": "Visitor badge printed"
+        },
+        {
+          "type": "emergency.evacuation_started",
+          "description": "Emergency evacuation initiated"
+        },
+        {
+          "type": "compliance.audit_exported",
+          "description": "Compliance audit report generated"
+        }
+      ],
+      "metrics": [
+        {
+          "name": "active_visitors",
+          "unit": "count",
+          "aggregation": "hourly",
+          "dimensions": [
+            "location",
+            "visitor_type"
+          ],
+          "description": "Currently checked-in visitors"
+        },
+        {
+          "name": "visits_today",
+          "unit": "count",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Total visits today"
+        },
+        {
+          "name": "avg_visit_duration",
+          "unit": "minutes",
+          "aggregation": "daily",
+          "dimensions": [
+            "visitor_type"
+          ],
+          "description": "Average visit duration"
+        },
+        {
+          "name": "peak_occupancy",
+          "unit": "count",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Maximum concurrent visitors"
+        },
+        {
+          "name": "visitor_conversion_rate",
+          "unit": "percentage",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Scheduled visits that completed check-in"
+        },
+        {
+          "name": "avg_wait_time",
+          "unit": "minutes",
+          "aggregation": "hourly",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Time from arrival to check-in completion"
+        },
+        {
+          "name": "repeat_visitor_ratio",
+          "unit": "percentage",
+          "aggregation": "weekly",
+          "dimensions": [],
+          "description": "Returning vs new visitors"
+        },
+        {
+          "name": "peak_hours_distribution",
+          "unit": "counts_by_hour",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Visit distribution by hour"
+        },
+        {
+          "name": "host_response_time",
+          "unit": "minutes",
+          "aggregation": "daily",
+          "dimensions": [
+            "department"
+          ],
+          "description": "Average host approval time"
+        },
+        {
+          "name": "no_show_rate",
+          "unit": "percentage",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Scheduled visits not completed"
+        },
+        {
+          "name": "visitor_satisfaction_nps",
+          "unit": "score",
+          "aggregation": "weekly",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Net Promoter Score from feedback"
+        },
+        {
+          "name": "blacklist_matches",
+          "unit": "count",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Blacklisted visitor detections"
+        },
+        {
+          "name": "biometric_match_rate",
+          "unit": "percentage",
+          "aggregation": "daily",
+          "dimensions": [],
+          "description": "Successful face recognition matches"
+        },
+        {
+          "name": "badge_print_count",
+          "unit": "count",
+          "aggregation": "daily",
+          "dimensions": [
+            "location"
+          ],
+          "description": "Badges printed"
+        }
+      ],
+      "dataTypes": [
+        {
+          "name": "visit_record",
+          "fields": [
+            "visitorId",
+            "hostEmployeeId",
+            "purpose",
+            "expectedArrival",
+            "actualArrival",
+            "status"
+          ],
+          "queryable": true
+        },
+        {
+          "name": "evacuation_list",
+          "fields": [
+            "visitorId",
+            "name",
+            "location",
+            "hostName",
+            "checkinTime"
+          ],
+          "queryable": true
+        },
+        {
+          "name": "compliance_report",
+          "fields": [
+            "dateRange",
+            "visitCount",
+            "uniqueVisitors",
+            "averageDuration"
+          ],
+          "queryable": false
+        }
       ]
     }
-  ],
-  "requiredEntities": [
-    {
-      "entityType": "location",
-      "access": "read",
-      "justification": "To assign visits to specific buildings or zones"
+  },
+  "biometrics": {
+    "images": {
+      "actorTypes": [
+        "visitor",
+        "employee"
+      ],
+      "formats": [
+        "jpeg",
+        "png",
+        "webp"
+      ],
+      "maxSizeKb": 5120,
+      "storage": "gridfs",
+      "residencyFollowsActor": true,
+      "access": "read_write"
+    },
+    "embeddings": {
+      "actorTypes": [
+        "visitor",
+        "employee"
+      ],
+      "models": {
+        "buffalo_l": {
+          "dimensions": 512,
+          "generator": "platform",
+          "description": "InsightFace buffalo_l model for high accuracy"
+        },
+        "Facenet512": {
+          "dimensions": 512,
+          "generator": "app",
+          "description": "VMS-trained FaceNet model"
+        }
+      },
+      "residencyFollowsActor": true,
+      "access": "read_write",
+      "exchangeProtocol": {
+        "supported": true,
+        "format": "base64",
+        "queryParam": "includeEmbeddings=true"
+      }
     }
-  ],
+  },
   "dataExchange": {
     "produces": {
       "actors": [
@@ -55,22 +466,15 @@
             "name",
             "phone",
             "email",
+            "organization",
+            "visitorType",
+            "idType",
+            "idNumber",
+            "purpose",
             "photo",
+            "embedding",
             "company"
-          ],
-          "embeddingModels": {
-            "available": [
-              "Facenet512"
-            ],
-            "shareByDefault": false,
-            "note": "VMS generates its own embeddings; other apps can request raw images via includeImages=true"
-          },
-          "imageExchange": {
-            "supported": true,
-            "format": "base64",
-            "queryParam": "includeImages=true",
-            "note": "Other apps receive raw images and can train their own models"
-          }
+          ]
         },
         {
           "type": "employee",
@@ -85,127 +489,131 @@
             "name",
             "phone",
             "email",
-            "photo",
-            "embedding",
             "department",
-            "code"
-          ],
-          "note": "Employees sync to platform; platform generates embeddings"
-        }
-      ],
-      "events": [
-        "visit.scheduled",
-        "visit.checked_in",
-        "visit.checked_out",
-        "visitor.registered",
-        "visitor.updated",
-        "visitor.blacklisted",
-        "employee.registered",
-        "employee.updated",
-        "host.approval_requested",
-        "host.approved",
-        "host.rejected"
-      ],
-      "metrics": [
-        {
-          "name": "active_visitors",
-          "unit": "count",
-          "aggregation": "hourly",
-          "dimensions": [
-            "location",
-            "visitor_type"
-          ]
-        },
-        {
-          "name": "visits_today",
-          "unit": "count",
-          "aggregation": "daily",
-          "dimensions": [
-            "location"
-          ]
-        },
-        {
-          "name": "avg_visit_duration",
-          "unit": "minutes",
-          "aggregation": "daily",
-          "dimensions": [
-            "visitor_type"
-          ]
-        },
-        {
-          "name": "peak_occupancy",
-          "unit": "count",
-          "aggregation": "daily",
-          "dimensions": [
-            "location"
-          ]
-        },
-        {
-          "name": "visitor_conversion_rate",
-          "unit": "percentage",
-          "aggregation": "daily",
-          "description": "Percentage of scheduled visits that complete check-in",
-          "dimensions": [
-            "location"
-          ]
-        },
-        {
-          "name": "avg_wait_time",
-          "unit": "minutes",
-          "aggregation": "hourly",
-          "description": "Average time from arrival to check-in completion",
-          "dimensions": [
-            "location"
-          ]
-        },
-        {
-          "name": "repeat_visitor_ratio",
-          "unit": "percentage",
-          "aggregation": "weekly",
-          "description": "Percentage of returning visitors vs new visitors",
-          "dimensions": []
-        },
-        {
-          "name": "peak_hours_distribution",
-          "unit": "counts_by_hour",
-          "aggregation": "daily",
-          "description": "Visit count distribution across hours of the day",
-          "dimensions": [
-            "location"
-          ]
-        },
-        {
-          "name": "host_response_time",
-          "unit": "minutes",
-          "aggregation": "daily",
-          "description": "Average time for hosts to approve visitor requests",
-          "dimensions": [
-            "department"
-          ]
-        },
-        {
-          "name": "no_show_rate",
-          "unit": "percentage",
-          "aggregation": "daily",
-          "description": "Percentage of scheduled visits that did not complete",
-          "dimensions": [
-            "location"
-          ]
-        },
-        {
-          "name": "visitor_satisfaction_nps",
-          "unit": "score",
-          "aggregation": "weekly",
-          "description": "Net Promoter Score from visitor feedback",
-          "dimensions": [
-            "location"
+            "code",
+            "photo",
+            "embedding"
           ]
         }
       ],
       "schemas": [
         {
           "id": "visit_record",
-          "description": "Full visit details including host and check-in times"
+          "description": "Full visit details including host and check-in times",
+          "fields": [
+            {
+              "name": "visitorId",
+              "type": "reference",
+              "refType": "visitor"
+            },
+            {
+              "name": "hostEmployeeId",
+              "type": "reference",
+              "refType": "employee"
+            },
+            {
+              "name": "locationId",
+              "type": "reference",
+              "refType": "entity"
+            },
+            {
+              "name": "purpose",
+              "type": "text"
+            },
+            {
+              "name": "expectedArrival",
+              "type": "datetime"
+            },
+            {
+              "name": "expectedDeparture",
+              "type": "datetime"
+            },
+            {
+              "name": "actualArrival",
+              "type": "datetime"
+            },
+            {
+              "name": "actualDeparture",
+              "type": "datetime"
+            },
+            {
+              "name": "status",
+              "type": "enum",
+              "values": [
+                "scheduled",
+                "checked_in",
+                "checked_out",
+                "cancelled",
+                "no_show"
+              ]
+            },
+            {
+              "name": "approvalStatus",
+              "type": "enum",
+              "values": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            },
+            {
+              "name": "vehicleNumber",
+              "type": "text"
+            },
+            {
+              "name": "numberOfPersons",
+              "type": "number"
+            },
+            {
+              "name": "belongings",
+              "type": "array"
+            },
+            {
+              "name": "badgeNumber",
+              "type": "text"
+            },
+            {
+              "name": "accessZones",
+              "type": "array"
+            }
+          ],
+          "queryable": true
+        },
+        {
+          "id": "blacklist_entry",
+          "description": "Blacklisted person record",
+          "fields": [
+            {
+              "name": "name",
+              "type": "text"
+            },
+            {
+              "name": "reason",
+              "type": "text"
+            },
+            {
+              "name": "addedBy",
+              "type": "reference",
+              "refType": "employee"
+            },
+            {
+              "name": "addedAt",
+              "type": "datetime"
+            },
+            {
+              "name": "expiresAt",
+              "type": "datetime"
+            },
+            {
+              "name": "photo",
+              "type": "image"
+            },
+            {
+              "name": "embedding",
+              "type": "embedding"
+            }
+          ],
+          "queryable": true
         }
       ]
     },
@@ -213,38 +621,255 @@
       "fromPlatform": [
         {
           "type": "employee_presence",
-          "use": "Check if host is available before scheduling visits"
+          "use": "Check if host is available before scheduling"
         },
         {
           "type": "meeting_rooms",
-          "use": "Suggest available meeting rooms for visits"
+          "use": "Suggest available meeting rooms"
         },
         {
           "type": "parking_status",
-          "use": "Provide visitor arrival guidance on parking availability"
+          "use": "Inform visitors about parking availability"
         },
         {
           "type": "company_events",
-          "use": "Block high-traffic event days for regular visits"
+          "use": "Block high-traffic days for regular visits"
+        },
+        {
+          "type": "access_control_status",
+          "use": "Check if doors/gates are operational"
+        },
+        {
+          "type": "emergency_alerts",
+          "use": "Trigger evacuation mode"
+        },
+        {
+          "type": "employee_calendar",
+          "use": "Show host availability for scheduling"
         }
       ]
+    }
+  },
+  "integrations": {
+    "interApp": [
+      {
+        "appId": "people_tracking_v1",
+        "mode": "bidirectional",
+        "produces": [
+          "visitor",
+          "employee"
+        ],
+        "consumes": [
+          "location_occupancy",
+          "movement_patterns"
+        ],
+        "justification": "Share visitor and employee biometrics with people tracking for unified recognition"
+      }
+    ],
+    "external": [
+      {
+        "type": "access_control",
+        "protocols": [
+          "wiegand",
+          "osdp",
+          "rest_api"
+        ],
+        "description": "Integration with physical access control systems"
+      },
+      {
+        "type": "notification",
+        "protocols": [
+          "smtp",
+          "sms_gateway",
+          "push_notification",
+          "slack",
+          "teams"
+        ],
+        "description": "Host notification channels"
+      },
+      {
+        "type": "badge_printer",
+        "protocols": [
+          "zebra_zpl",
+          "dymo",
+          "brother"
+        ],
+        "description": "Badge printing support"
+      }
+    ]
+  },
+  "federation": {
+    "enabled": true,
+    "queryEndpoints": {
+      "visitor": "/api/query/visitors",
+      "employee": "/api/query/employees",
+      "visit": "/api/query/visits"
+    },
+    "imageExchange": {
+      "supported": true,
+      "format": "base64",
+      "queryParam": "includeImages=true"
+    },
+    "embeddingExchange": {
+      "supported": true,
+      "shareByDefault": false,
+      "queryParam": "includeEmbeddings=true",
+      "note": "Other apps can request embeddings or raw images to train their own models"
     }
   },
   "webhooks": {
     "install": "/api/webhooks/install",
     "uninstall": "/api/webhooks/uninstall",
     "dataUpdate": "/api/webhooks/data-update",
-    "residencyChange": "/api/webhooks/residency-change"
+    "residencyChange": "/api/webhooks/residency-change",
+    "embeddingReady": "/api/webhooks/embedding-ready",
+    "configChanged": "/api/webhooks/config-changed",
+    "entityMappingChanged": "/api/webhooks/entity-mapping-changed",
+    "retryPolicy": {
+      "maxRetries": 3,
+      "backoffSeconds": [
+        10,
+        60,
+        300
+      ]
+    }
   },
-  "configuration": {
-    "hybridMode": true,
-    "settings": [
+  "configSchema": {
+    "type": "object",
+    "groups": [
       {
-        "key": "require_approval",
-        "label": "Require Host Approval",
-        "type": "boolean",
-        "default": false
+        "id": "general",
+        "title": "General Settings",
+        "icon": "fas fa-cog"
+      },
+      {
+        "id": "security",
+        "title": "Security & Compliance",
+        "icon": "fas fa-shield-alt"
+      },
+      {
+        "id": "notifications",
+        "title": "Notification Settings",
+        "icon": "fas fa-bell"
+      },
+      {
+        "id": "biometrics",
+        "title": "Biometric Settings",
+        "icon": "fas fa-fingerprint"
       }
-    ]
-  }
+    ],
+    "properties": {
+      "require_approval": {
+        "type": "boolean",
+        "title": "Require Host Approval",
+        "description": "Require host approval before visitor check-in",
+        "default": false,
+        "group": "general"
+      },
+      "auto_checkout_hours": {
+        "type": "number",
+        "title": "Auto Checkout Hours",
+        "description": "Automatically checkout visitors after this many hours",
+        "default": 8,
+        "minimum": 1,
+        "maximum": 24,
+        "group": "general"
+      },
+      "badge_template": {
+        "type": "string",
+        "title": "Badge Template",
+        "enum": [
+          "standard",
+          "compact",
+          "photo_large",
+          "minimal"
+        ],
+        "default": "standard",
+        "group": "general"
+      },
+      "enable_blacklist_check": {
+        "type": "boolean",
+        "title": "Enable Blacklist Check",
+        "description": "Check visitors against blacklist during check-in",
+        "default": true,
+        "group": "security"
+      },
+      "require_id_verification": {
+        "type": "boolean",
+        "title": "Require ID Verification",
+        "description": "Require government ID for visitor registration",
+        "default": false,
+        "group": "security"
+      },
+      "enable_face_verification": {
+        "type": "boolean",
+        "title": "Enable Face Verification",
+        "description": "Use facial recognition for visitor verification",
+        "default": true,
+        "group": "biometrics"
+      },
+      "face_match_threshold": {
+        "type": "number",
+        "title": "Face Match Threshold",
+        "description": "Minimum confidence (0-1) for face match",
+        "default": 0.7,
+        "minimum": 0.5,
+        "maximum": 0.99,
+        "group": "biometrics",
+        "dependsOn": {
+          "enable_face_verification": true
+        }
+      },
+      "preferred_embedding_model": {
+        "type": "string",
+        "title": "Preferred Embedding Model",
+        "enum": [
+          "buffalo_l",
+          "Facenet512"
+        ],
+        "default": "buffalo_l",
+        "group": "biometrics"
+      },
+      "host_notification_channels": {
+        "type": "array",
+        "title": "Host Notification Channels",
+        "items": {
+          "type": "string",
+          "enum": [
+            "email",
+            "sms",
+            "push",
+            "slack",
+            "teams"
+          ]
+        },
+        "default": [
+          "email"
+        ],
+        "group": "notifications"
+      },
+      "send_visitor_confirmation": {
+        "type": "boolean",
+        "title": "Send Visitor Confirmation",
+        "description": "Send confirmation message to visitor after pre-registration",
+        "default": true,
+        "group": "notifications"
+      },
+      "data_retention_days": {
+        "type": "number",
+        "title": "Data Retention (days)",
+        "description": "Days to retain visit logs before archiving",
+        "default": 365,
+        "minimum": 30,
+        "maximum": 3650,
+        "group": "security"
+      }
+    }
+  },
+  "subscribesTo": [
+    "entity.*",
+    "actor.employee.*",
+    "platform.maintenance_scheduled",
+    "platform.config_changed"
+  ]
 }
