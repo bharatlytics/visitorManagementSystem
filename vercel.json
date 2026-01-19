@@ -2,24 +2,18 @@
     "version": 2,
     "buildCommand": "cd frontend && npm install && npm run build",
     "outputDirectory": "frontend/dist",
-    "builds": [
-        {
-            "src": "run.py",
-            "use": "@vercel/python"
-        }
-    ],
     "rewrites": [
         {
             "source": "/api/:path*",
-            "destination": "/run.py"
+            "destination": "/api/index"
         },
         {
             "source": "/auth/:path*",
-            "destination": "/run.py"
+            "destination": "/api/index"
         },
         {
             "source": "/health",
-            "destination": "/run.py"
+            "destination": "/api/index"
         }
     ]
 }
