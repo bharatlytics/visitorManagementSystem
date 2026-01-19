@@ -31,16 +31,35 @@ def create_app():
     from app.api.residency_api import residency_bp
     app.register_blueprint(residency_bp, url_prefix='/api')
 
+    # Serve React build from frontend/dist for SPA
+    # Path to React build directory (relative to project root)
+    frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'dist')
     
-    # Note: In unified deployment, Vercel routes handle:
-    # - /api/* -> Flask (via blueprints)
-    # - /auth/* -> Flask (via auth_bp)
-    # - /* -> React build (SPA)
-    # Flask only needs the health endpoint here
+    from flask import send_from_directory, send_file
     
     @app.route('/health')
     def health():
         return {'status': 'ok', 'app': 'VMS'}
+    
+    @app.route('/assets/<path:filename>')
+    def serve_assets(filename):
+        """Serve React build assets (JS, CSS, etc.)"""
+        return send_from_directory(os.path.join(frontend_dist, 'assets'), filename)
+    
+    @app.route('/<path:path>')
+    def serve_static(path):
+        """Serve static files from React build"""
+        # Check if file exists in frontend/dist
+        file_path = os.path.join(frontend_dist, path)
+        if os.path.isfile(file_path):
+            return send_from_directory(frontend_dist, path)
+        # For SPA routing, return index.html
+        return send_file(os.path.join(frontend_dist, 'index.html'))
+    
+    @app.route('/')
+    def index():
+        """Serve React app root"""
+        return send_file(os.path.join(frontend_dist, 'index.html'))
     
     # Sync manifest to Platform on startup
     sync_manifest_to_platform()

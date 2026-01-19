@@ -1,13 +1,7 @@
 {
     "version": 2,
+    "buildCommand": "cd frontend && npm install && npm run build",
     "builds": [
-        {
-            "src": "frontend/package.json",
-            "use": "@vercel/static-build",
-            "config": {
-                "distDir": "dist"
-            }
-        },
         {
             "src": "api/index.py",
             "use": "@vercel/python"
@@ -15,23 +9,8 @@
     ],
     "routes": [
         {
-            "src": "/api/(.*)",
-            "dest": "/api/index.py"
-        },
-        {
-            "src": "/auth/(.*)",
-            "dest": "/api/index.py"
-        },
-        {
-            "src": "/health",
-            "dest": "/api/index.py"
-        },
-        {
-            "handle": "filesystem"
-        },
-        {
             "src": "/(.*)",
-            "dest": "/frontend/index.html"
+            "dest": "/api/index.py"
         }
     ]
 }
