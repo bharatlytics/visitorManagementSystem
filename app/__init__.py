@@ -32,56 +32,15 @@ def create_app():
     app.register_blueprint(residency_bp, url_prefix='/api')
 
     
-    # Main routes - API info (frontend is a separate deployment)
-    from flask import redirect, jsonify
-    
-    # Frontend URL for redirects (local dev or production)
-    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
-    
-    @app.route('/')
-    def index():
-        # Return API info (frontend is deployed separately)
-        return jsonify({
-            'app': 'VMS API',
-            'version': '4.0.0',
-            'status': 'running',
-            'endpoints': {
-                'health': '/health',
-                'api': '/api/*',
-                'auth': '/auth/*'
-            }
-        })
-    
-    @app.route('/dashboard.html')
-    def dashboard():
-        return redirect(frontend_url)
-    
-    @app.route('/visitors.html')
-    def visitors():
-        return redirect(f'{frontend_url}/visitors')
-    
-    @app.route('/visits.html')
-    def visits():
-        return redirect(f'{frontend_url}/visits')
+    # Note: In unified deployment, Vercel routes handle:
+    # - /api/* -> Flask (via blueprints)
+    # - /auth/* -> Flask (via auth_bp)
+    # - /* -> React build (SPA)
+    # Flask only needs the health endpoint here
     
     @app.route('/health')
     def health():
         return {'status': 'ok', 'app': 'VMS'}
-    
-    # Serve JS files from subdirectories
-    @app.route('/js/<path:filename>')
-    def serve_js(filename):
-        return app.send_static_file(f'js/{filename}')
-    
-    # Serve CSS files from subdirectories
-    @app.route('/css/<path:filename>')
-    def serve_css(filename):
-        return app.send_static_file(f'css/{filename}')
-
-    # Serve Image files from subdirectories
-    @app.route('/images/<path:filename>')
-    def serve_images(filename):
-        return app.send_static_file(f'images/{filename}')
     
     # Sync manifest to Platform on startup
     sync_manifest_to_platform()

@@ -362,7 +362,7 @@ def platform_sso():
         
         # If GET request (redirect from platform), redirect to dashboard
         if request.method == 'GET':
-            return redirect('/dashboard.html')
+            return redirect('/')
         
         # For POST requests (mobile/API), return JSON with VMS JWT token
         # Create VMS-specific JWT token for API access

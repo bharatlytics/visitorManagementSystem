@@ -1,15 +1,40 @@
 {
     "version": 2,
+    "buildCommand": "cd frontend && npm install && npm run build",
     "builds": [
         {
             "src": "run.py",
             "use": "@vercel/python"
+        },
+        {
+            "src": "frontend/dist/**",
+            "use": "@vercel/static"
         }
     ],
     "routes": [
         {
-            "src": "/(.*)",
+            "src": "/api/(.*)",
             "dest": "run.py"
+        },
+        {
+            "src": "/auth/(.*)",
+            "dest": "run.py"
+        },
+        {
+            "src": "/health",
+            "dest": "run.py"
+        },
+        {
+            "src": "/assets/(.*)",
+            "dest": "/frontend/dist/assets/$1"
+        },
+        {
+            "src": "/(.*\\.(js|css|ico|png|jpg|svg|woff|woff2))",
+            "dest": "/frontend/dist/$1"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/frontend/dist/index.html"
         }
     ]
 }
