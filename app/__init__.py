@@ -32,25 +32,37 @@ def create_app():
     app.register_blueprint(residency_bp, url_prefix='/api')
 
     
-    # Main routes - Redirect to React frontend in development
-    from flask import redirect
+    # Main routes - API info (frontend is a separate deployment)
+    from flask import redirect, jsonify
+    
+    # Frontend URL for redirects (local dev or production)
+    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
     
     @app.route('/')
     def index():
-        # In development, redirect to React dev server
-        return redirect('http://localhost:5173')
+        # Return API info (frontend is deployed separately)
+        return jsonify({
+            'app': 'VMS API',
+            'version': '4.0.0',
+            'status': 'running',
+            'endpoints': {
+                'health': '/health',
+                'api': '/api/*',
+                'auth': '/auth/*'
+            }
+        })
     
     @app.route('/dashboard.html')
     def dashboard():
-        return redirect('http://localhost:5173')
+        return redirect(frontend_url)
     
     @app.route('/visitors.html')
     def visitors():
-        return redirect('http://localhost:5173/visitors')
+        return redirect(f'{frontend_url}/visitors')
     
     @app.route('/visits.html')
     def visits():
-        return redirect('http://localhost:5173/visits')
+        return redirect(f'{frontend_url}/visits')
     
     @app.route('/health')
     def health():
