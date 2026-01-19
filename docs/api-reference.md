@@ -1,7 +1,8 @@
 # VMS API Reference - Enterprise Edition
 
 **Version:** 4.0  
-**Base URL:** `http://localhost:5001/api`  
+**Base URL (Local):** `http://localhost:5001/api`  
+**Base URL (Production):** `https://visitor-management-system-pearl.vercel.app/api`  
 **Last Updated:** January 2026
 
 ---
