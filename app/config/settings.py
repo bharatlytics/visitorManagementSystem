@@ -35,6 +35,9 @@ class Config:
     # Platform Web URL (for "Exit App" navigation back to platform)
     PLATFORM_WEB_URL = os.getenv('PLATFORM_WEB_URL', 'http://localhost:5000')
     
+    # VMS App URL (this app's publicly accessible URL - used for manifest sync)
+    APP_URL = os.getenv('VMS_URL', 'http://localhost:5001')
+    
     # File uploads
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
     

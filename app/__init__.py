@@ -98,6 +98,7 @@ def sync_manifest_to_platform():
     import requests
     import os
     from threading import Thread
+    from app.config import Config
     
     def _sync():
         try:
@@ -106,8 +107,9 @@ def sync_manifest_to_platform():
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
             
-            platform_url = os.getenv('PLATFORM_URL', 'http://localhost:5000')
-            vms_url = os.getenv('VMS_URL', 'http://localhost:5001')
+            # Use Config for consistent env var access
+            platform_url = Config.PLATFORM_API_URL
+            vms_url = Config.APP_URL
             
             response = requests.post(
                 f"{platform_url}/bharatlytics/integration/v1/manifest/sync",
