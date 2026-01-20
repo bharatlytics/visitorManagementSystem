@@ -50,8 +50,8 @@ function StepIndicator({ currentStep, steps }) {
             {steps.map((step, idx) => (
                 <div key={idx} className="flex items-center">
                     <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold transition-all ${idx + 1 < currentStep ? 'bg-green-500 text-white' :
-                            idx + 1 === currentStep ? 'bg-blue-600 text-white shadow-lg scale-110' :
-                                'bg-gray-200 text-gray-500'
+                        idx + 1 === currentStep ? 'bg-blue-600 text-white shadow-lg scale-110' :
+                            'bg-gray-200 text-gray-500'
                         }`}>
                         {idx + 1 < currentStep ? <CheckCircle className="w-4 h-4" /> : idx + 1}
                     </div>
@@ -144,10 +144,10 @@ function FaceCapture({ capturedImages, onCapture, onRetake }) {
                         key={angle.id}
                         onClick={() => setCurrentAngle(angle.id)}
                         className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-medium transition-all ${currentAngle === angle.id
-                                ? 'bg-blue-600 text-white shadow-lg'
-                                : capturedImages[angle.id]
-                                    ? 'bg-green-100 text-green-700 border-2 border-green-300'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            ? 'bg-blue-600 text-white shadow-lg'
+                            : capturedImages[angle.id]
+                                ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             }`}
                     >
                         <span className="text-lg">{angle.icon}</span>
@@ -295,7 +295,7 @@ export default function Visitors() {
             setLoading(true)
             setError(null)
             const [visitorsRes, hostsRes, entitiesRes] = await Promise.allSettled([
-                api.get('/visitors'),
+                api.get('/visitors/list'),
                 api.get('/employees'),
                 api.get('/entities')
             ])
@@ -496,8 +496,8 @@ export default function Visitors() {
                             key={f.id}
                             onClick={() => setStatusFilter(f.id)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${statusFilter === f.id
-                                    ? 'bg-blue-600 text-white shadow-md'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
                         >
                             {f.label}

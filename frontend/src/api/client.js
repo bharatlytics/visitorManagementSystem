@@ -31,6 +31,8 @@ api.interceptors.request.use((config) => {
     const token = localStorage.getItem('vms_token')
     if (token) {
         config.headers.Authorization = `Bearer ${token}`
+    } else {
+        console.warn('[API Client] No token in localStorage for request:', config.url)
     }
 
     return config
@@ -41,14 +43,10 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            // Don't redirect on auth check endpoints
-            const url = error.config?.url || ''
-            if (!url.includes('/auth/me') && !url.includes('/auth/login')) {
-                console.log('Unauthorized - redirecting to login')
-                localStorage.removeItem('vms_token')
-                localStorage.removeItem('vms_user')
-                window.location.href = '/login'
-            }
+            // Log 401 errors but don't auto-logout
+            // The auth state is managed by authStore, not by API responses
+            // Individual pages can handle 401s as needed
+            console.warn('API returned 401:', error.config?.url)
         }
         return Promise.reject(error)
     }

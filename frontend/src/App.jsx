@@ -11,6 +11,7 @@ import Reports from './pages/Reports'
 import Devices from './pages/Devices'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
+import SSOCallback from './pages/SSOCallback'
 import { useAuthStore } from './store/authStore'
 
 function App() {
@@ -18,8 +19,14 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Skip auth check if we're on the SSO callback page - let it process the token first
+    if (window.location.pathname === '/sso-callback') {
+      setLoading(false)
+      return
+    }
     checkAuth().finally(() => setLoading(false))
-  }, [checkAuth])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount
 
   if (loading) {
     return (
@@ -32,6 +39,8 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* SSO callback must be first and always accessible */}
+        <Route path="/sso-callback" element={<SSOCallback />} />
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route
           path="/*"

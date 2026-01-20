@@ -1,37 +1,53 @@
 {
-    "version": 2,
-    "builds": [
+    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "buildCommand": "npm install --prefix server && cd frontend && npm install && npm run build",
+    "outputDirectory": "frontend/dist",
+    "framework": "vite",
+    "functions": {
+        "api/index.js": {
+            "memory": 1024,
+            "maxDuration": 30
+        }
+    },
+    "rewrites": [
         {
-            "src": "frontend/package.json",
-            "use": "@vercel/static-build",
-            "config": {
-                "distDir": "dist"
-            }
+            "source": "/api/:path*",
+            "destination": "/api/index.js"
         },
         {
-            "src": "api/index.py",
-            "use": "@vercel/python"
+            "source": "/auth/:path*",
+            "destination": "/api/index.js"
+        },
+        {
+            "source": "/health",
+            "destination": "/api/index.js"
+        },
+        {
+            "source": "/((?!api/|auth/).*)",
+            "destination": "/index.html"
         }
     ],
-    "routes": [
+    "headers": [
         {
-            "src": "/api/(.*)",
-            "dest": "/api/index.py"
-        },
-        {
-            "src": "/auth/(.*)",
-            "dest": "/api/index.py"
-        },
-        {
-            "src": "/health",
-            "dest": "/api/index.py"
-        },
-        {
-            "handle": "filesystem"
-        },
-        {
-            "src": "/(.*)",
-            "dest": "/index.html"
+            "source": "/api/:path*",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Credentials",
+                    "value": "true"
+                },
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                },
+                {
+                    "key": "Access-Control-Allow-Methods",
+                    "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+                },
+                {
+                    "key": "Access-Control-Allow-Headers",
+                    "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+                }
+            ]
         }
     ]
 }

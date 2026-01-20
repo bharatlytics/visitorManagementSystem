@@ -142,7 +142,7 @@ export default function Dashboard() {
         }
         try {
             // Find visitor by phone and check them in
-            const response = await api.get('/visitors', { params: { phone: quickPhone } })
+            const response = await api.get('/visitors/list', { params: { phone: quickPhone } })
             const visitors = response.data.visitors || []
             if (visitors.length === 0) {
                 alert('Visitor not found. Please register first.')

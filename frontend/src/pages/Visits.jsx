@@ -78,7 +78,7 @@ export default function Visits() {
             setError(null)
             const [visitsRes, visitorsRes, hostsRes, entitiesRes] = await Promise.allSettled([
                 api.get('/visitors/visits'),
-                api.get('/visitors'),
+                api.get('/visitors/list'),
                 api.get('/employees'), // Uses data_provider which respects installation mappings
                 api.get('/entities')
             ])
