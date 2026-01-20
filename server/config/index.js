@@ -35,6 +35,9 @@ const Config = {
     // VMS App URL (this app's publicly accessible URL - used for manifest sync)
     APP_URL: process.env.VMS_URL || 'http://localhost:5001',
 
+    // Frontend URL (for SSO redirects - same as APP_URL in production, different in dev)
+    FRONTEND_URL: process.env.FRONTEND_URL || process.env.VMS_URL || 'http://localhost:5173',
+
     // File uploads
     MAX_CONTENT_LENGTH: 16 * 1024 * 1024, // 16MB
 

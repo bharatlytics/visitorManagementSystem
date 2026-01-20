@@ -271,7 +271,7 @@ router.all('/platform-sso', async (req, res, next) => {
             // Build redirect URL with token for frontend auto-login
             const frontendUrl = Config.NODE_ENV === 'development'
                 ? 'http://localhost:5173'
-                : Config.FRONTEND_URL || '';
+                : Config.FRONTEND_URL;
 
             // Encode params for URL
             const params = new URLSearchParams({
