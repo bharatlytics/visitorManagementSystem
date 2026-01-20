@@ -235,21 +235,21 @@ class PlatformClient {
                     }
                 }
 
-                // Fallback: check entityRequirements
-                const entityRequirements = mapping.entityRequirements || [];
-                console.log(`[PlatformClient] entityRequirements count: ${entityRequirements.length}`);
+                // Fallback: check entityMappings object { "location": { source: "Platform", mapToType: "organization" } }
+                const entityMappings = mapping.entityMappings || {};
+                console.log(`[PlatformClient] entityMappings:`, JSON.stringify(entityMappings));
 
-                if (entityRequirements.length > 0) {
-                    console.log(`[PlatformClient] First entityRequirement:`, JSON.stringify(entityRequirements[0]));
-
-                    const entityTypes = entityRequirements
-                        .filter(e => e.source === 'Platform')
-                        .map(e => e.name);
-
-                    if (entityTypes.length > 0) {
-                        console.log(`[PlatformClient] Found entity requirements: ${entityTypes}`);
-                        return entityTypes;
+                const platformEntityTypes = [];
+                for (const [appEntityName, mappingConfig] of Object.entries(entityMappings)) {
+                    if (mappingConfig && mappingConfig.source === 'Platform' && mappingConfig.mapToType) {
+                        platformEntityTypes.push(mappingConfig.mapToType);
+                        console.log(`[PlatformClient] Found entity mapping: ${appEntityName} → Platform:${mappingConfig.mapToType}`);
                     }
+                }
+
+                if (platformEntityTypes.length > 0) {
+                    console.log(`[PlatformClient] Mapped platform entity types: ${platformEntityTypes}`);
+                    return platformEntityTypes;
                 }
             }
         } catch (error) {
