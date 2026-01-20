@@ -8,6 +8,8 @@ const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const Config = require('../config');
 
+console.log('[PlatformClient] MODULE LOADED - Platform API URL:', Config.PLATFORM_API_URL);
+
 /**
  * Platform Client for fetching data from Platform API
  */
@@ -15,7 +17,8 @@ class PlatformClient {
     constructor(companyId, sessionToken = null) {
         this.companyId = companyId;
         this.sessionToken = sessionToken;
-        this.baseUrl = Config.PLATFORM_API_URL;
+        // Remove trailing slash from baseUrl to avoid double slashes
+        this.baseUrl = (Config.PLATFORM_API_URL || 'http://localhost:5000').replace(/\/$/, '');
     }
 
     /**
@@ -56,9 +59,13 @@ class PlatformClient {
     async getEmployees(companyId = null) {
         const cid = companyId || this.companyId;
         console.log(`[PlatformClient] Fetching employees from Platform for company ${cid}`);
+        console.log(`[PlatformClient] Using sessionToken: ${this.sessionToken ? 'YES (SSO)' : 'NO (self-generated)'}`);
+        console.log(`[PlatformClient] Platform URL: ${this.baseUrl}`);
 
         try {
             const url = `${this.baseUrl}/bharatlytics/v1/actors`;
+            console.log(`[PlatformClient] GET ${url} with params: companyId=${cid}, actorType=employee`);
+
             const response = await axios.get(url, {
                 params: {
                     companyId: cid,
@@ -69,10 +76,18 @@ class PlatformClient {
                 timeout: 10000
             });
 
+            console.log(`[PlatformClient] Response status: ${response.status}`);
+            console.log(`[PlatformClient] Response data type: ${typeof response.data}, isArray: ${Array.isArray(response.data)}`);
+
             if (response.status === 200) {
                 const data = response.data;
-                const actors = data.actors || data.data || [];
+                // Platform returns array directly from list_actors, not {actors: [...]}
+                const actors = Array.isArray(data) ? data : (data.actors || data.data || []);
                 console.log(`[PlatformClient] Fetched ${actors.length} employees from Platform`);
+
+                if (actors.length > 0) {
+                    console.log(`[PlatformClient] Sample actor:`, JSON.stringify(actors[0]).substring(0, 200));
+                }
 
                 // Transform Platform actors to VMS employee format
                 return actors.map(actor => this.transformActorToEmployee(actor));
@@ -120,6 +135,7 @@ class PlatformClient {
     async getEntities(companyId = null, types = null) {
         const cid = companyId || this.companyId;
         console.log(`[PlatformClient] Fetching entities from Platform for company ${cid}, types: ${types}`);
+        console.log(`[PlatformClient] Using sessionToken: ${this.sessionToken ? 'YES (SSO)' : 'NO (self-generated)'}`);
 
         try {
             // First, get installation mappings to filter by allowed entity types
@@ -135,22 +151,33 @@ class PlatformClient {
                 params.types = filterTypes.join(',');
             }
 
+            console.log(`[PlatformClient] GET ${url} with params:`, params);
+
             const response = await axios.get(url, {
                 params,
                 headers: this.getHeaders(),
                 timeout: 10000
             });
 
+            console.log(`[PlatformClient] Entities response status: ${response.status}`);
+            console.log(`[PlatformClient] Entities response data type: ${typeof response.data}, isArray: ${Array.isArray(response.data)}`);
+
             if (response.status === 200) {
                 const data = response.data;
-                let entities = data.entities || data.data || [];
+                // Platform may return array directly OR {entities: []} wrapper
+                let entities = Array.isArray(data) ? data : (data.entities || data.data || []);
+
+                console.log(`[PlatformClient] Raw entities count: ${entities.length}`);
+                if (entities.length > 0) {
+                    console.log(`[PlatformClient] Sample entity:`, JSON.stringify(entities[0]).substring(0, 200));
+                }
 
                 // Filter by allowed types from installation mappings
                 if (allowedTypes && allowedTypes.length > 0) {
                     entities = entities.filter(e => allowedTypes.includes(e.type));
                     console.log(`[PlatformClient] After filtering: ${entities.length} entities of types ${allowedTypes}`);
                 } else {
-                    console.log(`[PlatformClient] Fetched ${entities.length} entities from Platform`);
+                    console.log(`[PlatformClient] No type filter - returning all ${entities.length} entities`);
                 }
 
                 // Transform to VMS format
@@ -159,7 +186,7 @@ class PlatformClient {
         } catch (error) {
             console.error(`[PlatformClient] Error fetching entities: ${error.message}`);
             if (error.response) {
-                console.error(`[PlatformClient] Status: ${error.response.status}`);
+                console.error(`[PlatformClient] Entities error status: ${error.response.status}, data:`, JSON.stringify(error.response.data));
             }
         }
         return [];
@@ -171,6 +198,8 @@ class PlatformClient {
     async getInstallationMappedEntityTypes(companyId) {
         try {
             const url = `${this.baseUrl}/bharatlytics/integration/v1/installations/mapping`;
+            console.log(`[PlatformClient] Fetching installation mappings from ${url}`);
+
             const response = await axios.get(url, {
                 params: {
                     companyId,
@@ -182,31 +211,45 @@ class PlatformClient {
 
             if (response.status === 200) {
                 const data = response.data;
-                const mapping = data.mapping || {};
+                console.log(`[PlatformClient] Installation mapping raw response:`, JSON.stringify(data).substring(0, 500));
 
-                // Check installationMappings for entity types
+                // The mapping can be directly in data or in data.mapping
+                const mapping = data.mapping || data;
+                console.log(`[PlatformClient] Mapping object keys:`, Object.keys(mapping));
+
+                // Check installationMappings array - each mapping has source, mapToType, platformEntityType
                 const installationMappings = mapping.installationMappings || [];
+                console.log(`[PlatformClient] installationMappings count: ${installationMappings.length}`);
+
                 if (installationMappings.length > 0) {
-                    // Extract entity types from mappings
+                    console.log(`[PlatformClient] First installationMapping:`, JSON.stringify(installationMappings[0]));
+
+                    // Extract entity types from mappings where source is "Platform"
                     const entityTypes = installationMappings
-                        .filter(m => m.platformEntityType)
-                        .map(m => m.platformEntityType);
+                        .filter(m => m.source === 'Platform' && m.mapToType)
+                        .map(m => m.mapToType);
 
                     if (entityTypes.length > 0) {
-                        console.log(`[PlatformClient] Found installation mappings: ${entityTypes}`);
+                        console.log(`[PlatformClient] Found mapped entity types: ${entityTypes}`);
                         return entityTypes;
                     }
                 }
 
                 // Fallback: check entityRequirements
                 const entityRequirements = mapping.entityRequirements || [];
-                const entityTypes = entityRequirements
-                    .filter(e => e.source === 'Platform')
-                    .map(e => e.name);
+                console.log(`[PlatformClient] entityRequirements count: ${entityRequirements.length}`);
 
-                if (entityTypes.length > 0) {
-                    console.log(`[PlatformClient] Found entity requirements: ${entityTypes}`);
-                    return entityTypes;
+                if (entityRequirements.length > 0) {
+                    console.log(`[PlatformClient] First entityRequirement:`, JSON.stringify(entityRequirements[0]));
+
+                    const entityTypes = entityRequirements
+                        .filter(e => e.source === 'Platform')
+                        .map(e => e.name);
+
+                    if (entityTypes.length > 0) {
+                        console.log(`[PlatformClient] Found entity requirements: ${entityTypes}`);
+                        return entityTypes;
+                    }
                 }
             }
         } catch (error) {

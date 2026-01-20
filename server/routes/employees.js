@@ -74,7 +74,9 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         }
 
         // Use DataProvider for residency-aware fetching
-        const dataProvider = getDataProvider(companyId);
+        // Pass platformToken from session for Platform API calls
+        const platformToken = req.session?.platformToken;
+        const dataProvider = getDataProvider(companyId, platformToken);
         let employees = await dataProvider.getEmployees(companyId);
 
         // Filter by status if provided
