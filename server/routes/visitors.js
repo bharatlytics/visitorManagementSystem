@@ -19,7 +19,8 @@ const {
     getCurrentUTC,
     convertObjectIds,
     parseObjectId,
-    isValidObjectId
+    isValidObjectId,
+    rewriteEmbeddingUrls
 } = require('../utils/helpers');
 
 // Multer for file uploads (memory storage for GridFS)
@@ -228,6 +229,10 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         const visitors = await collections.visitors().find(query).toArray();
         console.log(`[Visitors] Found ${visitors.length} visitors`);
 
+        // Rewrite download URLs to VMS proxy URLs (using shared utility)
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        rewriteEmbeddingUrls(visitors, baseUrl, 'visitors');
+
         // Convert ObjectIds to strings
         const result = convertObjectIds(visitors);
 
@@ -257,6 +262,11 @@ router.get('/list', requireCompanyAccess, async (req, res, next) => {
         }
 
         const visitors = await collections.visitors().find(query).toArray();
+
+        // Rewrite download URLs to VMS proxy URLs (using shared utility)
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        rewriteEmbeddingUrls(visitors, baseUrl, 'visitors');
+
         res.json({ visitors: convertObjectIds(visitors) });
     } catch (error) {
         console.error('Error listing visitors:', error);

@@ -17,7 +17,8 @@ const {
     validatePhoneFormat,
     convertObjectIds,
     isValidObjectId,
-    getCurrentUTC
+    getCurrentUTC,
+    rewriteEmbeddingUrls
 } = require('../utils/helpers');
 const { getDataProvider } = require('../services/data_provider');
 
@@ -62,40 +63,9 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             );
         }
 
-        // Rewrite download URLs to VMS proxy URLs (matching Python implementation)
+        // Rewrite download URLs to VMS proxy URLs (using shared utility)
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        for (const employee of employees) {
-            // Handle Platform actorEmbeddings
-            if (employee.actorEmbeddings) {
-                for (const [model, embData] of Object.entries(employee.actorEmbeddings)) {
-                    if (embData && typeof embData === 'object' && embData.status === 'done') {
-                        let embeddingId = embData.embeddingId;
-
-                        // Extract embedding ID from Platform URL if present
-                        if (embData.downloadUrl && embData.downloadUrl.includes('/embeddings/')) {
-                            embeddingId = embData.downloadUrl.split('/embeddings/').pop();
-                        }
-
-                        // Construct VMS proxy URL
-                        if (embeddingId) {
-                            embData.downloadUrl = `${baseUrl}/api/employees/embeddings/${embeddingId}`;
-                        }
-                    }
-                }
-            }
-
-            // Also handle legacy VMS employeeEmbeddings
-            if (employee.employeeEmbeddings) {
-                for (const [model, embData] of Object.entries(employee.employeeEmbeddings)) {
-                    if (embData && typeof embData === 'object') {
-                        const embeddingId = embData.embeddingId;
-                        if (embeddingId) {
-                            embData.downloadUrl = `${baseUrl}/api/employees/embeddings/${embeddingId}`;
-                        }
-                    }
-                }
-            }
-        }
+        rewriteEmbeddingUrls(employees, baseUrl, 'employees');
 
         // Return as direct array (matching Python API format)
         res.json(convertObjectIds(employees));

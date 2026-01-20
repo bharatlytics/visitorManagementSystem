@@ -129,6 +129,54 @@ function generateUniqueId(prefix = 'VIS') {
     return `${prefix}-${timestamp}-${random}`;
 }
 
+/**
+ * Rewrite embedding download URLs to use VMS proxy URLs
+ * Matching Python app/api/employees.py and visitors.py pattern
+ * 
+ * @param {Array|Object} records - Single record or array of records (employees/visitors)
+ * @param {string} baseUrl - VMS base URL (e.g., http://localhost:5001)
+ * @param {string} entityType - 'employees' or 'visitors' for URL path
+ */
+function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees') {
+    const recordsArray = Array.isArray(records) ? records : [records];
+
+    for (const record of recordsArray) {
+        // Handle Platform actorEmbeddings
+        if (record.actorEmbeddings) {
+            for (const [model, embData] of Object.entries(record.actorEmbeddings)) {
+                if (embData && typeof embData === 'object' && embData.status === 'done') {
+                    let embeddingId = embData.embeddingId;
+
+                    // Extract embedding ID from Platform URL if present
+                    if (embData.downloadUrl && embData.downloadUrl.includes('/embeddings/')) {
+                        embeddingId = embData.downloadUrl.split('/embeddings/').pop();
+                    }
+
+                    // Construct VMS proxy URL
+                    if (embeddingId) {
+                        embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
+                    }
+                }
+            }
+        }
+
+        // Handle legacy VMS embeddings (employeeEmbeddings / visitorEmbeddings)
+        const legacyKey = entityType === 'employees' ? 'employeeEmbeddings' : 'visitorEmbeddings';
+        if (record[legacyKey]) {
+            for (const [model, embData] of Object.entries(record[legacyKey])) {
+                if (embData && typeof embData === 'object') {
+                    const embeddingId = embData.embeddingId;
+                    if (embeddingId) {
+                        embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
+                    }
+                }
+            }
+        }
+    }
+
+    return records;
+}
+
 module.exports = {
     validateRequiredFields,
     errorResponse,
@@ -140,4 +188,5 @@ module.exports = {
     isValidObjectId,
     sanitizeString,
     generateUniqueId,
+    rewriteEmbeddingUrls,
 };
