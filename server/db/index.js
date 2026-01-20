@@ -14,7 +14,8 @@ let gridFSBuckets = {};
  * Connect to MongoDB (cached for serverless)
  */
 async function connectToDatabase() {
-    if (cachedDb && mongoose.connection.readyState === 1) {
+    // Return cached connection if valid
+    if (cachedDb && mongoose.connection.readyState === 1 && cachedDb.db) {
         return cachedDb;
     }
 
@@ -25,11 +26,33 @@ async function connectToDatabase() {
 
     console.log(`[DB] Connecting to MongoDB...`);
 
+    // Connect to MongoDB
     await mongoose.connect(MONGODB_URI, {
         bufferCommands: false,
     });
 
+    // Wait for the db object to be available
     cachedDb = mongoose.connection;
+
+    // mongoose.connection.db may not be immediately available, wait for it
+    if (!cachedDb.db) {
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Timeout waiting for MongoDB connection'));
+            }, 10000);
+
+            cachedDb.once('open', () => {
+                clearTimeout(timeout);
+                resolve();
+            });
+
+            cachedDb.once('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+            });
+        });
+    }
+
     console.log(`[DB] Connected to MongoDB: ${cachedDb.db.databaseName}`);
 
     // Initialize GridFS buckets

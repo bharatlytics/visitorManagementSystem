@@ -196,6 +196,7 @@ class PlatformClient {
      * Get entity types from installation mappings
      */
     async getInstallationMappedEntityTypes(companyId) {
+        console.log(`[PlatformClient] *** getInstallationMappedEntityTypes called for company ${companyId} ***`);
         try {
             const url = `${this.baseUrl}/bharatlytics/integration/v1/installations/mapping`;
             console.log(`[PlatformClient] Fetching installation mappings from ${url}`);
@@ -213,8 +214,13 @@ class PlatformClient {
                 const data = response.data;
                 console.log(`[PlatformClient] Installation mapping raw response:`, JSON.stringify(data).substring(0, 500));
 
-                // The mapping can be directly in data or in data.mapping
-                const mapping = data.mapping || data;
+                // Platform returns { mapping: {...}, status: 'configured' } or { mapping: null, status: 'not_configured' }
+                if (!data.mapping) {
+                    console.log(`[PlatformClient] No mapping configured for this app/company`);
+                    return null;
+                }
+
+                const mapping = data.mapping;
                 console.log(`[PlatformClient] Mapping object keys:`, Object.keys(mapping));
 
                 // Check installationMappings array - each mapping has source, mapToType, platformEntityType
@@ -235,15 +241,22 @@ class PlatformClient {
                     }
                 }
 
-                // Fallback: check entityMappings object { "location": { source: "Platform", mapToType: "organization" } }
+                // entityMappings format: { "location": ["organization"], "visitor": ["visitor"] }
+                // Each key is the VMS entity name, value is an array of Platform entity types
                 const entityMappings = mapping.entityMappings || {};
                 console.log(`[PlatformClient] entityMappings:`, JSON.stringify(entityMappings));
 
+                // Collect all Platform entity types from the mappings
                 const platformEntityTypes = [];
-                for (const [appEntityName, mappingConfig] of Object.entries(entityMappings)) {
-                    if (mappingConfig && mappingConfig.source === 'Platform' && mappingConfig.mapToType) {
-                        platformEntityTypes.push(mappingConfig.mapToType);
-                        console.log(`[PlatformClient] Found entity mapping: ${appEntityName} → Platform:${mappingConfig.mapToType}`);
+                for (const [appEntityName, platformTypes] of Object.entries(entityMappings)) {
+                    // platformTypes is an array like ["organization"] or could be the old object format
+                    if (Array.isArray(platformTypes)) {
+                        platformEntityTypes.push(...platformTypes);
+                        console.log(`[PlatformClient] Found entity mapping: ${appEntityName} → ${platformTypes.join(', ')}`);
+                    } else if (platformTypes && platformTypes.mapToType) {
+                        // Legacy format: { source: "Platform", mapToType: "organization" }
+                        platformEntityTypes.push(platformTypes.mapToType);
+                        console.log(`[PlatformClient] Found entity mapping (legacy): ${appEntityName} → ${platformTypes.mapToType}`);
                     }
                 }
 
