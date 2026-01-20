@@ -19,6 +19,7 @@ const {
     isValidObjectId,
     getCurrentUTC
 } = require('../utils/helpers');
+const { getDataProvider } = require('../services/data_provider');
 
 // Multer for file uploads
 const upload = multer({
@@ -29,14 +30,6 @@ const upload = multer({
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
-
-/**
- * Get employee data residency mode from platform installation mapping
- */
-async function getResidencyMode(companyId) {
-    // Default to 'app' mode for VMS-managed employees
-    return 'app';
-}
 
 /**
  * Build employee document
@@ -71,7 +64,7 @@ function buildEmployeeDoc(data, imageDict = {}, embeddingsDict = {}) {
 
 /**
  * GET /api/employees
- * List employees - respects data residency
+ * List employees - respects data residency (fetches from Platform or VMS DB)
  */
 router.get('/', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -80,24 +73,26 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        let query;
-        if (isValidObjectId(companyId)) {
-            query = { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] };
-        } else {
-            query = { companyId };
-        }
+        // Use DataProvider for residency-aware fetching
+        const dataProvider = getDataProvider(companyId);
+        let employees = await dataProvider.getEmployees(companyId);
 
-        // Add status filter if provided
+        // Filter by status if provided
         if (req.query.status) {
-            query.status = req.query.status;
+            employees = employees.filter(emp => emp.status === req.query.status);
         }
 
         // Exclude deleted by default
         if (!req.query.includeDeleted) {
-            query.status = { $ne: 'deleted' };
+            employees = employees.filter(emp => emp.status !== 'deleted');
         }
 
-        const employees = await collections.employees().find(query).toArray();
+        // Filter active and non-blacklisted for host selection
+        if (req.query.hostsOnly === 'true') {
+            employees = employees.filter(emp =>
+                emp.status === 'active' && !emp.blacklisted
+            );
+        }
 
         res.json({ employees: convertObjectIds(employees) });
     } catch (error) {
@@ -105,6 +100,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         next(error);
     }
 });
+
 
 /**
  * GET /api/employees/:employee_id

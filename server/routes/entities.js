@@ -9,10 +9,12 @@ const { ObjectId } = require('mongodb');
 const { collections } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
 const { convertObjectIds, isValidObjectId, validateRequiredFields } = require('../utils/helpers');
+const { getDataProvider } = require('../services/data_provider');
 
 /**
  * GET /api/locations
- * List all locations/entities for a company
+ * List all locations/entities for a company - respects data residency
+ * Fetches from Platform when in platform mode (based on installation mappings)
  */
 router.get('/', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -21,23 +23,22 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        let query;
-        if (isValidObjectId(companyId)) {
-            query = { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] };
-        } else {
-            query = { companyId };
-        }
+        // Use DataProvider for residency-aware fetching
+        // This will check installation mappings and fetch from Platform if configured
+        const dataProvider = getDataProvider(companyId);
+        const entities = await dataProvider.getEntities(companyId);
 
-        const locations = await collections.locations().find(query).toArray();
+        console.log(`[entities.js] Fetched ${entities.length} entities for company ${companyId}`);
 
         // Return both 'locations' and 'entities' for frontend compatibility
-        const result = convertObjectIds(locations);
+        const result = convertObjectIds(entities);
         res.json({ locations: result, entities: result });
     } catch (error) {
         console.error('Error listing locations:', error);
         next(error);
     }
 });
+
 
 /**
  * GET /api/locations/:location_id
