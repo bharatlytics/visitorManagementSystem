@@ -103,19 +103,15 @@ class PlatformClient {
 
     /**
      * Transform Platform actor to VMS employee format
-     * Fields match Python API reference for /api/employees EXACTLY
+     * Keeps all Platform fields + adds VMS convenience fields
      */
     transformActorToEmployee(actor) {
         const attrs = actor.attributes || {};
 
-        // Build response matching Python API exactly
+        // Spread all Platform actor fields first to preserve everything (downloadUrl, etc.)
+        // Then add VMS convenience fields
         return {
-            _id: actor._id || actor.id,
-            companyId: actor.companyId || this.companyId,
-            status: actor.status || 'active',
-            attributes: attrs,
-            // Embeddings from Platform
-            actorEmbeddings: actor.actorEmbeddings || {},
+            ...actor,  // All Platform fields including actorImages, actorEmbeddings, etc.
             // VMS flattened fields for convenience (matching Python API)
             employeeId: attrs.employeeId || attrs.code || actor._id,
             employeeName: attrs.name || attrs.employeeName || 'Unknown',
@@ -274,27 +270,20 @@ class PlatformClient {
 
     /**
      * Transform Platform entity to VMS location format
-     * Fields match Python API reference for /api/entities
+     * Keeps all Platform fields + adds VMS convenience fields
      */
     transformEntityToLocation(entity) {
+        const attrs = entity.attributes || {};
         // Build path array from parentId chain if available
         const path = entity.path || (entity.parentId ? ['root', entity.parentId] : ['root']);
 
+        // Spread all Platform entity fields first to preserve everything
         return {
-            _id: entity._id || entity.id,
-            name: entity.name || 'Unknown',
+            ...entity,  // All Platform fields
+            // VMS convenience fields / overrides
+            name: entity.name || attrs.name || 'Unknown',
             type: entity.type || 'location',
-            status: entity.status || 'active',
-            companyId: entity.companyId || this.companyId,
-            parentId: entity.parentId || null,
-            path: path,
-            code: entity.code || null,
-            description: entity.description || null,
-            // Data residency info
-            dataResidency: 'platform',
-            platformEntityId: entity._id,
-            // Include metadata
-            metadata: entity.metadata || entity.attributes || {}
+            path: path
         };
     }
 
