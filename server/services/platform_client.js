@@ -103,25 +103,24 @@ class PlatformClient {
 
     /**
      * Transform Platform actor to VMS employee format
+     * Fields match Python API reference for /api/employees EXACTLY
      */
     transformActorToEmployee(actor) {
         const attrs = actor.attributes || {};
 
+        // Build response matching Python API exactly
         return {
             _id: actor._id || actor.id,
+            companyId: actor.companyId || this.companyId,
+            status: actor.status || 'active',
+            attributes: attrs,
+            // Embeddings from Platform
+            actorEmbeddings: actor.actorEmbeddings || {},
+            // VMS flattened fields for convenience (matching Python API)
             employeeId: attrs.employeeId || attrs.code || actor._id,
             employeeName: attrs.name || attrs.employeeName || 'Unknown',
-            email: attrs.email || null,
-            phone: attrs.phone || null,
-            department: attrs.department || null,
-            designation: attrs.designation || null,
-            status: actor.status || 'active',
-            blacklisted: actor.blacklisted || attrs.blacklisted || false,
-            companyId: actor.companyId || this.companyId,
-            dataResidency: 'platform',
-            platformActorId: actor._id,
-            // Include original attributes for reference
-            attributes: attrs
+            employeeEmail: attrs.email || attrs.employeeEmail || null,
+            employeeMobile: attrs.phone || attrs.employeeMobile || null
         };
     }
 
@@ -275,17 +274,23 @@ class PlatformClient {
 
     /**
      * Transform Platform entity to VMS location format
+     * Fields match Python API reference for /api/entities
      */
     transformEntityToLocation(entity) {
+        // Build path array from parentId chain if available
+        const path = entity.path || (entity.parentId ? ['root', entity.parentId] : ['root']);
+
         return {
             _id: entity._id || entity.id,
             name: entity.name || 'Unknown',
             type: entity.type || 'location',
-            description: entity.description || null,
-            code: entity.code || null,
-            parentId: entity.parentId || null,
-            companyId: entity.companyId || this.companyId,
             status: entity.status || 'active',
+            companyId: entity.companyId || this.companyId,
+            parentId: entity.parentId || null,
+            path: path,
+            code: entity.code || null,
+            description: entity.description || null,
+            // Data residency info
             dataResidency: 'platform',
             platformEntityId: entity._id,
             // Include metadata

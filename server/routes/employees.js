@@ -28,40 +28,6 @@ const upload = multer({
 });
 
 // =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-/**
- * Build employee document
- */
-function buildEmployeeDoc(data, imageDict = {}, embeddingsDict = {}) {
-    const companyId = isValidObjectId(data.companyId)
-        ? new ObjectId(data.companyId)
-        : data.companyId;
-
-    return {
-        _id: new ObjectId(),
-        companyId,
-        employeeId: data.employeeId || null,
-        employeeName: data.employeeName,
-        email: data.email || data.employeeEmail || null,
-        phone: data.phone || data.employeeMobile || null,
-        designation: data.designation || data.employeeDesignation || null,
-        department: data.department || null,
-        status: data.status || 'active',
-        blacklisted: false,
-        blacklistReason: null,
-        employeeImages: imageDict,
-        employeeEmbeddings: embeddingsDict,
-        createdAt: new Date(),
-        lastUpdated: new Date()
-    };
-}
-
-// =============================================================================
-// ROUTES
-// =============================================================================
-
 /**
  * GET /api/employees
  * List employees - respects data residency (fetches from Platform or VMS DB)
@@ -96,7 +62,8 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             );
         }
 
-        res.json({ employees: convertObjectIds(employees) });
+        // Return as direct array (matching Python API format)
+        res.json(convertObjectIds(employees));
     } catch (error) {
         console.error('Error listing employees:', error);
         next(error);
