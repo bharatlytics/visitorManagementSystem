@@ -3,6 +3,13 @@
     "buildCommand": "npm install --prefix server && cd frontend && npm install && npm run build",
     "outputDirectory": "frontend/dist",
     "framework": "vite",
+    "env": {
+        "VMS_URL": "https://visitor-management-system-pearl.vercel.app",
+        "FRONTEND_URL": "https://visitor-management-system-pearl.vercel.app",
+        "PLATFORM_API_URL": "https://face-recognition-server-01.vercel.app",
+        "PLATFORM_WEB_URL": "https://face-recognition-server-01.vercel.app",
+        "NODE_ENV": "production"
+    },
     "functions": {
         "api/index.js": {
             "memory": 1024,
