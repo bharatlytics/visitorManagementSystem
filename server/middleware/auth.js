@@ -7,12 +7,13 @@ const Config = require('../config');
 const { collections } = require('../db');
 
 /**
- * Create JWT token
+ * Create JWT token with role
  */
-function createToken(userId, companyId, expiresHours = 24) {
+function createToken(userId, companyId, role = 'employee', expiresHours = 24) {
     const payload = {
         userId,
         companyId,
+        role,
         exp: Math.floor(Date.now() / 1000) + (expiresHours * 60 * 60),
         iat: Math.floor(Date.now() / 1000),
     };
@@ -72,6 +73,7 @@ function requireAuth(req, res, next) {
     // Attach user info to request
     req.userId = payload.userId;
     req.companyId = payload.companyId;
+    req.userRole = payload.role || 'employee';
     req.tokenPayload = payload;
 
     next();
@@ -108,6 +110,7 @@ function requireCompanyAccess(req, res, next) {
     // Attach user info to request
     req.userId = payload.userId;
     req.companyId = payload.companyId;
+    req.userRole = payload.role || 'employee';
     req.tokenPayload = payload;
 
     // Get requested companyId from query, body, or params

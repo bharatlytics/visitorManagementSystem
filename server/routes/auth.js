@@ -32,10 +32,21 @@ router.post('/login', async (req, res, next) => {
             return res.status(400).json({ error: 'Email and password required' });
         }
 
-        // Find user
-        const user = await collections.users().findOne({ email });
+        // Find user (case-insensitive)
+        let user = await collections.users().findOne({ email: email.toLowerCase() });
+        if (!user) {
+            user = await collections.users().findOne({ email });
+        }
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Check user status
+        if (user.status === 'inactive') {
+            return res.status(401).json({ error: 'Account is deactivated' });
+        }
+        if (user.status === 'invited') {
+            return res.status(401).json({ error: 'Please accept your invitation first' });
         }
 
         // Verify password
@@ -44,13 +55,17 @@ router.post('/login', async (req, res, next) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Create token
-        const token = createToken(user._id.toString(), user.companyId?.toString());
+        // Get role
+        const role = user.role || 'employee';
 
-        // Set session
+        // Create token with role
+        const token = createToken(user._id.toString(), user.companyId?.toString(), role);
+
+        // Set session with role
         if (req.session) {
             req.session.userId = user._id.toString();
             req.session.companyId = user.companyId?.toString();
+            req.session.userRole = role;
         }
 
         res.json({
@@ -59,6 +74,7 @@ router.post('/login', async (req, res, next) => {
                 id: user._id.toString(),
                 email: user.email,
                 name: user.name,
+                role,
                 companyId: user.companyId?.toString()
             }
         });
@@ -143,11 +159,20 @@ router.post('/register', async (req, res, next) => {
             const company = {
                 _id: new ObjectId(),
                 companyName: data.companyName,
+                name: data.companyName,
+                status: 'active',
+                settings: {
+                    requireApproval: false,
+                    autoCheckoutHours: 8,
+                    badgeTemplate: 'default',
+                    notifications: { email: true, sms: false, whatsapp: false },
+                    visitorTypes: ['guest', 'vendor', 'contractor', 'interview', 'vip']
+                },
                 createdAt: new Date()
             };
             await collections.companies().insertOne(company);
             companyId = company._id;
-            role = 'admin';
+            role = 'company_admin';  // First user of new company is company admin
         } else {
             return res.status(400).json({ error: 'Either Company ID (to join) or Company Name + Secret (to create) is required' });
         }
@@ -158,17 +183,25 @@ router.post('/register', async (req, res, next) => {
         // Create user
         const user = {
             _id: new ObjectId(),
-            email: data.email,
+            email: data.email.toLowerCase(),
             password: hashedPassword,
             name: data.name,
             companyId,
             role,
+            status: 'active',
             createdAt: new Date()
         };
         await collections.users().insertOne(user);
 
-        // Create token
-        const token = createToken(user._id.toString(), companyId.toString());
+        // Create token with role
+        const token = createToken(user._id.toString(), companyId.toString(), role);
+
+        // Set session with role
+        if (req.session) {
+            req.session.userId = user._id.toString();
+            req.session.companyId = companyId.toString();
+            req.session.userRole = role;
+        }
 
         res.status(201).json({
             token,
