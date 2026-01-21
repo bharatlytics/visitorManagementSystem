@@ -1,0 +1,54 @@
+﻿ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+VMS API COMPLIANCE E2E TEST (with Platform SSO)
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+Platform URL: http://localhost:5000
+VMS URL: http://localhost:5001
+Timestamp: 2026-01-21T01:00:26.356Z
+
+Step 1: Logging into Platform...
+Γ£à Platform login successful!
+   Company: JBM Group
+   Company ID: 6827296ab6e06b08639107c4
+
+Step 2: SSO to VMS...
+Γ£à VMS SSO successful!
+   Token expires in: 86400 seconds
+
+≡ƒôï VISITORS API TESTS
+  GET /api/visitors - List visitors... (1 visitors)
+Γ£à
+  GET /api/visitors/list - Alternative list... Γ£à
+
+≡ƒôà VISITS API TESTS
+  GET /api/visitors/visits - List visits... (62 visits)
+Γ£à
+  GET /api/visits - List visits (alternative)... ΓÅ¡∩╕Å Route not mounted
+
+≡ƒæÑ EMPLOYEES API TESTS (Residency-Aware)
+  GET /api/employees - List employees (residency-aware)... (15 employees)
+Γ£à
+  Employees have VMS flattened fields... Γ£à
+  Download URLs are rewritten to VMS... Γ£à
+
+≡ƒÅó ENTITIES API TESTS (Residency-Aware)
+  GET /api/entities - List locations (residency-aware)... (7 entities)
+Γ£à
+  Entity filtering - Types from installationMappings... (types: line)
+Γ£à
+
+≡ƒôè DASHBOARD API TESTS
+  GET /api/dashboard/stats... Γ£à
+  GET /api/dashboard/trends... Γ£à
+
+≡ƒöÉ EMBEDDING PROXY TESTS
+  GET /api/employees/embeddings/:id - Endpoint exists... (Platform may be down)
+Γ£à
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+TEST SUMMARY
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+Γ£à Passed:  11
+Γ¥î Failed:  0
+ΓÅ¡∩╕Å Skipped: 1
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
