@@ -141,6 +141,10 @@ const webhooksRoutes = require('../server/routes/webhooks');
 const attendanceRoutes = require('../server/routes/attendance');
 const advancedAnalyticsRoutes = require('../server/routes/advanced-analytics');
 
+// User & Company Management
+const usersRoutes = require('../server/routes/users');
+const companyRoutes = require('../server/routes/company');
+
 // Platform Integration Routes
 const federatedQueryRoutes = require('../server/routes/federated_query');
 const syncPullRoutes = require('../server/routes/sync_pull');
@@ -222,6 +226,11 @@ app.use('/api/emergency', evacuationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/gdpr', gdprRoutes);
 app.use('/api/access', accessControlRoutes);
+
+// User & Company Management APIs
+app.use('/api/users', usersRoutes);
+app.use('/api/company', companyRoutes);
+app.use('/api/companies', companyRoutes);  // Alias
 
 // =============================================
 // Error Handlers

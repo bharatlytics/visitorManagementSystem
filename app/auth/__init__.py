@@ -18,11 +18,12 @@ from app.services.platform_client import platform_client
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
-def create_token(user_id, company_id, expires_hours=24):
-    """Create JWT token"""
+def create_token(user_id, company_id, role='employee', expires_hours=24):
+    """Create JWT token with role"""
     payload = {
         'user_id': str(user_id),
         'company_id': str(company_id),
+        'role': role,
         'exp': datetime.utcnow() + timedelta(hours=expires_hours),
         'iat': datetime.utcnow()
     }
@@ -40,7 +41,7 @@ def decode_token(token):
 
 
 def require_auth(f):
-    """Authentication decorator"""
+    """Authentication decorator - sets user_id, company_id, and user_role on request"""
     @wraps(f)
     def decorated(*args, **kwargs):
         # Check for Bearer token
@@ -51,12 +52,14 @@ def require_auth(f):
             if payload:
                 request.user_id = payload.get('user_id')
                 request.company_id = payload.get('company_id')
+                request.user_role = payload.get('role', 'employee')
                 return f(*args, **kwargs)
         
         # Check session
         if session.get('user_id'):
             request.user_id = session['user_id']
             request.company_id = session.get('company_id')
+            request.user_role = session.get('user_role', 'employee')
             return f(*args, **kwargs)
         
         return jsonify({'error': 'Authentication required'}), 401
@@ -151,21 +154,34 @@ def login():
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
     
-    # Find user
-    user = users_collection.find_one({'email': email})
+    # Find user (case-insensitive email)
+    user = users_collection.find_one({'email': email.lower()})
+    if not user:
+        # Try original case
+        user = users_collection.find_one({'email': email})
     if not user:
         return jsonify({'error': 'Invalid credentials'}), 401
+    
+    # Check if user is active
+    if user.get('status') == 'inactive':
+        return jsonify({'error': 'Account is deactivated'}), 401
+    if user.get('status') == 'invited':
+        return jsonify({'error': 'Please accept your invitation first'}), 401
     
     # Verify password
     if not bcrypt.verify(password, user.get('password', '')):
         return jsonify({'error': 'Invalid credentials'}), 401
     
-    # Create token
-    token = create_token(user['_id'], user.get('companyId'))
+    # Get user role
+    role = user.get('role', 'employee')
     
-    # Set session
+    # Create token with role
+    token = create_token(user['_id'], user.get('companyId'), role)
+    
+    # Set session with role
     session['user_id'] = str(user['_id'])
     session['company_id'] = str(user.get('companyId'))
+    session['user_role'] = role
     
     return jsonify({
         'token': token,
@@ -173,6 +189,7 @@ def login():
             'id': str(user['_id']),
             'email': user['email'],
             'name': user.get('name'),
+            'role': role,
             'companyId': str(user.get('companyId'))
         }
     })
@@ -252,24 +269,30 @@ def register():
         }
         companies_collection.insert_one(company)
         company_id = company['_id']
-        role = 'admin'
+        role = 'company_admin'  # First user of new company is company admin
     else:
         return jsonify({'error': 'Either Company ID (to join) or Company Name + Secret (to create) is required'}), 400
     
     # Create user
     user = {
         '_id': ObjectId(),
-        'email': data['email'],
+        'email': data['email'].lower(),
         'password': bcrypt.hash(data['password']),
         'name': data['name'],
         'companyId': company_id,
         'role': role,
+        'status': 'active',
         'createdAt': datetime.utcnow()
     }
     users_collection.insert_one(user)
     
-    # Create token
-    token = create_token(user['_id'], company_id)
+    # Create token with role
+    token = create_token(user['_id'], company_id, role)
+    
+    # Set session with role
+    session['user_id'] = str(user['_id'])
+    session['company_id'] = str(company_id)
+    session['user_role'] = role
     
     return jsonify({
         'token': token,

@@ -36,6 +36,8 @@ def register_blueprints(app):
     from app.api.api_keys import api_keys_bp
     # Phase 5: Device Management
     from app.api.devices import devices_bp
+    # Phase 6: User Management
+    from app.api.users import users_bp
     
     # VMS core APIs
     app.register_blueprint(visitor_bp, url_prefix='/api/visitors')
@@ -72,6 +74,9 @@ def register_blueprints(app):
     # Company API
     app.register_blueprint(company_bp, url_prefix='/api/company')
     app.register_blueprint(company_bp, url_prefix='/api/companies', name='companies')
+    
+    # Phase 6: User Management
+    app.register_blueprint(users_bp, url_prefix='/api/users')
     
     # Data APIs (use DataProvider for dual-mode)
     app.register_blueprint(employees_bp, url_prefix='/api/employees')
