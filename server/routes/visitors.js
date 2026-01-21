@@ -978,30 +978,66 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
 
 /**
  * GET /api/visitors/embeddings/:embedding_id
- * Download visitor embedding file
+ * Download visitor embedding file.
+ * Proxies to Platform API when not found locally (matching Python implementation).
  */
 router.get('/embeddings/:embedding_id', async (req, res, next) => {
     try {
         const { embedding_id } = req.params;
 
-        if (!isValidObjectId(embedding_id)) {
-            return res.status(400).json({ error: 'Invalid embedding ID format' });
+        console.log(`[serve_visitor_embedding] embedding_id=${embedding_id}`);
+
+        // First try local GridFS (for app mode embeddings)
+        if (isValidObjectId(embedding_id)) {
+            try {
+                const bucket = getGridFSBucket('visitorEmbeddings');
+                const downloadStream = bucket.openDownloadStream(new ObjectId(embedding_id));
+
+                // Wait for stream to start or error
+                await new Promise((resolve, reject) => {
+                    downloadStream.on('file', resolve);
+                    downloadStream.on('error', reject);
+                });
+
+                res.set('Content-Type', 'application/octet-stream');
+                res.set('Content-Disposition', `attachment; filename=${embedding_id}.npy`);
+                downloadStream.pipe(res);
+                return;
+            } catch (localError) {
+                console.log(`[serve_visitor_embedding] Not in local GridFS, proxying to Platform`);
+            }
         }
 
-        const bucket = getGridFSBucket('visitorEmbeddings');
-        const downloadStream = bucket.openDownloadStream(new ObjectId(embedding_id));
+        // Proxy to Platform API (for platform mode embeddings)
+        const axios = require('axios');
+        const jwt = require('jsonwebtoken');
+
+        const companyId = req.query.companyId || '6827296ab6e06b08639107c4';
+        const platformSecret = Config.PLATFORM_JWT_SECRET || Config.JWT_SECRET;
+
+        const payload = {
+            sub: 'vms_app_v1',
+            companyId,
+            iss: 'vms',
+            exp: Math.floor(Date.now() / 1000) + 300 // 5 minutes
+        };
+        const platformToken = jwt.sign(payload, platformSecret, { algorithm: 'HS256' });
+
+        const platformUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/${embedding_id}`;
+        console.log(`[serve_visitor_embedding] Proxying to platform: ${platformUrl}`);
+
+        const response = await axios.get(platformUrl, {
+            headers: { 'Authorization': `Bearer ${platformToken}` },
+            responseType: 'stream',
+            timeout: 30000
+        });
 
         res.set('Content-Type', 'application/octet-stream');
-        res.set('Content-Disposition', `attachment; filename=${embedding_id}.npy`);
-
-        downloadStream.pipe(res);
-
-        downloadStream.on('error', () => {
-            res.status(404).json({ error: 'Embedding not found' });
-        });
+        res.set('Content-Disposition', response.headers['content-disposition'] || `attachment; filename=${embedding_id}.npy`);
+        response.data.pipe(res);
     } catch (error) {
-        console.error('Error serving embedding:', error);
-        next(error);
+        console.error(`[serve_visitor_embedding] Error: ${error.message}`);
+        res.status(404).json({ error: 'Embedding not found' });
     }
 });
 
