@@ -340,8 +340,130 @@ router.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
         app: 'vms_app_v1',
-        endpoints: ['/api/query/visitors', '/api/query/employees']
+        endpoints: ['/api/query/visitors', '/api/query/employees', '/api/query/federation/actors']
     });
+});
+
+/**
+ * GET /api/query/federation/actors
+ * Unified federation endpoint for Platform routing.
+ * 
+ * This endpoint is called by the Platform when routing
+ * federated requests based on installationMappings.residencyMode.
+ * 
+ * Query params:
+ * - companyId: Required
+ * - actorType: Required (visitor, employee)
+ * - limit: Optional
+ */
+router.get('/federation/actors', async (req, res, next) => {
+    const actorType = req.query.actorType;
+
+    if (!actorType) {
+        return res.status(400).json({ error: 'actorType is required' });
+    }
+
+    const companyId = req.query.companyId;
+    if (!companyId) {
+        return res.status(400).json({ error: 'companyId is required' });
+    }
+
+    // Verify Authorization header exists (relaxed check for inter-app calls)
+    const authHeader = req.headers['authorization'] || '';
+    if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+    const offset = parseInt(req.query.offset) || 0;
+
+    try {
+        const db = getDb();
+
+        // Build companyId query
+        let query;
+        if (isValidObjectId(companyId)) {
+            query = { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] };
+        } else {
+            query = { companyId };
+        }
+        query.status = { $ne: 'archived' };
+
+        let results = [];
+
+        if (actorType === 'visitor') {
+            const visitors = await db.collection('visitors')
+                .find(query)
+                .skip(offset)
+                .limit(limit)
+                .toArray();
+
+            results = visitors.map(visitor => ({
+                _id: String(visitor._id),
+                actorType: 'visitor',
+                name: visitor.visitorName,
+                phone: visitor.phone,
+                email: visitor.email,
+                status: visitor.status || 'active',
+                companyId: String(companyId),
+                sourceApp: 'vms_app_v1',
+                attributes: {
+                    visitorName: visitor.visitorName,
+                    phone: visitor.phone,
+                    email: visitor.email,
+                    organization: visitor.organization,
+                    visitorType: visitor.visitorType,
+                    idType: visitor.idType,
+                    idNumber: visitor.idNumber
+                },
+                actorEmbeddings: convertObjectIds(visitor.visitorEmbeddings || {})
+            }));
+
+            console.log(`[federation] Returning ${results.length} visitors for company ${companyId}`);
+
+        } else if (actorType === 'employee') {
+            const employees = await db.collection('employees')
+                .find(query)
+                .skip(offset)
+                .limit(limit)
+                .toArray();
+
+            results = employees.map(emp => ({
+                _id: String(emp._id),
+                actorType: 'employee',
+                name: emp.employeeName,
+                phone: emp.phone || emp.employeePhone,
+                email: emp.email || emp.employeeEmail,
+                status: emp.status || 'active',
+                companyId: String(companyId),
+                sourceApp: 'vms_app_v1',
+                attributes: {
+                    employeeName: emp.employeeName,
+                    employeeId: emp.employeeId,
+                    department: emp.department,
+                    designation: emp.designation,
+                    email: emp.email || emp.employeeEmail,
+                    phone: emp.phone || emp.employeePhone
+                },
+                actorEmbeddings: convertObjectIds(emp.employeeEmbeddings || {})
+            }));
+
+            console.log(`[federation] Returning ${results.length} employees for company ${companyId}`);
+
+        } else {
+            return res.status(400).json({
+                error: `Actor type ${actorType} not supported by VMS`,
+                supportedTypes: ['visitor', 'employee']
+            });
+        }
+
+        // Return array directly (matches Platform expected format)
+        res.json(results);
+
+    } catch (error) {
+        console.error(`[federation] Error: ${error.message}`);
+        next(error);
+    }
 });
 
 module.exports = router;

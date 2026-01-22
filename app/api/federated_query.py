@@ -379,5 +379,159 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'app': 'vms_app_v1',
-        'endpoints': ['/api/query/visitors', '/api/query/employees']
+        'endpoints': ['/api/query/visitors', '/api/query/employees', '/api/federation/actors']
     })
+
+
+# ============================================
+# Unified Federation Endpoint for Platform Routing
+# ============================================
+
+@federated_query_bp.route('/federation/actors', methods=['GET'])
+def federation_actors():
+    """
+    Unified federation endpoint for actors.
+    
+    This endpoint is called by the Platform when routing
+    federated requests based on installationMappings.residencyMode.
+    
+    Query params:
+    - companyId: Required
+    - actorType: Required (visitor, employee)
+    - limit: Optional
+    
+    Routes internally to the appropriate handler.
+    """
+    actor_type = request.args.get('actorType')
+    
+    if not actor_type:
+        return jsonify({'error': 'actorType is required'}), 400
+    
+    # Route to appropriate handler
+    if actor_type == 'visitor':
+        return query_visitors_for_federation()
+    elif actor_type == 'employee':
+        return query_employees_for_federation()
+    else:
+        return jsonify({
+            'error': f'Actor type {actor_type} not supported by VMS',
+            'supportedTypes': ['visitor', 'employee']
+        }), 400
+
+
+def query_visitors_for_federation():
+    """Internal handler for federated visitor queries"""
+    # Relaxed auth check - just verify it's from Platform
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Missing Authorization header'}), 401
+    
+    # Get parameters
+    company_id = request.args.get('companyId')
+    if not company_id:
+        return jsonify({'error': 'companyId is required'}), 400
+    
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+    status = request.args.get('status')
+    
+    try:
+        # Build query
+        try:
+            company_oid = ObjectId(company_id)
+            query = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except InvalidId:
+            query = {'companyId': company_id}
+        
+        if status:
+            query['status'] = status
+        else:
+            query['status'] = {'$ne': 'archived'}
+        
+        # Query visitors
+        visitors = list(visitor_collection.find(query).skip(offset).limit(limit))
+        
+        # Format for Platform consumption
+        results = []
+        for visitor in visitors:
+            results.append({
+                '_id': str(visitor.get('_id')),
+                'actorType': 'visitor',
+                'name': visitor.get('visitorName'),
+                'phone': visitor.get('phone'),
+                'email': visitor.get('email'),
+                'status': visitor.get('status', 'active'),
+                'companyId': str(company_id),
+                'sourceApp': 'vms_app_v1',
+                'attributes': {
+                    'visitorName': visitor.get('visitorName'),
+                    'phone': visitor.get('phone'),
+                    'email': visitor.get('email'),
+                    'organization': visitor.get('organization'),
+                    'visitorType': visitor.get('visitorType'),
+                    'idType': visitor.get('idType'),
+                    'idNumber': visitor.get('idNumber')
+                },
+                'actorEmbeddings': convert_objectids(visitor.get('visitorEmbeddings', {}))
+            })
+        
+        print(f"[federation] Returning {len(results)} visitors for company {company_id}")
+        return jsonify(results)
+        
+    except Exception as e:
+        print(f"[federation] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def query_employees_for_federation():
+    """Internal handler for federated employee queries"""
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Missing Authorization header'}), 401
+    
+    company_id = request.args.get('companyId')
+    if not company_id:
+        return jsonify({'error': 'companyId is required'}), 400
+    
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+    
+    try:
+        try:
+            company_oid = ObjectId(company_id)
+            query = {'$or': [{'companyId': company_oid}, {'companyId': company_id}]}
+        except InvalidId:
+            query = {'companyId': company_id}
+        
+        query['status'] = {'$ne': 'archived'}
+        
+        employees = list(employee_collection.find(query).skip(offset).limit(limit))
+        
+        results = []
+        for emp in employees:
+            results.append({
+                '_id': str(emp.get('_id')),
+                'actorType': 'employee',
+                'name': emp.get('employeeName'),
+                'phone': emp.get('phone') or emp.get('employeePhone'),
+                'email': emp.get('email') or emp.get('employeeEmail'),
+                'status': emp.get('status', 'active'),
+                'companyId': str(company_id),
+                'sourceApp': 'vms_app_v1',
+                'attributes': {
+                    'employeeName': emp.get('employeeName'),
+                    'employeeId': emp.get('employeeId'),
+                    'department': emp.get('department'),
+                    'designation': emp.get('designation'),
+                    'email': emp.get('email') or emp.get('employeeEmail'),
+                    'phone': emp.get('phone') or emp.get('employeePhone')
+                },
+                'actorEmbeddings': convert_objectids(emp.get('employeeEmbeddings', {}))
+            })
+        
+        print(f"[federation] Returning {len(results)} employees for company {company_id}")
+        return jsonify(results)
+        
+    except Exception as e:
+        print(f"[federation] Error: {e}")
+        return jsonify({'error': str(e)}), 500
