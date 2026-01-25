@@ -991,20 +991,21 @@ router.get('/embeddings/:embedding_id', async (req, res, next) => {
         if (isValidObjectId(embedding_id)) {
             try {
                 const bucket = getGridFSBucket('visitorEmbeddings');
-                const downloadStream = bucket.openDownloadStream(new ObjectId(embedding_id));
+                const files = await bucket.find({ _id: new ObjectId(embedding_id) }).toArray();
 
-                // Wait for stream to start or error
-                await new Promise((resolve, reject) => {
-                    downloadStream.on('file', resolve);
-                    downloadStream.on('error', reject);
-                });
+                if (files && files.length > 0) {
+                    console.log(`[serve_visitor_embedding] Found in local GridFS: ${files[0].filename}`);
+                    const downloadStream = bucket.openDownloadStream(new ObjectId(embedding_id));
 
-                res.set('Content-Type', 'application/octet-stream');
-                res.set('Content-Disposition', `attachment; filename=${embedding_id}.npy`);
-                downloadStream.pipe(res);
-                return;
+                    res.set('Content-Type', 'application/octet-stream');
+                    res.set('Content-Disposition', `attachment; filename=${embedding_id}.npy`);
+                    downloadStream.pipe(res);
+                    return;
+                } else {
+                    console.log(`[serve_visitor_embedding] Not found in local GridFS, checking platform...`);
+                }
             } catch (localError) {
-                console.log(`[serve_visitor_embedding] Not in local GridFS, proxying to Platform`);
+                console.log(`[serve_visitor_embedding] Error checking local GridFS: ${localError.message}`);
             }
         }
 

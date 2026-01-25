@@ -38,6 +38,7 @@ function decodePlatformToken(token) {
     try {
         return jwt.verify(token, Config.PLATFORM_JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
     } catch (error) {
+        console.log('[Auth] Platform token verification failed:', error.message);
         return null;
     }
 }
@@ -65,7 +66,21 @@ function requireAuth(req, res, next) {
     }
 
     const payload = decodeToken(token);
+
+    // If standard token fails, try platform token (for federated queries)
     if (!payload) {
+        const platformPayload = decodePlatformToken(token);
+        if (platformPayload) {
+            // It's a valid platform service token
+            req.userId = 'platform-service';
+            req.companyId = platformPayload.company_id;
+            req.userRole = 'admin'; // Service tokens have high privilege
+            req.tokenPayload = platformPayload;
+            req.isFederated = true;
+            req.sourceAppId = platformPayload.sub;
+            return next();
+        }
+
         console.log(`[Auth] 401 Invalid token for ${req.method} ${req.path}`);
         return res.status(401).json({ error: 'Invalid or expired token' });
     }
@@ -102,7 +117,36 @@ function requireCompanyAccess(req, res, next) {
     }
 
     const payload = decodeToken(token);
+
+    // If standard token fails, try platform token (for federated queries)
     if (!payload) {
+        const platformPayload = decodePlatformToken(token);
+        if (platformPayload) {
+            // It's a valid platform service token
+            req.userId = 'platform-service';
+            req.companyId = platformPayload.company_id;
+            req.userRole = 'admin'; // Service tokens have high privilege
+            req.tokenPayload = platformPayload;
+            req.isFederated = true;
+            req.sourceAppId = platformPayload.sub;
+
+            // For platform tokens, we skip the company mismatch check below
+            // because the platform token is explicitly scoped to the company_id
+
+            // Get requested companyId from query, body, or params
+            const requestedCompanyId = req.query.companyId || req.body?.companyId || req.params?.companyId;
+
+            // Set companyId from token if not provided in request
+            if (!requestedCompanyId) {
+                req.query.companyId = platformPayload.company_id;
+                if (req.body) {
+                    req.body.companyId = platformPayload.company_id;
+                }
+            }
+
+            return next();
+        }
+
         console.log(`[CompanyAccess] 401 Invalid token for ${req.method} ${req.path}`);
         return res.status(401).json({ error: 'Invalid or expired token' });
     }
