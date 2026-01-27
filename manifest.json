@@ -1,12 +1,4 @@
 {
-  "app": {
-    "id": "vms_app_v1",
-    "name": "Visitor Management System",
-    "version": "2.0.0",
-    "appType": "web_application",
-    "description": "Enterprise-grade Visitor Management with facial recognition, digital badges, host notifications, and compliance reporting.",
-    "longDescription": "Complete VMS with pre-registration, check-in kiosks, host notifications, emergency evacuation lists, compliance audit trails, and integration with access control systems."
-  },
   "developer": {
     "name": "Bharatlytics Solutions",
     "company": "Bharatlytics Private Limited",
@@ -871,5 +863,15 @@
     "actor.employee.*",
     "platform.maintenance_scheduled",
     "platform.config_changed"
-  ]
+  ],
+  "id": "vms-app-v1",
+  "name": "Visitor Management System",
+  "version": "2.0.0",
+  "appType": "web_application",
+  "description": "Enterprise-grade Visitor Management with facial recognition, digital badges, host notifications, and compliance reporting.",
+  "longDescription": "Complete VMS with pre-registration, check-in kiosks, host notifications, emergency evacuation lists, compliance audit trails, and integration with access control systems.",
+  "capabilities": {
+    "provides": {},
+    "consumes": {}
+  }
 }
