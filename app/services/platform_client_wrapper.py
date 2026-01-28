@@ -111,6 +111,9 @@ class PlatformClientWrapper:
         
         print(f"[PlatformClient] Fetching employees from Platform for company {company_id}")
         result = self._make_request('GET', endpoint, params=params)
+        # Platform returns {actors: [...], count: ...}, extract the actors list
+        if isinstance(result, dict):
+            return result.get('actors', [])
         return result if isinstance(result, list) else []
     
     def delete_employee(self, employee_id: str):
@@ -151,6 +154,9 @@ class PlatformClientWrapper:
         
         print(f"[PlatformClient] Fetching visitors from Platform for company {company_id}")
         result = self._make_request('GET', endpoint, params=params)
+        # Platform returns {actors: [...], count: ...}, extract the actors list
+        if isinstance(result, dict):
+            return result.get('actors', [])
         return result if isinstance(result, list) else []
     
     def delete_visitor(self, visitor_id: str):
@@ -183,6 +189,9 @@ class PlatformClientWrapper:
         
         print(f"[PlatformClient] Fetching actors of type '{actor_type}' from Platform for company {company_id}")
         result = self._make_request('GET', endpoint, params=params)
+        # Platform returns {actors: [...], count: ...}, extract the actors list
+        if isinstance(result, dict):
+            return result.get('actors', [])
         return result if isinstance(result, list) else []
     
     # ==================== Entity Methods ====================
@@ -213,6 +222,9 @@ class PlatformClientWrapper:
         
         print(f"[PlatformClient] Fetching entities from Platform for company {company_id}, types={types}")
         result = self._make_request('GET', endpoint, params=params)
+        # Platform returns {entities: [...], count: ...}, extract the entities list
+        if isinstance(result, dict):
+            return result.get('entities', [])
         return result if isinstance(result, list) else []
     
     # ==================== Embedding Methods ====================
