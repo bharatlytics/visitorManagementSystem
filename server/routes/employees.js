@@ -540,10 +540,15 @@ router.get('/embeddings/:embedding_id', async (req, res, next) => {
         const platformUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/embeddings/${embedding_id}`;
         console.log(`[serve_employee_embedding] Proxying to platform: ${platformUrl}`);
 
+        // Fail fast if platform URL is localhost in production (heuristic)
+        if (process.env.NODE_ENV === 'production' && platformUrl.includes('localhost')) {
+            console.warn('[serve_employee_embedding] Warning: Trying to proxy to localhost in production!');
+        }
+
         const response = await axios.get(platformUrl, {
             headers: { 'Authorization': `Bearer ${platformToken}` },
             responseType: 'stream',
-            timeout: 30000
+            timeout: 5000 // Reduce to 5s to avoid Vercel function timeout (10s limit)
         });
 
         res.set('Content-Type', 'application/octet-stream');
@@ -551,6 +556,9 @@ router.get('/embeddings/:embedding_id', async (req, res, next) => {
         response.data.pipe(res);
     } catch (error) {
         console.error(`[serve_employee_embedding] Error: ${error.message}`);
+        if (error.code === 'ECONNABORTED') {
+            return res.status(504).json({ error: 'Platform request timed out' });
+        }
         res.status(404).json({ error: 'Embedding not found' });
     }
 });
