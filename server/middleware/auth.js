@@ -27,6 +27,9 @@ function decodeToken(token) {
     try {
         return jwt.verify(token, Config.JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
     } catch (error) {
+        console.log('[Auth Debug] decodeToken failed:', error.message);
+        console.log(`[Auth Debug] Token: ${token.substring(0, 10)}...`);
+        console.log(`[Auth Debug] Secret: '${Config.JWT_SECRET}' (Length: ${Config.JWT_SECRET.length})`);
         return null;
     }
 }
@@ -36,7 +39,17 @@ function decodeToken(token) {
  */
 function decodePlatformToken(token) {
     try {
-        return jwt.verify(token, Config.PLATFORM_JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
+        // Debug logging
+        const secret = Config.PLATFORM_JWT_SECRET;
+        console.log('[Auth Debug] Verifying Platform Token');
+        console.log(`[Auth Debug] Token (start): ${token.substring(0, 10)}...`);
+        console.log(`[Auth Debug] Secret: '${secret}' (Length: ${secret.length})`);
+
+        const decoded = jwt.decode(token, { complete: true });
+        console.log('[Auth Debug] Token Header:', JSON.stringify(decoded?.header));
+        console.log('[Auth Debug] Token Payload:', JSON.stringify(decoded?.payload));
+
+        return jwt.verify(token, secret, { algorithms: [Config.JWT_ALGORITHM] });
     } catch (error) {
         console.log('[Auth] Platform token verification failed:', error.message);
         return null;

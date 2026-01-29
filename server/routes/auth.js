@@ -299,7 +299,7 @@ router.all('/platform-sso', async (req, res, next) => {
         // If GET request (redirect from platform), redirect to frontend with token
         if (req.method === 'GET') {
             // Create VMS JWT for frontend
-            const vmsToken = createToken(userId, companyId, 24);
+            const vmsToken = createToken(userId, companyId, 'employee', 24);
 
             // Build redirect URL with token for frontend auto-login
             const frontendUrl = Config.NODE_ENV === 'development'
@@ -318,7 +318,7 @@ router.all('/platform-sso', async (req, res, next) => {
         }
 
         // For POST requests (mobile/API), return JSON with VMS JWT token
-        const vmsToken = createToken(userId, companyId, 24);
+        const vmsToken = createToken(userId, companyId, 'employee', 24);
 
         res.json({
             message: 'Platform SSO successful',

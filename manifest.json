@@ -100,44 +100,17 @@
   },
   "requiredEntityDefinitions": [
     {
-      "definitionName": "Location Management",
+      "definitionName": "Location",
       "entityTypes": [
-        "organization",
-        "plant",
-        "building",
-        "zone",
-        "gate",
-        "floor",
-        "room"
+        "location"
       ],
       "capabilities": [
         "read"
       ],
-      "justification": "Assign visitors to specific locations and control access at zone and gate level"
+      "justification": "Assign visitors to specific locations for access control"
     }
   ],
-  "requiredEntityActorMappings": [
-    {
-      "entityType": "gate",
-      "actorType": "employee",
-      "actorCollection": "employees",
-      "roleContext": "security_guard",
-      "capabilities": [
-        "read"
-      ],
-      "justification": "Identify security guards assigned to gates for visitor verification"
-    },
-    {
-      "entityType": "organization",
-      "actorType": "employee",
-      "actorCollection": "employees",
-      "roleContext": "host",
-      "capabilities": [
-        "read"
-      ],
-      "justification": "Find employees who can act as hosts for visitors at each organization"
-    }
-  ],
+  "requiredEntityActorMappings": [],
   "dataContract": {
     "consumes": {
       "actors": {
@@ -154,9 +127,7 @@
       },
       "entities": {
         "types": [
-          "organization",
-          "zone",
-          "gate"
+          "location"
         ],
         "fields": [
           "name",

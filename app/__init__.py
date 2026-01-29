@@ -65,11 +65,14 @@ def sync_manifest_to_platform():
             # Use Config for consistent env var access
             platform_url = Config.PLATFORM_API_URL
             vms_url = Config.APP_URL
+            app_id = Config.APP_ID  # Use the registered app ID from Config
+            
+            print(f"[VMS] Syncing manifest to {platform_url} with appId={app_id}")
             
             response = requests.post(
                 f"{platform_url}/bharatlytics/integration/v1/manifest/sync",
                 json={
-                    'appId': manifest.get('appId', 'vms_app_v1'),
+                    'appId': app_id,
                     'manifest': manifest,
                     'baseUrl': vms_url
                 },
@@ -77,7 +80,7 @@ def sync_manifest_to_platform():
             )
             
             if response.status_code in [200, 201]:
-                version = manifest.get('app', {}).get('version', 'unknown')
+                version = manifest.get('version', 'unknown')
                 print(f"[VMS] Manifest synced to Platform: v{version}")
             else:
                 print(f"[VMS] Manifest sync failed: {response.status_code}")

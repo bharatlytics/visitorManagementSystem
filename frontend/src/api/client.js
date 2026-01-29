@@ -8,6 +8,9 @@ const api = axios.create({
     withCredentials: true,  // Include cookies for session
 })
 
+// Add a handler for 401 errors that can be set from outside
+api.onUnauthorized = null
+
 // Add companyId and auth token to requests
 api.interceptors.request.use((config) => {
     // Get companyId from localStorage
@@ -43,10 +46,17 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            // Log 401 errors but don't auto-logout
-            // The auth state is managed by authStore, not by API responses
-            // Individual pages can handle 401s as needed
-            console.warn('API returned 401:', error.config?.url)
+            const url = error.config?.url || ''
+            console.warn('API returned 401:', url)
+
+            // Don't trigger logout for auth-check endpoints (they're expected to fail for new users)
+            const isAuthCheck = url.includes('/auth/me') || url.includes('/auth/check')
+
+            // Call the unauthorized handler if set and this isn't an auth check
+            if (api.onUnauthorized && !isAuthCheck) {
+                console.log('Triggering unauthorized handler (logout)...')
+                api.onUnauthorized()
+            }
         }
         return Promise.reject(error)
     }

@@ -23,8 +23,8 @@ class Config:
     JWT_ALGORITHM = 'HS256'
     JWT_EXPIRY_HOURS = 24
     
-    # Platform JWT Secret (for validating SSO tokens from platform - must match platform's JWT_SECRET)
-    PLATFORM_JWT_SECRET = os.getenv('PLATFORM_JWT_SECRET', 'supersecret')
+    # Platform JWT Secret (for validating SSO tokens from platform - must match platform's JWT_SECRET_KEY)
+    PLATFORM_JWT_SECRET = os.getenv('PLATFORM_JWT_SECRET', 'super-secret-key-change-in-production')
     
     # VMS App ID - must match the Platform's registered app ID
     APP_ID = os.getenv('VMS_APP_ID', 'app_bharatlytics_vms_366865a4')

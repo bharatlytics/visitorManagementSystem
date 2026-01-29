@@ -16,11 +16,11 @@ const Config = {
     VMS_MONGODB_URI: process.env.VMS_MONGODB_URI || 'mongodb://localhost:27017/vms_db',
 
     // JWT for local auth
-    JWT_SECRET: process.env.JWT_SECRET || 'vms-secret-key-change-in-production',
+    JWT_SECRET: process.env.JWT_SECRET || 'supersecret',
     JWT_ALGORITHM: 'HS256',
     JWT_EXPIRY_HOURS: 24,
 
-    // Platform JWT Secret (for validating SSO tokens from platform - must match platform's JWT_SECRET)
+    // Platform JWT Secret (for validating SSO tokens from platform - must match platform's JWT_SECRET_KEY)
     PLATFORM_JWT_SECRET: process.env.PLATFORM_JWT_SECRET || 'supersecret',
 
     // VMS App ID - must match the Platform's registered app ID
@@ -60,5 +60,9 @@ const Config = {
     // Node environment
     NODE_ENV: process.env.NODE_ENV || 'development',
 };
+
+console.log('[DEBUG] VMS Config Loaded:');
+console.log('[DEBUG] JWT_SECRET:', Config.JWT_SECRET ? Config.JWT_SECRET.substring(0, 5) + '...' : 'MISSING');
+console.log('[DEBUG] PLATFORM_JWT_SECRET:', Config.PLATFORM_JWT_SECRET ? Config.PLATFORM_JWT_SECRET.substring(0, 5) + '...' : 'MISSING');
 
 module.exports = Config;
