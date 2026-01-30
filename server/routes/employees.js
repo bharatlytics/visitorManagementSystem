@@ -553,7 +553,7 @@ router.get('/embeddings/:embedding_id', async (req, res, next) => {
         const response = await axios.get(platformUrl, {
             headers: { 'Authorization': `Bearer ${platformToken}` },
             responseType: 'stream',
-            timeout: 5000 // Reduce to 5s to avoid Vercel function timeout (10s limit)
+            timeout: 30000 // Increase to 30s for better reliability
         });
 
         res.set('Content-Type', 'application/octet-stream');
