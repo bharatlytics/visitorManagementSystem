@@ -1,0 +1,8 @@
+﻿
+--- 1. Residency Check (sub=app_bharatlytics_vms_366865a4) ---
+GET http://localhost:5000//bharatlytics/integration/v1/installations/mapping
+Residency Status: 200
+
+--- 2. Employee Fetch Check (sub=DeveloperID) ---
+Using DeveloperID: 692934130c7e4d10366865a3
+GET http://localhost:5000/bharatlytics/v1/actors

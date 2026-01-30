@@ -25,8 +25,12 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
 
         // Use DataProvider for residency-aware fetching
         // This will check installation mappings and fetch from Platform if configured
-        // Pass platformToken from session for Platform API calls
-        const platformToken = req.session?.platformToken;
+        // Pass platformToken from session or header for Platform API calls
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
         const dataProvider = getDataProvider(companyId, platformToken);
         const entities = await dataProvider.getEntities(companyId);
 

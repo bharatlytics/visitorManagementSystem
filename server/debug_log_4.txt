@@ -1,0 +1,15 @@
+﻿
+--- 1. Residency Check ---
+GET http://localhost:5000//bharatlytics/integration/v1/installations/mapping
+Residency Status: 200
+Mode: platform
+
+--- 3. Entity Fetch Check ---
+GET http://localhost:5000/bharatlytics/v1/entities
+Params: { companyId: '6827296ab6e06b08639107c4' }
+Response Status: 200
+Entities Found: 45
+Sample Entity: {"_id":{"$oid":"682c2468dca10bc73e189898"},"actorSummary":{"byActorType":{"employee":1},"byRole":{"e...
+
+--- 4. Employee Fetch Check (sub=CompanyID) ---
+GET http://localhost:5000/bharatlytics/v1/actors

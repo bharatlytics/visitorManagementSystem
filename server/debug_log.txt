@@ -1,0 +1,76 @@
+﻿--- Debug Residency Script ---
+PLATFORM_API_URL: http://localhost:5000/
+COMPANY_ID: 6827296ab6e06b08639107c4
+APP_ID: vms_app_v1
+
+1. Generating Token...
+Token generated successfully.
+
+2. Requesting: GET http://localhost:5000//bharatlytics/integration/v1/installations/mapping
+Params: { companyId: '6827296ab6e06b08639107c4', appId: 'vms_app_v1' }
+
+3. Response Status: 200
+--- Response Data ---
+{
+  "mapping": {
+    "_id": "69796bf88d0c869d66cce300",
+    "actorMappings": {
+      "employee": [
+        "employee"
+      ],
+      "visitor": [
+        "visitor"
+      ]
+    },
+    "appId": "vms_app_v1",
+    "companyId": "6827296ab6e06b08639107c4",
+    "configuration": {},
+    "createdAt": "Wed, 28 Jan 2026 01:52:56 GMT",
+    "entityFieldAccess": {},
+    "entityMappings": {},
+    "fieldAccess": {},
+    "fieldMappings": {
+      "employee": {},
+      "visitor": {
+        "email": "email",
+        "embedding": "embedding",
+        "idNumber": "idNumber",
+        "idType": "idType",
+        "name": "name",
+        "organization": "organization",
+        "phone": "phone",
+        "photo": "photo",
+        "purpose": "purpose",
+        "visitorType": "visitorType"
+      }
+    },
+    "fieldResidency": {},
+    "hybridFlags": {
+      "actor_employee": false,
+      "actor_visitor": true
+    },
+    "residencyMode": {
+      "actor_employee": {
+        "mode": "platform"
+      },
+      "actor_visitor": {
+        "lastSyncAt": null,
+        "mode": "app",
+        "modeChangedAt": "2026-01-28T01:52:56.829704",
+        "previousMode": "platform",
+        "sourceAppId": "vms_app_v1",
+        "syncStatus": "pending_migration",
+        "syncVersion": 1
+      }
+    },
+    "status": "configured",
+    "updatedAt": "Wed, 28 Jan 2026 01:52:56 GMT",
+    "version": "v1"
+  },
+  "status": "configured"
+}
+---------------------
+
+4. Simulating Parsing Logic for "employee":
+No entityRequirement found for "employee".
+Found residencyMode for actor_employee: { mode: 'platform' }

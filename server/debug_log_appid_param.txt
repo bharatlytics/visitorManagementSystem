@@ -1,0 +1,9 @@
+﻿
+--- 3. Employee Fetch Check (sub=app_bharatlytics_vms_366865a4, +params.appId) ---
+GET http://localhost:5000/bharatlytics/v1/actors
+Params: {
+  companyId: '6827296ab6e06b08639107c4',
+  actorType: 'employee',
+  status: 'active',
+  appId: 'app_bharatlytics_vms_366865a4'
+}
