@@ -29,6 +29,38 @@ const upload = multer({
 });
 
 // =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Build employee document
+ */
+function buildEmployeeDoc(data, imageDict = {}, embeddingsDict = {}) {
+    const companyId = isValidObjectId(data.companyId)
+        ? new ObjectId(data.companyId)
+        : data.companyId;
+
+    return {
+        _id: new ObjectId(),
+        companyId,
+        employeeId: data.employeeId || `EMP-${Date.now()}`, // Simple generation if not provided
+        employeeName: data.employeeName,
+        email: data.email || data.employeeEmail || null,
+        phone: data.phone || data.employeePhone || null,
+        designation: data.designation || null,
+        department: data.department || null,
+        status: data.status || 'active',
+        blacklisted: data.blacklisted === 'true' || data.blacklisted === true || false,
+        blacklistReason: data.blacklistReason || null,
+        employeeImages: imageDict,
+        employeeEmbeddings: embeddingsDict,
+        createdAt: new Date(),
+        lastUpdated: new Date()
+    };
+}
+
+
+// =============================================================================
 /**
  * GET /api/employees
  * List employees - respects data residency (fetches from Platform or VMS DB)
