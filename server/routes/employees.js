@@ -46,6 +46,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
             platformToken = req.headers.authorization.substring(7);
         }
+        // Force rebuild for config change
 
         const dataProvider = getDataProvider(companyId, platformToken);
         let employees = await dataProvider.getEmployees(companyId);
