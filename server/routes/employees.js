@@ -132,29 +132,48 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
 
         if (response.ok) {
             const result = await response.json();
-            // Platform returns { actor: { _id: ... } } or legacy { _id: ... }
+
+            // Platform returns { actor: { _id: ... } } (v3) or legacy { _id: ... }
             const actorId = result.actor?._id || result._id || result.actorId;
+
+            // DEBUG LOGGING
+            const fs = require('fs');
+            const path = require('path');
+            const logFile = path.join(__dirname, '../server_sync_debug.log');
+            const log = (msg) => {
+                fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
+            };
+
+            log(`Synced employee: ${employeeData.employeeName}, Platform Result keys: ${Object.keys(result)}, actorId extracted: ${actorId}`);
+            if (result.actor) log(`result.actor: ${JSON.stringify(result.actor)}`);
 
             console.log(`[sync_employee] Synced: ${employeeData.employeeName} (photo: ${Boolean(photoData)}), actorId: ${actorId}`);
 
             // Step 2: Sync pre-calculated embeddings (e.g. mobile_facenet_v1)
             // This prevents the platform from queuing them again
             if (employeeData.employeeEmbeddings && actorId) {
+                log(`Has embeddings: ${Object.keys(employeeData.employeeEmbeddings).join(',')}`);
+
                 const axios = require('axios');
                 // Try to use form-data if available (common in Node envs)
                 let FormData;
                 try {
                     FormData = require('form-data');
+                    log('form-data package loaded');
                 } catch (e) {
+                    log('form-data package not found');
                     console.log('[sync_employee] form-data package not found, checking global');
                 }
 
                 if (!FormData && typeof global.FormData !== 'undefined') {
                     FormData = global.FormData;
+                    log('using global.FormData');
                 }
 
                 if (FormData) {
                     for (const [model, info] of Object.entries(employeeData.employeeEmbeddings)) {
+                        log(`Checking model ${model}: status=${info.status}, id=${info.embeddingId}`);
+
                         if (info.status === 'completed' && info.embeddingId) {
                             try {
                                 const bucket = getGridFSBucket('employeeEmbeddings');
