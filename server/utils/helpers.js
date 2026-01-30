@@ -136,8 +136,9 @@ function generateUniqueId(prefix = 'VIS') {
  * @param {Array|Object} records - Single record or array of records (employees/visitors)
  * @param {string} baseUrl - VMS base URL (e.g., http://localhost:5001)
  * @param {string} entityType - 'employees' or 'visitors' for URL path
+ * @param {string} platformUrl - Optional. If provided, links directly to Platform instead of proxying.
  */
-function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees') {
+function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees', platformUrl = null) {
     const recordsArray = Array.isArray(records) ? records : [records];
 
     for (const record of recordsArray) {
@@ -147,17 +148,20 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees') {
                 if (embData && typeof embData === 'object' && embData.status === 'done') {
                     let embeddingId = embData.embeddingId;
 
-                    // Extract embedding ID from Platform URL if present
+                    // Extract embedding ID from existing URL if present
                     if (embData.downloadUrl && embData.downloadUrl.includes('/embeddings/')) {
                         embeddingId = embData.downloadUrl.split('/embeddings/').pop();
                     }
 
-                    // Construct VMS proxy URL ONLY if we don't have a valid external URL
                     if (embeddingId) {
-                        // FIX: Preserve absolute URLs (Platform) to avoid unnecessary proxying and timeouts
-                        const hasAbsoluteUrl = embData.downloadUrl && (embData.downloadUrl.startsWith('http://') || embData.downloadUrl.startsWith('https://'));
-
-                        if (!hasAbsoluteUrl) {
+                        if (platformUrl) {
+                            // DIRECT LINK to Platform (Bypass VMS Proxy)
+                            // /bharatlytics/v1/actors/embeddings/:id
+                            embData.downloadUrl = `${platformUrl}/bharatlytics/v1/actors/embeddings/${embeddingId}`;
+                        } else {
+                            // PROXY through VMS
+                            // Only rewrite if not already an absolute URL (unless we want to force proxy?)
+                            // Current logic: force proxy if no platformUrl provided
                             embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
                         }
                     }
@@ -173,10 +177,9 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees') {
                     const embeddingId = embData.embeddingId;
 
                     if (embeddingId) {
-                        // FIX: Preserve absolute URLs here too
-                        const hasAbsoluteUrl = embData.downloadUrl && (embData.downloadUrl.startsWith('http://') || embData.downloadUrl.startsWith('https://'));
-
-                        if (!hasAbsoluteUrl) {
+                        if (platformUrl) {
+                            embData.downloadUrl = `${platformUrl}/bharatlytics/v1/actors/embeddings/${embeddingId}`;
+                        } else {
                             embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
                         }
                     }

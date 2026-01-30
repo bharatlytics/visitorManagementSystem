@@ -231,7 +231,8 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
 
         // Rewrite download URLs to VMS proxy URLs (using shared utility)
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        rewriteEmbeddingUrls(visitors, baseUrl, 'visitors');
+        // Pass Config.PLATFORM_API_URL to generate direct links
+        rewriteEmbeddingUrls(visitors, baseUrl, 'visitors', Config.PLATFORM_API_URL);
 
         // Convert ObjectIds to strings
         const result = convertObjectIds(visitors);
@@ -265,7 +266,8 @@ router.get('/list', requireCompanyAccess, async (req, res, next) => {
 
         // Rewrite download URLs to VMS proxy URLs (using shared utility)
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        rewriteEmbeddingUrls(visitors, baseUrl, 'visitors');
+        // Pass Config.PLATFORM_API_URL to generate direct links
+        rewriteEmbeddingUrls(visitors, baseUrl, 'visitors', Config.PLATFORM_API_URL);
 
         res.json({ visitors: convertObjectIds(visitors) });
     } catch (error) {

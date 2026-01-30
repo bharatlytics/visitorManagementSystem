@@ -68,9 +68,10 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             );
         }
 
-        // Rewrite download URLs to VMS proxy URLs (using shared utility)
+        // Rewrite download URLs to direct Platform URLs to avoid invalid proxy timeouts
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        rewriteEmbeddingUrls(employees, baseUrl, 'employees');
+        // Pass Config.PLATFORM_API_URL to generate direct links
+        rewriteEmbeddingUrls(employees, baseUrl, 'employees', Config.PLATFORM_API_URL);
 
         // Return as direct array (matching Python API format)
         res.json(convertObjectIds(employees));
