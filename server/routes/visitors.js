@@ -561,34 +561,88 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
+        // Process pre-calculated embedding (from mobile)
+        const initialEmbeddingsDict = {};
+        if (req.files && req.files['embedding']) {
+            try {
+                const file = req.files['embedding'][0];
+                const version = data.embeddingVersion || 'mobile_facenet_v1';
+                const bucket = getGridFSBucket('visitorEmbeddings'); // Use specific bucket for embeddings
+
+                const uploadStream = bucket.openUploadStream(`${companyId}_${version}.bin`, {
+                    metadata: {
+                        companyId,
+                        model: version,
+                        type: 'embedding',
+                        timestamp: new Date()
+                    }
+                });
+
+                uploadStream.write(file.buffer);
+                uploadStream.end();
+
+                await new Promise((resolve, reject) => {
+                    uploadStream.on('finish', resolve);
+                    uploadStream.on('error', reject);
+                });
+
+                initialEmbeddingsDict[version] = {
+                    status: 'completed',
+                    embeddingId: uploadStream.id,
+                    model: version,
+                    createdAt: new Date(),
+                    finishedAt: new Date()
+                };
+                console.log(`[register_visitor] Stored pre-calculated embedding for ${version}`);
+            } catch (e) {
+                console.log(`[register_visitor] Error processing embedding file: ${e.message}`);
+            }
+        }
+
         // Build visitor document
-        const visitorDoc = buildVisitorDoc(data, imageDict, {}, documentDict);
+        const visitorDoc = buildVisitorDoc(data, imageDict, initialEmbeddingsDict, documentDict);
 
         // Insert visitor
         const result = await collections.visitors().insertOne(visitorDoc);
         const visitorId = result.insertedId;
 
-        // Queue embedding job if images exist
-        const embeddingsDict = {};
+        // Queue embedding job if images exist (for server-side models like buffalo_l)
+        // Merge with existing embeddings (don't overwrite)
+        const embeddingsUpdates = {};
+
         if (Object.keys(imageDict).length > 0) {
-            embeddingsDict.buffalo_l = {
-                status: 'queued',
-                queuedAt: new Date()
-            };
+            // Check if buffalo_l is already provided (unlikely from mobile, but good practice)
+            if (!initialEmbeddingsDict.buffalo_l) {
+                embeddingsUpdates.buffalo_l = {
+                    status: 'queued',
+                    queuedAt: new Date()
+                };
 
-            await collections.embeddingJobs().insertOne({
-                companyId: new ObjectId(companyId),
-                visitorId,
-                model: 'buffalo_l',
-                status: 'queued',
-                createdAt: new Date(),
-                params: {}
-            });
+                await collections.embeddingJobs().insertOne({
+                    companyId: new ObjectId(companyId),
+                    visitorId,
+                    model: 'buffalo_l',
+                    status: 'queued',
+                    createdAt: new Date(),
+                    params: {}
+                });
+            }
 
-            await collections.visitors().updateOne(
-                { _id: visitorId },
-                { $set: { visitorEmbeddings: embeddingsDict } }
-            );
+            // If we have updates, apply them
+            if (Object.keys(embeddingsUpdates).length > 0) {
+                const updateQuery = {};
+                for (const [model, info] of Object.entries(embeddingsUpdates)) {
+                    updateQuery[`visitorEmbeddings.${model}`] = info;
+                }
+
+                await collections.visitors().updateOne(
+                    { _id: visitorId },
+                    { $set: updateQuery }
+                );
+
+                // Merge for response
+                Object.assign(visitorDoc.visitorEmbeddings, embeddingsUpdates);
+            }
         }
 
         // Sync to Platform (if connected)
