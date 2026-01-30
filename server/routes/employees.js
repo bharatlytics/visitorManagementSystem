@@ -132,19 +132,25 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
 
         if (response.ok) {
             const result = await response.json();
-            const actorId = result._id || result.actorId;
-            console.log(`[sync_employee] Synced: ${employeeData.employeeName} (photo: ${Boolean(photoData)})`);
+            // Platform returns { actor: { _id: ... } } or legacy { _id: ... }
+            const actorId = result.actor?._id || result._id || result.actorId;
+
+            console.log(`[sync_employee] Synced: ${employeeData.employeeName} (photo: ${Boolean(photoData)}), actorId: ${actorId}`);
 
             // Step 2: Sync pre-calculated embeddings (e.g. mobile_facenet_v1)
             // This prevents the platform from queuing them again
-            if (employeeData.employeeEmbeddings) {
+            if (employeeData.employeeEmbeddings && actorId) {
                 const axios = require('axios');
                 // Try to use form-data if available (common in Node envs)
                 let FormData;
                 try {
                     FormData = require('form-data');
                 } catch (e) {
-                    console.log('[sync_employee] form-data package not found, skipping embedding upload');
+                    console.log('[sync_employee] form-data package not found, checking global');
+                }
+
+                if (!FormData && typeof global.FormData !== 'undefined') {
+                    FormData = global.FormData;
                 }
 
                 if (FormData) {
