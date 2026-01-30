@@ -152,9 +152,14 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees') {
                         embeddingId = embData.downloadUrl.split('/embeddings/').pop();
                     }
 
-                    // Construct VMS proxy URL
+                    // Construct VMS proxy URL ONLY if we don't have a valid external URL
                     if (embeddingId) {
-                        embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
+                        // FIX: Preserve absolute URLs (Platform) to avoid unnecessary proxying and timeouts
+                        const hasAbsoluteUrl = embData.downloadUrl && (embData.downloadUrl.startsWith('http://') || embData.downloadUrl.startsWith('https://'));
+
+                        if (!hasAbsoluteUrl) {
+                            embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
+                        }
                     }
                 }
             }
@@ -166,8 +171,14 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees') {
             for (const [model, embData] of Object.entries(record[legacyKey])) {
                 if (embData && typeof embData === 'object') {
                     const embeddingId = embData.embeddingId;
+
                     if (embeddingId) {
-                        embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
+                        // FIX: Preserve absolute URLs here too
+                        const hasAbsoluteUrl = embData.downloadUrl && (embData.downloadUrl.startsWith('http://') || embData.downloadUrl.startsWith('https://'));
+
+                        if (!hasAbsoluteUrl) {
+                            embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
+                        }
                     }
                 }
             }
