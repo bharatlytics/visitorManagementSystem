@@ -666,7 +666,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             message: 'Visitor registration successful',
             _id: visitorId.toString(),
             embeddingStatus: Object.fromEntries(
-                Object.entries(embeddingsDict).map(([k, v]) => [k, v.status || 'unknown'])
+                Object.entries(visitorDoc.visitorEmbeddings).map(([k, v]) => [k, v.status || 'unknown'])
             ),
             hasBiometric: Object.keys(imageDict).length > 0,
             dataResidency: 'app',
