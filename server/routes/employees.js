@@ -132,10 +132,63 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
 
         if (response.ok) {
             const result = await response.json();
+            const actorId = result._id || result.actorId;
             console.log(`[sync_employee] Synced: ${employeeData.employeeName} (photo: ${Boolean(photoData)})`);
+
+            // Step 2: Sync pre-calculated embeddings (e.g. mobile_facenet_v1)
+            // This prevents the platform from queuing them again
+            if (employeeData.employeeEmbeddings) {
+                const axios = require('axios');
+                // Try to use form-data if available (common in Node envs)
+                let FormData;
+                try {
+                    FormData = require('form-data');
+                } catch (e) {
+                    console.log('[sync_employee] form-data package not found, skipping embedding upload');
+                }
+
+                if (FormData) {
+                    for (const [model, info] of Object.entries(employeeData.employeeEmbeddings)) {
+                        if (info.status === 'completed' && info.embeddingId) {
+                            try {
+                                const bucket = getGridFSBucket('employeeEmbeddings');
+                                const downloadStream = bucket.openDownloadStream(new ObjectId(info.embeddingId));
+                                const chunks = [];
+                                for await (const chunk of downloadStream) {
+                                    chunks.push(chunk);
+                                }
+                                const buffer = Buffer.concat(chunks);
+
+                                const form = new FormData();
+                                form.append('companyId', String(companyId));
+                                form.append('embeddingAttached', 'true');
+                                form.append('embeddingVersion', model);
+                                form.append('embedding', buffer, { filename: `${model}.bin` });
+
+                                console.log(`[sync_employee] Uploading ${model} embedding to platform...`);
+
+                                await axios.post(
+                                    `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`,
+                                    form,
+                                    {
+                                        headers: {
+                                            'Authorization': `Bearer ${platformToken}`,
+                                            ...form.getHeaders()
+                                        }
+                                    }
+                                );
+                                console.log(`[sync_employee] Uploaded ${model} embedding successfully`);
+                            } catch (error) {
+                                console.error(`[sync_employee] Failed to upload ${model} embedding: ${error.message}`);
+                            }
+                        }
+                    }
+                }
+            }
+
             return {
                 success: true,
-                actorId: result._id || result.actorId,
+                actorId: actorId,
                 hasPhoto: Boolean(photoData)
             };
         } else {
