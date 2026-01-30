@@ -33,6 +33,105 @@ const upload = multer({
 // =============================================================================
 
 /**
+ * Sync employee to platform actors collection with images
+ */
+async function syncEmployeeToPlatform(employeeData, companyId, includeImages = true, platformToken) {
+    try {
+        // Build attributes
+        const attributes = {
+            name: employeeData.employeeName,
+            employeeName: employeeData.employeeName,
+            email: employeeData.email,
+            phone: employeeData.phone,
+            designation: employeeData.designation,
+            department: employeeData.department,
+            employeeId: employeeData.employeeId,
+            actorType: 'employee'
+        };
+
+        // Include image as base64 if available
+        let photoData = null;
+        if (includeImages && employeeData.employeeImages) {
+            const images = employeeData.employeeImages;
+            // Prioritize front, then center, then left/right
+            for (const position of ['front', 'center', 'left', 'right']) {
+                if (images[position]) {
+                    try {
+                        const bucket = getGridFSBucket('employeeImages');
+                        const imageId = new ObjectId(images[position]);
+                        const chunks = [];
+                        const downloadStream = bucket.openDownloadStream(imageId);
+
+                        for await (const chunk of downloadStream) {
+                            chunks.push(chunk);
+                        }
+                        const buffer = Buffer.concat(chunks);
+                        photoData = buffer.toString('base64');
+                        console.log(`[sync_employee] Included ${position} image (${buffer.length} bytes)`);
+                        break;
+                    } catch (e) {
+                        console.log(`[sync_employee] Error reading ${position} image: ${e.message}`);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        if (photoData) {
+            attributes.photo = `data:image/jpeg;base64,${photoData}`;
+        }
+
+        const actorData = {
+            companyId: String(companyId),
+            actorType: 'employee',
+            attributes,
+            sourceAppId: 'vms_app_v1',
+            sourceActorId: String(employeeData._id),
+            status: employeeData.status || 'active',
+            metadata: {
+                hasPhoto: Boolean(photoData),
+                sourceApp: 'vms_app_v1'
+            }
+        };
+
+        if (!platformToken) {
+            console.log('[sync_employee] No platform token');
+            return { success: false, error: 'No platform token' };
+        }
+
+        console.log(`[sync_employee] Syncing to ${Config.PLATFORM_API_URL}/bharatlytics/v1/actors`);
+
+        const response = await fetch(`${Config.PLATFORM_API_URL}/bharatlytics/v1/actors`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${platformToken}`,
+                'Content-Type': 'application/json',
+                'X-App-Id': 'vms_app_v1',
+                'X-Source-App': 'vms_app_v1'
+            },
+            body: JSON.stringify(actorData)
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log(`[sync_employee] Synced: ${employeeData.employeeName} (photo: ${Boolean(photoData)})`);
+            return {
+                success: true,
+                actorId: result._id || result.actorId,
+                hasPhoto: Boolean(photoData)
+            };
+        } else {
+            const text = await response.text();
+            console.log(`[sync_employee] Failed: ${response.status} - ${text.substring(0, 200)}`);
+            return { success: false, error: text.substring(0, 200) };
+        }
+    } catch (e) {
+        console.log(`[sync_employee] Error: ${e.message}`);
+        return { success: false, error: e.message };
+    }
+}
+
+/**
  * Build employee document
  */
 function buildEmployeeDoc(data, imageDict = {}, embeddingsDict = {}) {
@@ -167,10 +266,26 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
         const employeeDoc = buildEmployeeDoc(data);
         const result = await collections.employees().insertOne(employeeDoc);
 
+        // Sync to Platform (if connected)
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        const platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+
+        if (platformToken) {
+            console.log(`[create_employee] Syncing employee ${result.insertedId} to platform...`);
+            const syncResult = await syncEmployeeToPlatform(employeeDoc, data.companyId, false, platformToken); // No images in simple create
+
+            if (syncResult.success) {
+                platformSync = { status: 'success', actorId: syncResult.actorId };
+            } else {
+                platformSync = { status: 'failed', error: syncResult.error };
+            }
+        }
+
         res.status(201).json({
             message: 'Employee created successfully',
             _id: result.insertedId.toString(),
-            employeeId: employeeDoc.employeeId
+            employeeId: employeeDoc.employeeId,
+            platformSync
         });
     } catch (error) {
         console.error('Error creating employee:', error);
@@ -270,32 +385,102 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
+        // UNCHANGED: Start processing embeddings below
+
+        // Process pre-calculated embedding (from mobile)
+        const initialEmbeddingsDict = {};
+        if (req.files && req.files['embedding']) {
+            try {
+                const file = req.files['embedding'][0];
+                const version = data.embeddingVersion || 'mobile_facenet_v1';
+                const bucket = getGridFSBucket('employeeEmbeddings');
+
+                const uploadStream = bucket.openUploadStream(`${companyId}_${version}.bin`, {
+                    metadata: {
+                        companyId,
+                        model: version,
+                        type: 'embedding',
+                        timestamp: new Date()
+                    }
+                });
+
+                uploadStream.write(file.buffer);
+                uploadStream.end();
+
+                await new Promise((resolve, reject) => {
+                    uploadStream.on('finish', resolve);
+                    uploadStream.on('error', reject);
+                });
+
+                initialEmbeddingsDict[version] = {
+                    status: 'completed',
+                    embeddingId: uploadStream.id,
+                    model: version,
+                    createdAt: new Date(),
+                    finishedAt: new Date()
+                };
+                console.log(`[register_employee] Stored pre-calculated embedding for ${version}`);
+            } catch (e) {
+                console.log(`[register_employee] Error processing embedding file: ${e.message}`);
+            }
+        }
+
         // Build employee document
-        const employeeDoc = buildEmployeeDoc(data, imageDict, {});
+        const employeeDoc = buildEmployeeDoc(data, imageDict, initialEmbeddingsDict);
         const result = await collections.employees().insertOne(employeeDoc);
         const employeeId = result.insertedId;
 
-        // Queue embedding job if images exist
-        const embeddingsDict = {};
+        // Queue embedding job if images exist (for server-side models like buffalo_l)
+        const embeddingsUpdates = {};
         if (Object.keys(imageDict).length > 0) {
-            embeddingsDict.buffalo_l = {
-                status: 'queued',
-                queuedAt: new Date()
-            };
+            // Only queue if not already provided (though unlikely for buffalo_l from mobile)
+            if (!initialEmbeddingsDict.buffalo_l) {
+                embeddingsUpdates.buffalo_l = {
+                    status: 'queued',
+                    queuedAt: new Date()
+                };
 
-            await collections.embeddingJobs().insertOne({
-                companyId: new ObjectId(companyId),
-                employeeId,
-                model: 'buffalo_l',
-                status: 'queued',
-                createdAt: new Date(),
-                params: {}
-            });
+                await collections.embeddingJobs().insertOne({
+                    companyId: new ObjectId(companyId),
+                    employeeId,
+                    model: 'buffalo_l',
+                    status: 'queued',
+                    createdAt: new Date(),
+                    params: {}
+                });
+            }
 
-            await collections.employees().updateOne(
-                { _id: employeeId },
-                { $set: { employeeEmbeddings: embeddingsDict } }
-            );
+            // Apply updates
+            if (Object.keys(embeddingsUpdates).length > 0) {
+                const updateQuery = {};
+                for (const [model, info] of Object.entries(embeddingsUpdates)) {
+                    updateQuery[`employeeEmbeddings.${model}`] = info;
+                }
+
+                await collections.employees().updateOne(
+                    { _id: employeeId },
+                    { $set: updateQuery }
+                );
+
+                // Merge for response
+                Object.assign(employeeDoc.employeeEmbeddings, embeddingsUpdates);
+            }
+        }
+
+        // Sync to Platform (if connected)
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        const platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+
+        if (platformToken) {
+            console.log(`[register_employee] Syncing employee ${employeeId} to platform...`);
+            const syncResult = await syncEmployeeToPlatform(employeeDoc, companyId, true, platformToken);
+
+            if (syncResult.success) {
+                platformSync = { status: 'success', actorId: syncResult.actorId };
+            } else {
+                platformSync = { status: 'failed', error: syncResult.error };
+                console.error(`[register_employee] Platform sync failed: ${syncResult.error}`);
+            }
         }
 
         res.status(201).json({
@@ -303,9 +488,10 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             _id: employeeId.toString(),
             employeeId: employeeDoc.employeeId,
             embeddingStatus: Object.fromEntries(
-                Object.entries(embeddingsDict).map(([k, v]) => [k, v.status || 'unknown'])
+                Object.entries(employeeDoc.employeeEmbeddings).map(([k, v]) => [k, v.status || 'unknown'])
             ),
-            hasBiometric: Object.keys(imageDict).length > 0
+            hasBiometric: Object.keys(imageDict).length > 0,
+            platformSync
         });
     } catch (error) {
         console.error('Error registering employee:', error);
