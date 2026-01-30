@@ -268,7 +268,12 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
         // Sync to Platform (if connected)
         let platformSync = { status: 'skipped', message: 'No platform token' };
-        const platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+
+        // Fallback to Bearer token
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
 
         if (platformToken) {
             console.log(`[create_employee] Syncing employee ${result.insertedId} to platform...`);
@@ -469,7 +474,12 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
         // Sync to Platform (if connected)
         let platformSync = { status: 'skipped', message: 'No platform token' };
-        const platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+
+        // Fallback to Bearer token
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
 
         if (platformToken) {
             console.log(`[register_employee] Syncing employee ${employeeId} to platform...`);
