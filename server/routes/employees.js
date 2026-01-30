@@ -94,11 +94,15 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
             attributes.photo = photoData;
         }
 
+        // Pass all images in attributes.photos for Platform to process
+        if (Object.keys(actorImages).length > 0) {
+            attributes.photos = actorImages;
+        }
+
         const actorData = {
             companyId: String(companyId),
             actorType: 'employee',
             attributes,
-            actorImages, // Include all images here
             sourceAppId: 'vms_app_v1',
             sourceActorId: String(employeeData._id),
             status: employeeData.status || 'active',
