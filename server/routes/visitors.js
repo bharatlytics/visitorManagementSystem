@@ -10,6 +10,7 @@ const QRCode = require('qrcode');
 const multer = require('multer');
 
 const { collections, getDb, getGridFSBucket } = require('../db');
+const { getDataProvider } = require('../services/data_provider');
 const Config = require('../config');
 const { requireAuth, requireCompanyAccess } = require('../middleware/auth');
 const {
@@ -444,23 +445,29 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const hostId = data.hostEmployeeId;
         let hostEmployee = null;
 
-        if (isValidObjectId(hostId)) {
-            hostEmployee = await collections.employees().findOne({
-                _id: new ObjectId(hostId),
-                status: 'active',
-                blacklisted: { $ne: true }
-            });
+        // Use DataProvider to fetch employee (handles residency automatically)
+        const residencyCheckToken = req.headers['x-platform-token'] || req.session?.platformToken;
+
+        // DataProvider handles the import at top level now
+        const dataProvider = getDataProvider(companyId, residencyCheckToken);
+
+        try {
+            hostEmployee = await dataProvider.getEmployeeById(hostId);
+        } catch (e) {
+            console.log(`[register_visitor] Error fetching host employee: ${e.message}`);
         }
 
         if (!hostEmployee) {
-            hostEmployee = await collections.employees().findOne({
-                employeeId: hostId,
-                status: 'active',
-                blacklisted: { $ne: true }
-            });
+            return res.status(400).json({ error: 'Host employee not found or not active.' });
         }
 
-        if (!hostEmployee) {
+        // Check status (handle both local and platform formats)
+        // Local: status field
+        // Platform: attributes.status or status field
+        const status = hostEmployee.status || (hostEmployee.attributes && hostEmployee.attributes.status) || 'active';
+        const isBlacklisted = hostEmployee.blacklisted === true || hostEmployee.blacklisted === 'true';
+
+        if (status !== 'active' || isBlacklisted) {
             return res.status(400).json({ error: 'Host employee not found or not active.' });
         }
 
