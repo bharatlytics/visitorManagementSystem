@@ -136,43 +136,33 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
             // Platform returns { actor: { _id: ... } } (v3) or legacy { _id: ... }
             const actorId = result.actor?._id || result._id || result.actorId;
 
-            // DEBUG LOGGING
-            const fs = require('fs');
-            const path = require('path');
-            const logFile = path.join(__dirname, '../server_sync_debug.log');
-            const log = (msg) => {
-                fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
-            };
-
-            log(`Synced employee: ${employeeData.employeeName}, Platform Result keys: ${Object.keys(result)}, actorId extracted: ${actorId}`);
-            if (result.actor) log(`result.actor: ${JSON.stringify(result.actor)}`);
-
-            console.log(`[sync_employee] Synced: ${employeeData.employeeName} (photo: ${Boolean(photoData)}), actorId: ${actorId}`);
+            console.log(`[sync_employee] Synced: ${employeeData.employeeName}, Platform Result keys: ${Object.keys(result)}, actorId extracted: ${actorId}`);
+            if (result.actor) console.log(`[sync_employee] result.actor: ${JSON.stringify(result.actor)}`);
 
             // Step 2: Sync pre-calculated embeddings (e.g. mobile_facenet_v1)
             // This prevents the platform from queuing them again
             if (employeeData.employeeEmbeddings && actorId) {
-                log(`Has embeddings: ${Object.keys(employeeData.employeeEmbeddings).join(',')}`);
+                console.log(`[sync_employee] Has embeddings: ${Object.keys(employeeData.employeeEmbeddings).join(',')}`);
 
                 const axios = require('axios');
                 // Try to use form-data if available (common in Node envs)
                 let FormData;
                 try {
                     FormData = require('form-data');
-                    log('form-data package loaded');
+                    console.log('[sync_employee] form-data package loaded');
                 } catch (e) {
-                    log('form-data package not found');
+                    console.log('[sync_employee] form-data package not found');
                     console.log('[sync_employee] form-data package not found, checking global');
                 }
 
                 if (!FormData && typeof global.FormData !== 'undefined') {
                     FormData = global.FormData;
-                    log('using global.FormData');
+                    console.log('[sync_employee] using global.FormData');
                 }
 
                 if (FormData) {
                     for (const [model, info] of Object.entries(employeeData.employeeEmbeddings)) {
-                        log(`Checking model ${model}: status=${info.status}, id=${info.embeddingId}`);
+                        console.log(`[sync_employee] Checking model ${model}: status=${info.status}, id=${info.embeddingId}`);
 
                         if (info.status === 'completed' && info.embeddingId) {
                             try {
@@ -183,6 +173,7 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
                                     chunks.push(chunk);
                                 }
                                 const buffer = Buffer.concat(chunks);
+                                console.log(`[sync_employee] Read chunks for ${model}, buffer size: ${buffer.length}`);
 
                                 const form = new FormData();
                                 form.append('companyId', String(companyId));
@@ -190,10 +181,11 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
                                 form.append('embeddingVersion', model);
                                 form.append('embedding', buffer, { filename: `${model}.bin` });
 
-                                console.log(`[sync_employee] Uploading ${model} embedding to platform...`);
+                                const uploadUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
+                                console.log(`[sync_employee] Uploading ${model} embedding to: ${uploadUrl}`);
 
                                 await axios.post(
-                                    `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`,
+                                    uploadUrl,
                                     form,
                                     {
                                         headers: {
@@ -204,11 +196,16 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
                                 );
                                 console.log(`[sync_employee] Uploaded ${model} embedding successfully`);
                             } catch (error) {
-                                console.error(`[sync_employee] Failed to upload ${model} embedding: ${error.message}`);
+                                console.log(`[sync_employee] Error uploading ${model}: ${error.message}`);
+                                if (error.response) console.log(`[sync_employee] Response data: ${JSON.stringify(error.response.data)}`);
                             }
                         }
                     }
+                } else {
+                    console.log('[sync_employee] FormData not available');
                 }
+            } else {
+                console.log(`[sync_employee] Skipping embedding sync. Has embeddings: ${!!employeeData.employeeEmbeddings}, actorId: ${actorId}`);
             }
 
             return {
