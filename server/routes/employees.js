@@ -49,12 +49,15 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
             actorType: 'employee'
         };
 
-        // Include image as base64 if available
-        let photoData = null;
+        // Include all available images
+        const actorImages = {};
+        let photoData = null; // Primary photo for attributes
+
         if (includeImages && employeeData.employeeImages) {
             const images = employeeData.employeeImages;
-            // Prioritize front, then center, then left/right
-            for (const position of ['front', 'center', 'left', 'right']) {
+            const positions = ['front', 'center', 'left', 'right', 'side'];
+
+            for (const position of positions) {
                 if (images[position]) {
                     try {
                         const bucket = getGridFSBucket('employeeImages');
@@ -66,25 +69,36 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
                             chunks.push(chunk);
                         }
                         const buffer = Buffer.concat(chunks);
-                        photoData = buffer.toString('base64');
-                        console.log(`[sync_employee] Included ${position} image (${buffer.length} bytes)`);
-                        break;
+                        const base64Img = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+
+                        // Add to actorImages map
+                        actorImages[position] = base64Img;
+                        console.log(`[sync_employee] Prepared ${position} image (${buffer.length} bytes)`);
+
+                        // Set primary photo if not set (prioritize front, then center via loop order - wait, strictly prioritize front/center)
                     } catch (e) {
                         console.log(`[sync_employee] Error reading ${position} image: ${e.message}`);
-                        continue;
                     }
                 }
             }
+
+            // Set primary photo for attributes (prioritize front -> center -> others)
+            if (actorImages.front) photoData = actorImages.front;
+            else if (actorImages.center) photoData = actorImages.center;
+            else if (actorImages.left) photoData = actorImages.left;
+            else if (actorImages.right) photoData = actorImages.right;
+            else if (actorImages.side) photoData = actorImages.side;
         }
 
         if (photoData) {
-            attributes.photo = `data:image/jpeg;base64,${photoData}`;
+            attributes.photo = photoData;
         }
 
         const actorData = {
             companyId: String(companyId),
             actorType: 'employee',
             attributes,
+            actorImages, // Include all images here
             sourceAppId: 'vms_app_v1',
             sourceActorId: String(employeeData._id),
             status: employeeData.status || 'active',
