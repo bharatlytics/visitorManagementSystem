@@ -289,43 +289,71 @@ class PlatformClient {
 
     /**
      * Fetch a single employee by ID from Platform
+     * Includes employees of any status (active, inactive, etc.)
      */
     async getEmployeeById(employeeId, companyId = null) {
         const cid = companyId || this.companyId;
-        console.log(`[PlatformClient] Fetching employee ${employeeId} from Platform`);
+        console.log(`[PlatformClient] Fetching employee ${employeeId} from Platform (companyId: ${cid})`);
 
         try {
-            // Try direct lookup first
+            // Try direct lookup first - Platform requires companyId as query param
             const url = `${this.baseUrl}/bharatlytics/v1/actors/${employeeId}`;
             const response = await axios.get(url, {
+                params: { companyId: cid },
+                headers: this.getHeaders(),
+                timeout: 10000
+            });
+
+            console.log(`[PlatformClient] Direct lookup response status: ${response.status}`);
+            if (response.status === 200) {
+                const actor = response.data.actor || response.data;
+                console.log(`[PlatformClient] Found employee via direct lookup, status: ${actor.status}`);
+                return this.transformActorToEmployee(actor);
+            }
+        } catch (error) {
+            // If direct lookup fails, search in all employees
+            console.log(`[PlatformClient] Direct lookup failed: ${error.message}`);
+            if (error.response) {
+                console.log(`[PlatformClient] Direct lookup error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+            }
+        }
+
+        // Fallback: search in all employees (including any status)
+        console.log(`[PlatformClient] Trying fallback search for employee ${employeeId}...`);
+        try {
+            const url = `${this.baseUrl}/bharatlytics/v1/actors`;
+            const response = await axios.get(url, {
+                params: {
+                    companyId: cid,
+                    actorType: 'employee'
+                    // NO status filter - include all statuses
+                },
                 headers: this.getHeaders(),
                 timeout: 10000
             });
 
             if (response.status === 200) {
-                const actor = response.data.actor || response.data;
-                return this.transformActorToEmployee(actor);
+                const data = response.data;
+                const actors = Array.isArray(data) ? data : (data.actors || data.data || []);
+
+                for (const actor of actors) {
+                    const idMatch = String(actor._id) === String(employeeId);
+                    const attrMatch = actor.attributes?.employeeId === employeeId;
+
+                    if (idMatch || attrMatch) {
+                        console.log(`[PlatformClient] Found employee via fallback search, status: ${actor.status}`);
+                        return this.transformActorToEmployee(actor);
+                    }
+                }
             }
         } catch (error) {
-            // If direct lookup fails, search in all employees
-            console.log(`[PlatformClient] Direct lookup failed, searching in employees list`);
+            console.error(`[PlatformClient] Fallback search failed: ${error.message}`);
         }
 
-        // Fallback: search in all employees
-        const employees = await this.getEmployees(cid);
-
-        for (const emp of employees) {
-            const idMatch = String(emp._id) === String(employeeId);
-            const employeeIdMatch = emp.employeeId === employeeId;
-            const attrMatch = emp.attributes?.employeeId === employeeId;
-
-            if (idMatch || employeeIdMatch || attrMatch) {
-                return emp;
-            }
-        }
-
+        console.log(`[PlatformClient] Employee ${employeeId} not found on Platform`);
         return null;
     }
+
 
     /**
      * Update an actor in the Platform
