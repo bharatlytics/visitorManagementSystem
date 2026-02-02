@@ -290,12 +290,13 @@ def process_entity(entity, entity_type='employee'):
         metadata=embedding_metadata
     )
     
-    # Build download URL using VMS URL
-    download_url = f"{VMS_URL}/api/{entity_type}s/embeddings/{embedding_id}"
+    # Build download URL as relative path - server will construct full URL based on environment
+    # This avoids hardcoding localhost which breaks in production
+    download_url = f"/api/{entity_type}s/embeddings/{embedding_id}"
     
     emb_entry = {
         'embeddingId': embedding_id,
-        'downloadUrl': download_url,
+        'downloadUrl': download_url,  # Relative path - server constructs full URL
         'model': MODEL_NAME,
         'dimensions': len(embedding),
         'posesUsed': poses_used,

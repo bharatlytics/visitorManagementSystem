@@ -308,27 +308,44 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
 
 /**
  * GET /api/employees/:employee_id
- * Get single employee by ID
+ * Get single employee by ID - respects data residency
  */
 router.get('/:employee_id', requireCompanyAccess, async (req, res, next) => {
     try {
         const { employee_id } = req.params;
+        const companyId = req.query.companyId;
+
+        // Get platform token for residency-aware fetching
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
 
         let employee = null;
 
-        // Try ObjectId first
-        if (isValidObjectId(employee_id)) {
-            employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
+        // Use DataProvider for residency-aware fetching
+        if (companyId) {
+            const dataProvider = getDataProvider(companyId, platformToken);
+            employee = await dataProvider.getEmployeeById(employee_id, companyId);
         }
 
-        // Fallback to employeeId field
+        // Fallback to direct DB query if no companyId or DataProvider returns null
         if (!employee) {
-            employee = await collections.employees().findOne({ employeeId: employee_id });
+            if (isValidObjectId(employee_id)) {
+                employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
+            }
+            if (!employee) {
+                employee = await collections.employees().findOne({ employeeId: employee_id });
+            }
         }
 
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
+
+        // Rewrite embedding URLs
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        rewriteEmbeddingUrls([employee], baseUrl, 'employees', Config.PLATFORM_API_URL);
 
         res.json({ employee: convertObjectIds(employee) });
     } catch (error) {
@@ -604,7 +621,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
 /**
  * PUT /api/employees/:employee_id
- * Update employee
+ * Update employee - syncs to Platform if connected
  */
 router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -639,24 +656,55 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             return res.status(404).json({ error: 'Employee not found' });
         }
 
-        res.json({ message: 'Employee updated successfully' });
+        // Sync update to Platform if connected
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        if (platformToken && data.companyId) {
+            try {
+                // Fetch updated employee for sync
+                const updatedEmployee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
+                if (updatedEmployee) {
+                    console.log(`[update_employee] Syncing updated employee ${employee_id} to platform...`);
+                    const syncResult = await syncEmployeeToPlatform(updatedEmployee, data.companyId, false, platformToken);
+                    if (syncResult.success) {
+                        platformSync = { status: 'success', actorId: syncResult.actorId };
+                    } else {
+                        platformSync = { status: 'failed', error: syncResult.error };
+                    }
+                }
+            } catch (syncError) {
+                console.error(`[update_employee] Platform sync error: ${syncError.message}`);
+                platformSync = { status: 'failed', error: syncError.message };
+            }
+        }
+
+        res.json({ message: 'Employee updated successfully', platformSync });
     } catch (error) {
         console.error('Error updating employee:', error);
         next(error);
     }
 });
 
+
 /**
  * DELETE /api/employees/:employee_id
- * Soft delete employee
+ * Soft delete employee - syncs to Platform if connected
  */
 router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
     try {
         const { employee_id } = req.params;
+        const companyId = req.query.companyId || req.body.companyId;
 
         if (!isValidObjectId(employee_id)) {
             return res.status(400).json({ error: 'Invalid employee ID format' });
         }
+
+        // Get employee before soft delete for Platform sync
+        const employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
 
         const result = await collections.employees().updateOne(
             { _id: new ObjectId(employee_id) },
@@ -673,12 +721,38 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             return res.status(404).json({ error: 'Employee not found' });
         }
 
-        res.json({ message: 'Employee deleted successfully' });
+        // Sync deletion to Platform if connected
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        const syncCompanyId = companyId || (employee?.companyId?.toString());
+        if (platformToken && syncCompanyId && employee) {
+            try {
+                // Sync deleted status
+                const deletedEmployee = { ...employee, status: 'deleted' };
+                console.log(`[delete_employee] Syncing deleted employee ${employee_id} to platform...`);
+                const syncResult = await syncEmployeeToPlatform(deletedEmployee, syncCompanyId, false, platformToken);
+                if (syncResult.success) {
+                    platformSync = { status: 'success', actorId: syncResult.actorId };
+                } else {
+                    platformSync = { status: 'failed', error: syncResult.error };
+                }
+            } catch (syncError) {
+                console.error(`[delete_employee] Platform sync error: ${syncError.message}`);
+                platformSync = { status: 'failed', error: syncError.message };
+            }
+        }
+
+        res.json({ message: 'Employee deleted successfully', platformSync });
     } catch (error) {
         console.error('Error deleting employee:', error);
         next(error);
     }
 });
+
 
 /**
  * POST /api/employees/:employee_id/blacklist

@@ -198,6 +198,33 @@ class DataProvider {
     }
 
     /**
+     * Get single visitor by ID
+     * 
+     * @param {string} visitorId - Visitor ID
+     * @param {string} companyId - Company ID
+     * @returns {Promise<Object|null>} Visitor or null
+     */
+    async getVisitorById(visitorId, companyId = null) {
+        const cid = companyId || this.companyId;
+
+        const mode = await getResidencyMode(cid, 'visitor');
+        console.log(`[DataProvider.getVisitorById] Company ${cid}, mode: ${mode}`);
+
+        // Visitors always stay in app mode
+        let visitor = null;
+        try {
+            visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
+        } catch {
+            // visitorId might not be a valid ObjectId
+        }
+
+        if (visitor) {
+            visitor.dataResidency = 'app';
+        }
+        return visitor;
+    }
+
+    /**
      * Fetch visitors from VMS local database
      */
     async _getVisitorsFromVms(companyId) {
@@ -229,6 +256,7 @@ class DataProvider {
         return this.platformClient.getEmployees(companyId); // reuse actor fetch
     }
 }
+
 
 /**
  * Factory function to create DataProvider

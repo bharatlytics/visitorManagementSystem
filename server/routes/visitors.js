@@ -209,7 +209,7 @@ function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedAr
 
 /**
  * GET /api/visitors
- * List all visitors for a company
+ * List all visitors for a company - respects data residency
  */
 router.get('/', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -218,17 +218,22 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        // Query with both string and ObjectId to handle inconsistent data
-        let query;
-        if (isValidObjectId(companyId)) {
-            query = { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] };
-        } else {
-            query = { companyId };
+        // Get platform token for residency-aware fetching
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
         }
 
-        console.log(`[Visitors] Querying with:`, query);
-        const visitors = await collections.visitors().find(query).toArray();
-        console.log(`[Visitors] Found ${visitors.length} visitors`);
+        // Use DataProvider for residency-aware fetching
+        const dataProvider = getDataProvider(companyId, platformToken);
+        let visitors = await dataProvider.getVisitors(companyId);
+
+        // Exclude deleted by default
+        if (!req.query.includeDeleted) {
+            visitors = visitors.filter(v => v.status !== 'deleted');
+        }
+
+        console.log(`[Visitors] Found ${visitors.length} visitors via DataProvider`);
 
         // Rewrite download URLs to VMS proxy URLs (using shared utility)
         const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -245,6 +250,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
     }
 });
 
+
 /**
  * GET /api/visitors/list
  * Alias for GET /api/visitors - avoids trailing slash redirect issues
@@ -256,14 +262,20 @@ router.get('/list', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        let query;
-        if (isValidObjectId(companyId)) {
-            query = { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] };
-        } else {
-            query = { companyId };
+        // Get platform token for residency-aware fetching
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
         }
 
-        const visitors = await collections.visitors().find(query).toArray();
+        // Use DataProvider for residency-aware fetching
+        const dataProvider = getDataProvider(companyId, platformToken);
+        let visitors = await dataProvider.getVisitors(companyId);
+
+        // Exclude deleted by default
+        if (!req.query.includeDeleted) {
+            visitors = visitors.filter(v => v.status !== 'deleted');
+        }
 
         // Rewrite download URLs to VMS proxy URLs (using shared utility)
         const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -276,6 +288,7 @@ router.get('/list', requireCompanyAccess, async (req, res, next) => {
         next(error);
     }
 });
+
 
 /**
  * GET /api/visitors/visits
@@ -315,20 +328,43 @@ router.get('/visits', requireCompanyAccess, async (req, res, next) => {
 
 /**
  * GET /api/visitors/:id
- * Get a single visitor by ID
+ * Get a single visitor by ID - respects data residency
  */
 router.get('/:visitor_id', requireCompanyAccess, async (req, res, next) => {
     try {
         const { visitor_id } = req.params;
+        const companyId = req.query.companyId;
 
         if (!isValidObjectId(visitor_id)) {
             return res.status(400).json({ error: 'Invalid visitor ID format' });
         }
 
-        const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitor_id) });
+        // Get platform token for residency-aware fetching
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        let visitor = null;
+
+        // Use DataProvider for residency-aware fetching
+        if (companyId) {
+            const dataProvider = getDataProvider(companyId, platformToken);
+            visitor = await dataProvider.getVisitorById(visitor_id, companyId);
+        }
+
+        // Fallback to direct DB query if no companyId or DataProvider returns null
+        if (!visitor) {
+            visitor = await collections.visitors().findOne({ _id: new ObjectId(visitor_id) });
+        }
+
         if (!visitor) {
             return res.status(404).json({ error: 'Visitor not found' });
         }
+
+        // Rewrite embedding URLs
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        rewriteEmbeddingUrls([visitor], baseUrl, 'visitors', Config.PLATFORM_API_URL);
 
         res.json({ visitor: convertObjectIds(visitor) });
     } catch (error) {
@@ -336,6 +372,7 @@ router.get('/:visitor_id', requireCompanyAccess, async (req, res, next) => {
         next(error);
     }
 });
+
 
 /**
  * GET /api/visitors/images/:image_id
@@ -681,7 +718,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
 /**
  * PATCH /api/visitors/update
- * Update visitor details
+ * Update visitor details - syncs to Platform if connected
  */
 router.patch('/update', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -729,12 +766,40 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             { $set: updateFields }
         );
 
-        res.json({ message: 'Visitor updated successfully' });
+        // Sync update to Platform if connected
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        const companyId = data.companyId || visitor.companyId?.toString();
+        if (platformToken && companyId) {
+            try {
+                // Fetch updated visitor for sync
+                const updatedVisitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
+                if (updatedVisitor) {
+                    console.log(`[update_visitor] Syncing updated visitor ${visitorId} to platform...`);
+                    const syncResult = await syncVisitorToPlatform(updatedVisitor, companyId, false, platformToken);
+                    if (syncResult.success) {
+                        platformSync = { status: 'success', actorId: syncResult.actorId };
+                    } else {
+                        platformSync = { status: 'failed', error: syncResult.error };
+                    }
+                }
+            } catch (syncError) {
+                console.error(`[update_visitor] Platform sync error: ${syncError.message}`);
+                platformSync = { status: 'failed', error: syncError.message };
+            }
+        }
+
+        res.json({ message: 'Visitor updated successfully', platformSync });
     } catch (error) {
         console.error('Error updating visitor:', error);
         next(error);
     }
 });
+
 
 /**
  * POST /api/visitors/blacklist
@@ -806,11 +871,11 @@ router.post('/unblacklist', requireCompanyAccess, async (req, res, next) => {
 
 /**
  * DELETE /api/visitors/delete
- * Soft delete a visitor
+ * Soft delete a visitor - syncs to Platform if connected
  */
 router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
     try {
-        const { visitorId } = req.body;
+        const { visitorId, companyId } = req.body;
 
         if (!visitorId) {
             return res.status(400).json({ error: 'Visitor ID is required' });
@@ -845,12 +910,38 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
             }
         );
 
-        res.json({ message: 'Visitor deleted successfully' });
+        // Sync deletion to Platform if connected
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        const syncCompanyId = companyId || visitor.companyId?.toString();
+        if (platformToken && syncCompanyId) {
+            try {
+                // Sync deleted status
+                const deletedVisitor = { ...visitor, status: 'deleted' };
+                console.log(`[delete_visitor] Syncing deleted visitor ${visitorId} to platform...`);
+                const syncResult = await syncVisitorToPlatform(deletedVisitor, syncCompanyId, false, platformToken);
+                if (syncResult.success) {
+                    platformSync = { status: 'success', actorId: syncResult.actorId };
+                } else {
+                    platformSync = { status: 'failed', error: syncResult.error };
+                }
+            } catch (syncError) {
+                console.error(`[delete_visitor] Platform sync error: ${syncError.message}`);
+                platformSync = { status: 'failed', error: syncError.message };
+            }
+        }
+
+        res.json({ message: 'Visitor deleted successfully', platformSync });
     } catch (error) {
         console.error('Error deleting visitor:', error);
         next(error);
     }
 });
+
 
 /**
  * POST /api/visitors/:visitorId/schedule-visit
