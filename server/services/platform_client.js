@@ -326,7 +326,64 @@ class PlatformClient {
 
         return null;
     }
+
+    /**
+     * Update an actor in the Platform
+     * 
+     * @param {string} actorId - Actor ID
+     * @param {Object} updateFields - Fields to update
+     * @returns {Promise<Object>} Result of update operation
+     */
+    async updateActor(actorId, updateFields) {
+        console.log(`[PlatformClient] Updating actor ${actorId} on Platform`);
+        console.log(`[PlatformClient] Update fields:`, JSON.stringify(updateFields));
+
+        try {
+            const url = `${this.baseUrl}/bharatlytics/v1/actors/${actorId}`;
+
+            // Build the update payload
+            const updatePayload = { ...updateFields };
+
+            // If updating attributes, merge them
+            if (updateFields.attributes) {
+                updatePayload.attributes = updateFields.attributes;
+            }
+
+            const response = await axios.patch(url, updatePayload, {
+                headers: this.getHeaders(),
+                timeout: 10000
+            });
+
+            console.log(`[PlatformClient] Update response status: ${response.status}`);
+
+            if (response.status === 200) {
+                return {
+                    success: true,
+                    actor: response.data.actor || response.data
+                };
+            }
+
+            return {
+                success: false,
+                error: `Unexpected status: ${response.status}`
+            };
+        } catch (error) {
+            console.error(`[PlatformClient] Error updating actor: ${error.message}`);
+            if (error.response) {
+                console.error(`[PlatformClient] Status: ${error.response.status}, Data:`, JSON.stringify(error.response.data));
+                return {
+                    success: false,
+                    error: error.response.data?.error || error.response.data?.message || error.message
+                };
+            }
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
 }
+
 
 /**
  * Create a PlatformClient instance
