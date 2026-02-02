@@ -689,6 +689,80 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
     }
 });
 
+/**
+ * PATCH /api/employees/update
+ * Update employee details (alternative to PUT /:employee_id) - syncs to Platform if connected
+ */
+router.patch('/update', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const data = req.body;
+        const employeeId = data._id || data.employeeId;
+
+        if (!employeeId) {
+            return res.status(400).json({ error: 'Employee ID (_id or employeeId) is required' });
+        }
+
+        if (!isValidObjectId(employeeId)) {
+            return res.status(400).json({ error: 'Invalid employee ID format' });
+        }
+
+        const employee = await collections.employees().findOne({ _id: new ObjectId(employeeId) });
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+
+        const updateFields = {};
+        const allowedFields = ['employeeName', 'email', 'phone', 'designation', 'department', 'employeeId', 'status'];
+
+        for (const field of allowedFields) {
+            if (data[field] !== undefined) {
+                updateFields[field] = data[field];
+            }
+        }
+
+        if (Object.keys(updateFields).length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        updateFields.lastUpdated = new Date();
+
+        await collections.employees().updateOne(
+            { _id: new ObjectId(employeeId) },
+            { $set: updateFields }
+        );
+
+        // Sync update to Platform if connected
+        let platformSync = { status: 'skipped', message: 'No platform token' };
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        const companyId = data.companyId || employee.companyId?.toString();
+        if (platformToken && companyId) {
+            try {
+                const updatedEmployee = await collections.employees().findOne({ _id: new ObjectId(employeeId) });
+                if (updatedEmployee) {
+                    console.log(`[update_employee] Syncing updated employee ${employeeId} to platform...`);
+                    const syncResult = await syncEmployeeToPlatform(updatedEmployee, companyId, false, platformToken);
+                    if (syncResult.success) {
+                        platformSync = { status: 'success', actorId: syncResult.actorId };
+                    } else {
+                        platformSync = { status: 'failed', error: syncResult.error };
+                    }
+                }
+            } catch (syncError) {
+                console.error(`[update_employee] Platform sync error: ${syncError.message}`);
+                platformSync = { status: 'failed', error: syncError.message };
+            }
+        }
+
+        res.json({ message: 'Employee updated successfully', platformSync });
+    } catch (error) {
+        console.error('Error updating employee:', error);
+        next(error);
+    }
+});
 
 /**
  * DELETE /api/employees/:employee_id
