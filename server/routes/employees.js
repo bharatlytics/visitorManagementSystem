@@ -770,7 +770,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
                 platformUpdate.attributes = { ...existingEmployee.attributes, ...attrUpdate };
             }
 
-            const updateResult = await platformClient.updateActor(employeeId, platformUpdate);
+            const updateResult = await platformClient.updateActor(employeeId, platformUpdate, companyId);
 
             if (updateResult.success) {
                 res.json({

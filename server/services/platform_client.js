@@ -332,24 +332,25 @@ class PlatformClient {
      * 
      * @param {string} actorId - Actor ID
      * @param {Object} updateFields - Fields to update
+     * @param {string} companyId - Company ID (required by Platform API)
      * @returns {Promise<Object>} Result of update operation
      */
-    async updateActor(actorId, updateFields) {
-        console.log(`[PlatformClient] Updating actor ${actorId} on Platform`);
+    async updateActor(actorId, updateFields, companyId = null) {
+        const cid = companyId || this.companyId;
+        console.log(`[PlatformClient] Updating actor ${actorId} on Platform (companyId: ${cid})`);
         console.log(`[PlatformClient] Update fields:`, JSON.stringify(updateFields));
 
         try {
             const url = `${this.baseUrl}/bharatlytics/v1/actors/${actorId}`;
 
-            // Build the update payload
-            const updatePayload = { ...updateFields };
+            // Build the update payload - Platform requires companyId
+            const updatePayload = {
+                ...updateFields,
+                companyId: cid
+            };
 
-            // If updating attributes, merge them
-            if (updateFields.attributes) {
-                updatePayload.attributes = updateFields.attributes;
-            }
 
-            const response = await axios.patch(url, updatePayload, {
+            const response = await axios.put(url, updatePayload, {
                 headers: this.getHeaders(),
                 timeout: 10000
             });
