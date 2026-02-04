@@ -590,25 +590,12 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
             const employeeDoc = buildEmployeeDoc(data);
             const result = await collections.employees().insertOne(employeeDoc);
 
-            // Sync to Platform (if connected)
-            let platformSync = { status: 'skipped', message: 'No platform token' };
-            if (platformToken) {
-                console.log(`[create_employee] Syncing employee ${result.insertedId} to platform...`);
-                const syncResult = await syncEmployeeToPlatform(employeeDoc, companyId, false, platformToken);
-
-                if (syncResult.success) {
-                    platformSync = { status: 'success', actorId: syncResult.actorId };
-                } else {
-                    platformSync = { status: 'failed', error: syncResult.error };
-                }
-            }
-
+            // App mode: NO Platform sync, local DB is source of truth
             res.status(201).json({
                 message: 'Employee created successfully',
                 dataResidency: 'app',
                 _id: result.insertedId.toString(),
-                employeeId: employeeDoc.employeeId,
-                platformSync
+                employeeId: employeeDoc.employeeId
             });
         }
     } catch (error) {
@@ -718,8 +705,102 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // If deleted employee exists with same employeeId, rename the old one to preserve audit trail
-        // This allows creating a new record with the same employeeId
+        // ============ PLATFORM MODE: Create on Platform directly ============
+        if (residencyMode === 'platform') {
+            console.log(`[register_employee] Platform mode - creating employee on Platform...`);
+
+            if (!platformToken) {
+                return res.status(401).json({
+                    error: 'Platform token required',
+                    message: 'Employee data resides on Platform. Please provide a valid platform token.'
+                });
+            }
+
+            // Prepare images as base64 for Platform
+            const imageData = {};
+            const facePositions = ['left', 'right', 'center', 'front', 'side'];
+
+            for (const position of facePositions) {
+                if (req.files && req.files[position]) {
+                    const file = req.files[position][0];
+                    imageData[position] = file.buffer.toString('base64');
+                }
+            }
+
+            // Handle base64 images from request body
+            const base64Mapping = { faceCenter: 'center', faceLeft: 'left', faceRight: 'right' };
+            for (const [formKey, position] of Object.entries(base64Mapping)) {
+                if (data[formKey]) {
+                    let base64Data = data[formKey];
+                    if (base64Data.includes(',')) {
+                        base64Data = base64Data.split(',')[1];
+                    }
+                    imageData[position] = base64Data;
+                }
+            }
+
+            // Prepare embedding data for Platform
+            const embeddingData = {};
+            if (req.files && req.files['embedding']) {
+                const file = req.files['embedding'][0];
+                const version = data.embeddingVersion || 'mobile_facenet_v1';
+                embeddingData[version] = {
+                    data: file.buffer.toString('base64'),
+                    status: 'completed'
+                };
+            }
+
+            // Build Platform actor data
+            const actorData = {
+                companyId: String(companyId),
+                actorType: 'employee',
+                status: 'active',
+                attributes: {
+                    name: data.employeeName,
+                    employeeName: data.employeeName,
+                    email: data.email || data.employeeEmail || null,
+                    phone: data.phone || null,
+                    designation: data.designation || null,
+                    department: data.department || null,
+                    employeeId: inputEmployeeId || `EMP-${Date.now()}`
+                },
+                images: imageData,
+                embeddings: embeddingData,
+                sourceAppId: 'vms_app_v1',
+                metadata: { sourceApp: 'vms_app_v1' }
+            };
+
+            const platformClient = createPlatformClient(companyId, platformToken);
+            const createResult = await platformClient.createActor(actorData, companyId);
+
+            if (createResult.success) {
+                res.status(201).json({
+                    message: 'Employee registered successfully on Platform',
+                    dataResidency: 'platform',
+                    actorId: createResult.actorId,
+                    employeeId: actorData.attributes.employeeId,
+                    hasBiometric: Object.keys(imageData).length > 0
+                });
+            } else {
+                if (createResult.duplicate) {
+                    return res.status(409).json({
+                        error: 'Duplicate Employee',
+                        message: 'An employee with this ID already exists on Platform',
+                        dataResidency: 'platform'
+                    });
+                }
+                res.status(500).json({
+                    error: 'Failed to register employee on Platform',
+                    details: createResult.error
+                });
+            }
+            return;
+        }
+
+        // ============ APP MODE: Create locally only ============
+        console.log(`[register_employee] App mode - creating employee locally...`);
+
+        // Archive deleted employees with same employeeId (App mode only)
         if (inputEmployeeId) {
             const deletedEmployees = await collections.employees().find({
                 companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
@@ -730,7 +811,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             for (const deletedEmployee of deletedEmployees) {
                 const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
                 const archiveEmail = deletedEmployee.email ? `${deletedEmployee.email}_archived_${Date.now()}` : null;
-                console.log(`[register_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
+                console.log(`[register_employee] Archiving deleted employee ${deletedEmployee._id}`);
 
                 await collections.employees().updateOne(
                     { _id: deletedEmployee._id },
@@ -747,7 +828,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // Also archive deleted employees with same email to avoid email unique constraint
+        // Archive deleted employees with same email (App mode only)
         const inputEmail = data.email || data.employeeEmail;
         if (inputEmail) {
             const deletedByEmail = await collections.employees().find({
@@ -757,7 +838,6 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }).toArray();
 
             for (const deletedEmployee of deletedByEmail) {
-                console.log(`[register_employee] Archiving deleted employee ${deletedEmployee._id} by email ${inputEmail}`);
                 const archiveId = deletedEmployee.employeeId ?
                     `${deletedEmployee.employeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}` :
                     `unknown_archived_${Date.now()}`;
@@ -778,7 +858,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // Process face images
+        // Process face images to local GridFS (App mode only)
         const imageDict = {};
         const facePositions = ['left', 'right', 'center', 'front', 'side'];
 
@@ -807,7 +887,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // Handle base64 images
+        // Handle base64 images (App mode only)
         const base64Mapping = { faceCenter: 'center', faceLeft: 'left', faceRight: 'right' };
         for (const [formKey, position] of Object.entries(base64Mapping)) {
             if (data[formKey]) {
@@ -839,9 +919,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // UNCHANGED: Start processing embeddings below
-
-        // Process pre-calculated embedding (from mobile)
+        // Process pre-calculated embedding (App mode only)
         const initialEmbeddingsDict = {};
         if (req.files && req.files['embedding']) {
             try {
@@ -873,78 +951,44 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     createdAt: new Date(),
                     finishedAt: new Date()
                 };
-                console.log(`[register_employee] Stored pre-calculated embedding for ${version}`);
+                console.log(`[register_employee] Stored embedding for ${version}`);
             } catch (e) {
-                console.log(`[register_employee] Error processing embedding file: ${e.message}`);
+                console.log(`[register_employee] Error processing embedding: ${e.message}`);
             }
         }
 
-        // Build and create new employee document
+        // Build and create new employee document (App mode only)
         const employeeDoc = buildEmployeeDoc(data, imageDict, initialEmbeddingsDict);
         const result = await collections.employees().insertOne(employeeDoc);
         const employeeId = result.insertedId;
 
-        // Queue embedding job if images exist (for server-side models like buffalo_l)
-        const embeddingsUpdates = {};
-        if (Object.keys(imageDict).length > 0) {
-            // Only queue if not already provided (though unlikely for buffalo_l from mobile)
-            if (!initialEmbeddingsDict.buffalo_l) {
-                embeddingsUpdates.buffalo_l = {
-                    status: 'queued',
-                    queuedAt: new Date()
-                };
+        // Queue embedding job if images exist (App mode only)
+        if (Object.keys(imageDict).length > 0 && !initialEmbeddingsDict.buffalo_l) {
+            await collections.embeddingJobs().insertOne({
+                companyId: new ObjectId(companyId),
+                employeeId,
+                model: 'buffalo_l',
+                status: 'queued',
+                createdAt: new Date(),
+                params: {}
+            });
 
-                await collections.embeddingJobs().insertOne({
-                    companyId: new ObjectId(companyId),
-                    employeeId,
-                    model: 'buffalo_l',
-                    status: 'queued',
-                    createdAt: new Date(),
-                    params: {}
-                });
-            }
-
-            // Apply updates
-            if (Object.keys(embeddingsUpdates).length > 0) {
-                const updateQuery = {};
-                for (const [model, info] of Object.entries(embeddingsUpdates)) {
-                    updateQuery[`employeeEmbeddings.${model}`] = info;
-                }
-
-                await collections.employees().updateOne(
-                    { _id: employeeId },
-                    { $set: updateQuery }
-                );
-
-                // Merge for response
-                Object.assign(employeeDoc.employeeEmbeddings, embeddingsUpdates);
-            }
+            await collections.employees().updateOne(
+                { _id: employeeId },
+                { $set: { 'employeeEmbeddings.buffalo_l': { status: 'queued', queuedAt: new Date() } } }
+            );
         }
 
-        // Sync to Platform (if connected) - platformToken already set above
-        let platformSync = { status: 'skipped', message: 'No platform token' };
-
-        if (platformToken) {
-            console.log(`[register_employee] Syncing employee ${employeeId} to platform...`);
-            const syncResult = await syncEmployeeToPlatform(employeeDoc, companyId, true, platformToken);
-
-            if (syncResult.success) {
-                platformSync = { status: 'success', actorId: syncResult.actorId };
-            } else {
-                platformSync = { status: 'failed', error: syncResult.error };
-                console.error(`[register_employee] Platform sync failed: ${syncResult.error}`);
-            }
-        }
-
+        // App mode: NO Platform sync
         res.status(201).json({
             message: 'Employee registered successfully',
+            dataResidency: 'app',
             _id: employeeId.toString(),
             employeeId: employeeDoc.employeeId,
             embeddingStatus: Object.fromEntries(
                 Object.entries(employeeDoc.employeeEmbeddings).map(([k, v]) => [k, v.status || 'unknown'])
             ),
-            hasBiometric: Object.keys(imageDict).length > 0,
-            platformSync
+            hasBiometric: Object.keys(imageDict).length > 0
         });
     } catch (error) {
         console.error('Error registering employee:', error);
@@ -954,16 +998,34 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
 /**
  * PUT /api/employees/:employee_id
- * Update employee - syncs to Platform if connected
+ * Update employee - residency-aware
+ * Platform mode: Updates Platform directly
+ * App mode: Updates local DB only, no Platform sync
  */
 router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
     try {
         const { employee_id } = req.params;
         const data = req.body;
+        const companyId = data.companyId;
 
         if (!isValidObjectId(employee_id)) {
             return res.status(400).json({ error: 'Invalid employee ID format' });
         }
+
+        if (!companyId) {
+            return res.status(400).json({ error: 'Company ID is required for residency-aware update' });
+        }
+
+        // Get platform token
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        // Check residency mode
+        const { getResidencyMode } = require('../services/residency_detector');
+        const residencyMode = await getResidencyMode(companyId, 'employee');
+        console.log(`[update_employee] Company ${companyId}, residency mode: ${residencyMode}`);
 
         const updateFields = {};
         const allowedFields = ['employeeName', 'email', 'phone', 'designation', 'department', 'employeeId', 'status'];
@@ -980,42 +1042,74 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
 
         updateFields.lastUpdated = new Date();
 
-        const result = await collections.employees().updateOne(
-            { _id: new ObjectId(employee_id) },
-            { $set: updateFields }
-        );
+        if (residencyMode === 'platform') {
+            // Platform mode: update on Platform directly
+            console.log(`[update_employee] Platform mode - updating employee ${employee_id} on Platform...`);
 
-        if (result.matchedCount === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
-        }
-
-        // Sync update to Platform if connected
-        let platformSync = { status: 'skipped', message: 'No platform token' };
-        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
-        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-            platformToken = req.headers.authorization.substring(7);
-        }
-
-        if (platformToken && data.companyId) {
-            try {
-                // Fetch updated employee for sync
-                const updatedEmployee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
-                if (updatedEmployee) {
-                    console.log(`[update_employee] Syncing updated employee ${employee_id} to platform...`);
-                    const syncResult = await syncEmployeeToPlatform(updatedEmployee, data.companyId, false, platformToken);
-                    if (syncResult.success) {
-                        platformSync = { status: 'success', actorId: syncResult.actorId };
-                    } else {
-                        platformSync = { status: 'failed', error: syncResult.error };
-                    }
-                }
-            } catch (syncError) {
-                console.error(`[update_employee] Platform sync error: ${syncError.message}`);
-                platformSync = { status: 'failed', error: syncError.message };
+            if (!platformToken) {
+                return res.status(401).json({
+                    error: 'Platform token required',
+                    message: 'Employee data resides on Platform. Please provide a valid platform token.'
+                });
             }
-        }
 
-        res.json({ message: 'Employee updated successfully', platformSync });
+            const platformClient = createPlatformClient(companyId, platformToken);
+            const existingEmployee = await platformClient.getEmployeeById(employee_id, companyId);
+
+            if (!existingEmployee) {
+                return res.status(404).json({ error: 'Employee not found on Platform' });
+            }
+
+            // Build Platform update payload
+            const platformUpdate = {};
+            if (updateFields.status) {
+                platformUpdate.status = updateFields.status;
+            }
+
+            const attributeFields = ['employeeName', 'email', 'phone', 'designation', 'department', 'employeeId'];
+            const attrUpdate = {};
+            for (const field of attributeFields) {
+                if (updateFields[field] !== undefined) {
+                    const attrKey = field === 'employeeName' ? 'name' : field;
+                    attrUpdate[attrKey] = updateFields[field];
+                }
+            }
+            if (Object.keys(attrUpdate).length > 0) {
+                platformUpdate.attributes = { ...existingEmployee.attributes, ...attrUpdate };
+            }
+
+            const updateResult = await platformClient.updateActor(employee_id, platformUpdate, companyId);
+
+            if (updateResult.success) {
+                res.json({
+                    message: 'Employee updated successfully on Platform',
+                    dataResidency: 'platform',
+                    actorId: employee_id
+                });
+            } else {
+                res.status(500).json({
+                    error: 'Failed to update employee on Platform',
+                    details: updateResult.error
+                });
+            }
+        } else {
+            // App mode: update local DB only, NO Platform sync
+            console.log(`[update_employee] App mode - updating employee ${employee_id} in local DB...`);
+
+            const result = await collections.employees().updateOne(
+                { _id: new ObjectId(employee_id) },
+                { $set: updateFields }
+            );
+
+            if (result.matchedCount === 0) {
+                return res.status(404).json({ error: 'Employee not found' });
+            }
+
+            res.json({
+                message: 'Employee updated successfully',
+                dataResidency: 'app'
+            });
+        }
     } catch (error) {
         console.error('Error updating employee:', error);
         next(error);
@@ -1118,7 +1212,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
                 });
             }
         } else {
-            // App mode: update local database
+            // App mode: update local database only, NO Platform sync
             console.log(`[update_employee] Updating employee ${employeeId} in local DB...`);
 
             const employee = await collections.employees().findOne({ _id: new ObjectId(employeeId) });
@@ -1131,28 +1225,9 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
                 { $set: updateFields }
             );
 
-            // Optionally sync to Platform
-            let platformSync = { status: 'skipped', message: 'App mode - local update only' };
-            if (platformToken) {
-                try {
-                    const updatedEmployee = await collections.employees().findOne({ _id: new ObjectId(employeeId) });
-                    if (updatedEmployee) {
-                        const syncResult = await syncEmployeeToPlatform(updatedEmployee, companyId, false, platformToken);
-                        if (syncResult.success) {
-                            platformSync = { status: 'success', actorId: syncResult.actorId };
-                        } else {
-                            platformSync = { status: 'failed', error: syncResult.error };
-                        }
-                    }
-                } catch (syncError) {
-                    platformSync = { status: 'failed', error: syncError.message };
-                }
-            }
-
             res.json({
                 message: 'Employee updated successfully',
-                dataResidency: 'app',
-                platformSync
+                dataResidency: 'app'
             });
         }
     } catch (error) {
@@ -1229,16 +1304,15 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
                 });
             }
         } else {
-            // App mode: soft delete in local database
+            // App mode: soft delete in local database only, NO Platform sync
             console.log(`[delete_employee] Soft deleting employee ${employee_id} in local DB...`);
 
-            // Get employee before soft delete for Platform sync
             const employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
             if (!employee) {
                 return res.status(404).json({ error: 'Employee not found in local database' });
             }
 
-            const result = await collections.employees().updateOne(
+            await collections.employees().updateOne(
                 { _id: new ObjectId(employee_id) },
                 {
                     $set: {
@@ -1249,29 +1323,9 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
                 }
             );
 
-            // Sync deletion to Platform if connected
-            let platformSync = { status: 'skipped', message: 'App mode - local delete only' };
-            if (platformToken) {
-                try {
-                    // Sync deleted status
-                    const deletedEmployee = { ...employee, status: 'deleted' };
-                    console.log(`[delete_employee] Syncing deleted employee ${employee_id} to platform...`);
-                    const syncResult = await syncEmployeeToPlatform(deletedEmployee, companyId, false, platformToken);
-                    if (syncResult.success) {
-                        platformSync = { status: 'success', actorId: syncResult.actorId };
-                    } else {
-                        platformSync = { status: 'failed', error: syncResult.error };
-                    }
-                } catch (syncError) {
-                    console.error(`[delete_employee] Platform sync error: ${syncError.message}`);
-                    platformSync = { status: 'failed', error: syncError.message };
-                }
-            }
-
             res.json({
                 message: 'Employee deleted successfully',
-                dataResidency: 'app',
-                platformSync
+                dataResidency: 'app'
             });
         }
     } catch (error) {
