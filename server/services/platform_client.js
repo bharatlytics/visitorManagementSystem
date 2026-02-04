@@ -354,6 +354,72 @@ class PlatformClient {
         return null;
     }
 
+    /**
+     * Create a new actor in the Platform
+     * 
+     * @param {Object} actorData - Actor data to create
+     * @param {string} companyId - Company ID
+     * @returns {Promise<Object>} Result of create operation
+     */
+    async createActor(actorData, companyId = null) {
+        const cid = companyId || this.companyId;
+        console.log(`[PlatformClient] Creating actor on Platform (companyId: ${cid})`);
+        console.log(`[PlatformClient] Actor data:`, JSON.stringify(actorData).substring(0, 300));
+
+        try {
+            const url = `${this.baseUrl}/bharatlytics/v1/actors`;
+
+            const payload = {
+                ...actorData,
+                companyId: cid
+            };
+
+            const response = await axios.post(url, payload, {
+                headers: this.getHeaders(),
+                timeout: 15000
+            });
+
+            console.log(`[PlatformClient] Create response status: ${response.status}`);
+
+            if (response.status === 201 || response.status === 200) {
+                const actor = response.data.actor || response.data;
+                return {
+                    success: true,
+                    actorId: actor._id,
+                    actor: actor
+                };
+            }
+
+            return {
+                success: false,
+                error: `Unexpected status: ${response.status}`
+            };
+        } catch (error) {
+            console.error(`[PlatformClient] Error creating actor: ${error.message}`);
+            if (error.response) {
+                console.error(`[PlatformClient] Status: ${error.response.status}, Data:`, JSON.stringify(error.response.data));
+
+                // Check for duplicate error
+                if (error.response.status === 409) {
+                    return {
+                        success: false,
+                        error: 'duplicate: Actor already exists',
+                        duplicate: true
+                    };
+                }
+
+                return {
+                    success: false,
+                    error: error.response.data?.error || error.response.data?.message || error.message
+                };
+            }
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
 
     /**
      * Update an actor in the Platform

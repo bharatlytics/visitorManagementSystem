@@ -419,7 +419,9 @@ router.get('/:employee_id', requireCompanyAccess, async (req, res, next) => {
 
 /**
  * POST /api/employees
- * Create employee (JSON body)
+ * Create employee (JSON body) - Residency-aware
+ * Platform mode: Create on Platform, cache locally
+ * App mode: Create locally, sync to Platform
  */
 router.post('/', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -439,77 +441,142 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
         const companyId = data.companyId;
         const inputEmployeeId = data.employeeId;
 
-        // Check if an active employee exists with same employeeId (block creation)
-        if (inputEmployeeId) {
-            const activeEmployee = await collections.employees().findOne({
-                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
-                employeeId: inputEmployeeId,
-                status: { $ne: 'deleted' }
-            });
-
-            if (activeEmployee) {
-                return res.status(409).json({
-                    error: 'Duplicate Employee ID',
-                    message: `An active employee with ID ${inputEmployeeId} already exists`,
-                    field: 'employeeId'
-                });
-            }
-        }
-
-        // If deleted employee exists with same employeeId, rename the old one to preserve audit trail
-        if (inputEmployeeId) {
-            const deletedEmployees = await collections.employees().find({
-                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
-                employeeId: inputEmployeeId,
-                status: 'deleted'
-            }).toArray();
-
-            for (const deletedEmployee of deletedEmployees) {
-                const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
-                console.log(`[create_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
-
-                await collections.employees().updateOne(
-                    { _id: deletedEmployee._id },
-                    {
-                        $set: {
-                            employeeId: archiveId,
-                            originalEmployeeId: inputEmployeeId,
-                            archivedAt: new Date()
-                        }
-                    }
-                );
-            }
-        }
-
-        const employeeDoc = buildEmployeeDoc(data);
-        const result = await collections.employees().insertOne(employeeDoc);
-
-        // Sync to Platform (if connected)
-        let platformSync = { status: 'skipped', message: 'No platform token' };
+        // Get platform token
         let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
-
-        // Fallback to Bearer token
         if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
             platformToken = req.headers.authorization.substring(7);
         }
 
-        if (platformToken) {
-            console.log(`[create_employee] Syncing employee ${result.insertedId} to platform...`);
-            const syncResult = await syncEmployeeToPlatform(employeeDoc, data.companyId, false, platformToken); // No images in simple create
+        // Check residency mode
+        const { getResidencyMode } = require('../services/residency_detector');
+        const residencyMode = await getResidencyMode(companyId, 'employee');
+        console.log(`[create_employee] Company ${companyId}, residency mode: ${residencyMode}`);
 
-            if (syncResult.success) {
-                platformSync = { status: 'success', actorId: syncResult.actorId };
-            } else {
-                platformSync = { status: 'failed', error: syncResult.error };
+        if (residencyMode === 'platform') {
+            // PLATFORM MODE: Create on Platform first
+            console.log(`[create_employee] Platform mode - creating employee on Platform...`);
+
+            if (!platformToken) {
+                return res.status(401).json({
+                    error: 'Platform token required',
+                    message: 'Employee data resides on Platform. Please provide a valid platform token.'
+                });
             }
-        }
 
-        res.status(201).json({
-            message: 'Employee created successfully',
-            _id: result.insertedId.toString(),
-            employeeId: employeeDoc.employeeId,
-            platformSync
-        });
+            const platformClient = createPlatformClient(companyId, platformToken);
+
+            // Build Platform actor data
+            const actorData = {
+                companyId: String(companyId),
+                actorType: 'employee',
+                status: 'active',
+                attributes: {
+                    name: data.employeeName,
+                    employeeName: data.employeeName,
+                    email: data.email || null,
+                    phone: data.phone || null,
+                    designation: data.designation || null,
+                    department: data.department || null,
+                    employeeId: inputEmployeeId || `EMP-${Date.now()}`
+                },
+                sourceAppId: 'vms_app_v1',
+                metadata: { sourceApp: 'vms_app_v1' }
+            };
+
+            // Create on Platform
+            const createResult = await platformClient.createActor(actorData, companyId);
+
+            if (createResult.success) {
+                res.status(201).json({
+                    message: 'Employee created successfully on Platform',
+                    dataResidency: 'platform',
+                    actorId: createResult.actorId,
+                    employeeId: actorData.attributes.employeeId
+                });
+            } else {
+                // Handle duplicate - check if it's a deleted actor we can update
+                if (createResult.error && createResult.error.includes('duplicate')) {
+                    return res.status(409).json({
+                        error: 'Duplicate Employee',
+                        message: 'An employee with this ID already exists on Platform',
+                        dataResidency: 'platform'
+                    });
+                }
+                res.status(500).json({
+                    error: 'Failed to create employee on Platform',
+                    details: createResult.error
+                });
+            }
+        } else {
+            // APP MODE: Create locally, sync to Platform
+            console.log(`[create_employee] App mode - creating employee locally...`);
+
+            // Check if an active employee exists with same employeeId (block creation)
+            if (inputEmployeeId) {
+                const activeEmployee = await collections.employees().findOne({
+                    companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                    employeeId: inputEmployeeId,
+                    status: { $ne: 'deleted' }
+                });
+
+                if (activeEmployee) {
+                    return res.status(409).json({
+                        error: 'Duplicate Employee ID',
+                        message: `An active employee with ID ${inputEmployeeId} already exists`,
+                        field: 'employeeId'
+                    });
+                }
+            }
+
+            // If deleted employee exists with same employeeId, rename the old one to preserve audit trail
+            if (inputEmployeeId) {
+                const deletedEmployees = await collections.employees().find({
+                    companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                    employeeId: inputEmployeeId,
+                    status: 'deleted'
+                }).toArray();
+
+                for (const deletedEmployee of deletedEmployees) {
+                    const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
+                    console.log(`[create_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
+
+                    await collections.employees().updateOne(
+                        { _id: deletedEmployee._id },
+                        {
+                            $set: {
+                                employeeId: archiveId,
+                                originalEmployeeId: inputEmployeeId,
+                                archivedAt: new Date()
+                            }
+                        }
+                    );
+                }
+            }
+
+            const employeeDoc = buildEmployeeDoc(data);
+            const result = await collections.employees().insertOne(employeeDoc);
+
+            // Sync to Platform (if connected)
+            let platformSync = { status: 'skipped', message: 'No platform token' };
+            if (platformToken) {
+                console.log(`[create_employee] Syncing employee ${result.insertedId} to platform...`);
+                const syncResult = await syncEmployeeToPlatform(employeeDoc, companyId, false, platformToken);
+
+                if (syncResult.success) {
+                    platformSync = { status: 'success', actorId: syncResult.actorId };
+                } else {
+                    platformSync = { status: 'failed', error: syncResult.error };
+                }
+            }
+
+            res.status(201).json({
+                message: 'Employee created successfully',
+                dataResidency: 'app',
+                _id: result.insertedId.toString(),
+                employeeId: employeeDoc.employeeId,
+                platformSync
+            });
+        }
     } catch (error) {
         console.error('Error creating employee:', error);
         next(error);
