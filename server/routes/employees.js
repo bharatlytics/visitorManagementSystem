@@ -750,20 +750,44 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                 };
             }
 
-            // Build Platform actor data
+            // Build Platform actor data - images go in attributes.photos like syncEmployeeToPlatform
+            const attributes = {
+                name: data.employeeName,
+                employeeName: data.employeeName,
+                email: data.email || data.employeeEmail || null,
+                phone: data.phone || null,
+                designation: data.designation || null,
+                department: data.department || null,
+                employeeId: inputEmployeeId || `EMP-${Date.now()}`
+            };
+
+            // Set primary photo (prioritize center -> front)
+            if (imageData.center) {
+                attributes.photo = `data:image/jpeg;base64,${imageData.center}`;
+            } else if (imageData.front) {
+                attributes.photo = `data:image/jpeg;base64,${imageData.front}`;
+            } else if (imageData.left) {
+                attributes.photo = `data:image/jpeg;base64,${imageData.left}`;
+            }
+
+            // Add all images as photos map
+            if (Object.keys(imageData).length > 0) {
+                attributes.photos = {};
+                for (const [pos, base64] of Object.entries(imageData)) {
+                    attributes.photos[pos] = `data:image/jpeg;base64,${base64}`;
+                }
+            }
+
+            // Add embeddings to attributes
+            if (Object.keys(embeddingData).length > 0) {
+                attributes.embeddings = embeddingData;
+            }
+
             const actorData = {
                 companyId: String(companyId),
                 actorType: 'employee',
                 status: 'active',
-                attributes: {
-                    name: data.employeeName,
-                    employeeName: data.employeeName,
-                    email: data.email || data.employeeEmail || null,
-                    phone: data.phone || null,
-                    designation: data.designation || null,
-                    department: data.department || null,
-                    employeeId: inputEmployeeId || `EMP-${Date.now()}`
-                },
+                attributes: attributes,
                 actorImages: imageData,
                 actorEmbeddings: embeddingData,
                 sourceAppId: 'vms_app_v1',
