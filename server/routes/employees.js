@@ -764,8 +764,8 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     department: data.department || null,
                     employeeId: inputEmployeeId || `EMP-${Date.now()}`
                 },
-                images: imageData,
-                embeddings: embeddingData,
+                actorImages: imageData,
+                actorEmbeddings: embeddingData,
                 sourceAppId: 'vms_app_v1',
                 metadata: { sourceApp: 'vms_app_v1' }
             };
