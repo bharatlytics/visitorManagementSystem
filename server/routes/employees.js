@@ -538,6 +538,7 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
                 for (const deletedEmployee of deletedEmployees) {
                     const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
+                    const archiveEmail = deletedEmployee.email ? `${deletedEmployee.email}_archived_${Date.now()}` : null;
                     console.log(`[create_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
 
                     await collections.employees().updateOne(
@@ -545,7 +546,40 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
                         {
                             $set: {
                                 employeeId: archiveId,
+                                email: archiveEmail,
                                 originalEmployeeId: inputEmployeeId,
+                                originalEmail: deletedEmployee.email,
+                                archivedAt: new Date()
+                            }
+                        }
+                    );
+                }
+            }
+
+            // Also archive deleted employees with same email to avoid email unique constraint
+            const inputEmail = data.email;
+            if (inputEmail) {
+                const deletedByEmail = await collections.employees().find({
+                    companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                    email: inputEmail,
+                    status: 'deleted'
+                }).toArray();
+
+                for (const deletedEmployee of deletedByEmail) {
+                    console.log(`[create_employee] Archiving deleted employee ${deletedEmployee._id} by email ${inputEmail}`);
+                    const archiveId = deletedEmployee.employeeId ?
+                        `${deletedEmployee.employeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}` :
+                        `unknown_archived_${Date.now()}`;
+                    const archiveEmail = `${inputEmail}_archived_${Date.now()}`;
+
+                    await collections.employees().updateOne(
+                        { _id: deletedEmployee._id },
+                        {
+                            $set: {
+                                employeeId: archiveId,
+                                email: archiveEmail,
+                                originalEmployeeId: deletedEmployee.employeeId,
+                                originalEmail: inputEmail,
                                 archivedAt: new Date()
                             }
                         }
@@ -695,6 +729,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
             for (const deletedEmployee of deletedEmployees) {
                 const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
+                const archiveEmail = deletedEmployee.email ? `${deletedEmployee.email}_archived_${Date.now()}` : null;
                 console.log(`[register_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
 
                 await collections.employees().updateOne(
@@ -702,7 +737,40 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     {
                         $set: {
                             employeeId: archiveId,
-                            originalEmployeeId: inputEmployeeId, // Keep reference to original ID for audit
+                            email: archiveEmail,
+                            originalEmployeeId: inputEmployeeId,
+                            originalEmail: deletedEmployee.email,
+                            archivedAt: new Date()
+                        }
+                    }
+                );
+            }
+        }
+
+        // Also archive deleted employees with same email to avoid email unique constraint
+        const inputEmail = data.email || data.employeeEmail;
+        if (inputEmail) {
+            const deletedByEmail = await collections.employees().find({
+                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                email: inputEmail,
+                status: 'deleted'
+            }).toArray();
+
+            for (const deletedEmployee of deletedByEmail) {
+                console.log(`[register_employee] Archiving deleted employee ${deletedEmployee._id} by email ${inputEmail}`);
+                const archiveId = deletedEmployee.employeeId ?
+                    `${deletedEmployee.employeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}` :
+                    `unknown_archived_${Date.now()}`;
+                const archiveEmail = `${inputEmail}_archived_${Date.now()}`;
+
+                await collections.employees().updateOne(
+                    { _id: deletedEmployee._id },
+                    {
+                        $set: {
+                            employeeId: archiveId,
+                            email: archiveEmail,
+                            originalEmployeeId: deletedEmployee.employeeId,
+                            originalEmail: inputEmail,
                             archivedAt: new Date()
                         }
                     }
