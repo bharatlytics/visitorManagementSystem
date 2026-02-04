@@ -798,12 +798,68 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             const createResult = await platformClient.createActor(actorData, companyId);
 
             if (createResult.success) {
+                const actorId = createResult.actorId;
+                let biometricUploaded = false;
+
+                // Upload biometrics (images + embeddings) using Platform's /biometrics endpoint
+                if (Object.keys(imageData).length > 0 || Object.keys(embeddingData).length > 0) {
+                    try {
+                        const FormData = require('form-data');
+                        const formData = new FormData();
+                        formData.append('companyId', companyId);
+
+                        // Add face images
+                        for (const [pose, base64] of Object.entries(imageData)) {
+                            const buffer = Buffer.from(base64, 'base64');
+                            formData.append(pose, buffer, { filename: `${pose}.jpg`, contentType: 'image/jpeg' });
+                        }
+
+                        // Add pre-computed embedding if available
+                        if (Object.keys(embeddingData).length > 0) {
+                            const embVersion = Object.keys(embeddingData)[0];
+                            const embData = embeddingData[embVersion];
+                            if (embData && embData.data) {
+                                formData.append('embeddingAttached', 'true');
+                                formData.append('embeddingVersion', embVersion);
+                                const embBuffer = Buffer.from(embData.data, 'base64');
+                                formData.append('embedding', embBuffer, { filename: `${embVersion}.pkl`, contentType: 'application/octet-stream' });
+                            }
+                        }
+
+                        const biometricsUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
+                        console.log(`[register_employee] Uploading biometrics to ${biometricsUrl}`);
+
+                        const biometricsResponse = await fetch(biometricsUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${platformToken}`,
+                                'X-App-Id': 'vms_app_v1',
+                                ...formData.getHeaders()
+                            },
+                            body: formData,
+                            timeout: 30000
+                        });
+
+                        if (biometricsResponse.ok) {
+                            const bioResult = await biometricsResponse.json();
+                            console.log(`[register_employee] Biometrics uploaded:`, bioResult);
+                            biometricUploaded = true;
+                        } else {
+                            const errorText = await biometricsResponse.text();
+                            console.error(`[register_employee] Failed to upload biometrics: ${biometricsResponse.status} ${errorText}`);
+                        }
+                    } catch (bioError) {
+                        console.error(`[register_employee] Error uploading biometrics: ${bioError.message}`);
+                    }
+                }
+
                 res.status(201).json({
                     message: 'Employee registered successfully on Platform',
                     dataResidency: 'platform',
-                    actorId: createResult.actorId,
+                    actorId: actorId,
                     employeeId: actorData.attributes.employeeId,
-                    hasBiometric: Object.keys(imageData).length > 0
+                    hasBiometric: Object.keys(imageData).length > 0,
+                    biometricUploaded: biometricUploaded
                 });
             } else {
                 if (createResult.duplicate) {
@@ -845,12 +901,59 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                                     const retryResult = await platformClient.createActor(actorData, companyId);
 
                                     if (retryResult.success) {
+                                        const retryActorId = retryResult.actorId;
+                                        let retryBioUploaded = false;
+
+                                        // Upload biometrics for retry actor
+                                        if (Object.keys(imageData).length > 0 || Object.keys(embeddingData).length > 0) {
+                                            try {
+                                                const FormData = require('form-data');
+                                                const formData = new FormData();
+                                                formData.append('companyId', companyId);
+
+                                                for (const [pose, base64] of Object.entries(imageData)) {
+                                                    const buffer = Buffer.from(base64, 'base64');
+                                                    formData.append(pose, buffer, { filename: `${pose}.jpg`, contentType: 'image/jpeg' });
+                                                }
+
+                                                if (Object.keys(embeddingData).length > 0) {
+                                                    const embVersion = Object.keys(embeddingData)[0];
+                                                    const embData = embeddingData[embVersion];
+                                                    if (embData && embData.data) {
+                                                        formData.append('embeddingAttached', 'true');
+                                                        formData.append('embeddingVersion', embVersion);
+                                                        const embBuffer = Buffer.from(embData.data, 'base64');
+                                                        formData.append('embedding', embBuffer, { filename: `${embVersion}.pkl`, contentType: 'application/octet-stream' });
+                                                    }
+                                                }
+
+                                                const biometricsUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${retryActorId}/biometrics`;
+                                                const biometricsResponse = await fetch(biometricsUrl, {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Authorization': `Bearer ${platformToken}`,
+                                                        'X-App-Id': 'vms_app_v1',
+                                                        ...formData.getHeaders()
+                                                    },
+                                                    body: formData
+                                                });
+
+                                                if (biometricsResponse.ok) {
+                                                    console.log(`[register_employee] Biometrics uploaded for retry actor`);
+                                                    retryBioUploaded = true;
+                                                }
+                                            } catch (bioErr) {
+                                                console.error(`[register_employee] Error uploading biometrics for retry: ${bioErr.message}`);
+                                            }
+                                        }
+
                                         return res.status(201).json({
                                             message: 'Employee registered successfully on Platform',
                                             dataResidency: 'platform',
-                                            actorId: retryResult.actorId,
+                                            actorId: retryActorId,
                                             employeeId: actorData.attributes.employeeId,
                                             hasBiometric: Object.keys(imageData).length > 0,
+                                            biometricUploaded: retryBioUploaded,
                                             archivedPreviousActor: existingActor._id
                                         });
                                     }
