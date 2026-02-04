@@ -436,6 +436,51 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Invalid email format' });
         }
 
+        const companyId = data.companyId;
+        const inputEmployeeId = data.employeeId;
+
+        // Check if an active employee exists with same employeeId (block creation)
+        if (inputEmployeeId) {
+            const activeEmployee = await collections.employees().findOne({
+                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                employeeId: inputEmployeeId,
+                status: { $ne: 'deleted' }
+            });
+
+            if (activeEmployee) {
+                return res.status(409).json({
+                    error: 'Duplicate Employee ID',
+                    message: `An active employee with ID ${inputEmployeeId} already exists`,
+                    field: 'employeeId'
+                });
+            }
+        }
+
+        // If deleted employee exists with same employeeId, rename the old one to preserve audit trail
+        if (inputEmployeeId) {
+            const deletedEmployees = await collections.employees().find({
+                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                employeeId: inputEmployeeId,
+                status: 'deleted'
+            }).toArray();
+
+            for (const deletedEmployee of deletedEmployees) {
+                const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
+                console.log(`[create_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
+
+                await collections.employees().updateOne(
+                    { _id: deletedEmployee._id },
+                    {
+                        $set: {
+                            employeeId: archiveId,
+                            originalEmployeeId: inputEmployeeId,
+                            archivedAt: new Date()
+                        }
+                    }
+                );
+            }
+        }
+
         const employeeDoc = buildEmployeeDoc(data);
         const result = await collections.employees().insertOne(employeeDoc);
 
