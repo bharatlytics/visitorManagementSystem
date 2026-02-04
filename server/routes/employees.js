@@ -783,6 +783,60 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                 });
             } else {
                 if (createResult.duplicate) {
+                    // Check if the duplicate is a deleted actor - if so, archive it and retry
+                    console.log(`[register_employee] Duplicate detected, checking if deleted actor exists...`);
+
+                    try {
+                        // Find all actors with this employeeId
+                        const url = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors`;
+                        const response = await fetch(url + `?companyId=${companyId}&actorType=employee`, {
+                            headers: {
+                                'Authorization': `Bearer ${platformToken}`,
+                                'X-App-Id': 'vms_app_v1'
+                            }
+                        });
+
+                        if (response.ok) {
+                            const actors = await response.json();
+                            const existingActor = (Array.isArray(actors) ? actors : actors.actors || [])
+                                .find(a => a.attributes?.employeeId === inputEmployeeId);
+
+                            if (existingActor && existingActor.status === 'deleted') {
+                                // Archive the deleted actor by renaming its employeeId
+                                console.log(`[register_employee] Found deleted actor ${existingActor._id}, archiving...`);
+                                const archiveId = `${inputEmployeeId}_archived_${Date.now()}`;
+
+                                const archiveResult = await platformClient.updateActor(existingActor._id, {
+                                    attributes: {
+                                        ...existingActor.attributes,
+                                        employeeId: archiveId,
+                                        originalEmployeeId: inputEmployeeId,
+                                        archivedAt: new Date().toISOString()
+                                    }
+                                }, companyId);
+
+                                if (archiveResult.success) {
+                                    console.log(`[register_employee] Archived deleted actor, retrying creation...`);
+                                    // Retry creation
+                                    const retryResult = await platformClient.createActor(actorData, companyId);
+
+                                    if (retryResult.success) {
+                                        return res.status(201).json({
+                                            message: 'Employee registered successfully on Platform',
+                                            dataResidency: 'platform',
+                                            actorId: retryResult.actorId,
+                                            employeeId: actorData.attributes.employeeId,
+                                            hasBiometric: Object.keys(imageData).length > 0,
+                                            archivedPreviousActor: existingActor._id
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    } catch (archiveError) {
+                        console.error(`[register_employee] Error archiving deleted actor: ${archiveError.message}`);
+                    }
+
                     return res.status(409).json({
                         error: 'Duplicate Employee',
                         message: 'An employee with this ID already exists on Platform',
@@ -1268,7 +1322,7 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
         console.log(`[delete_employee] Company ${companyId}, residency mode: ${residencyMode}`);
 
         if (residencyMode === 'platform') {
-            // Platform mode: update status to 'deleted' on Platform
+            // Platform mode: update status to 'deleted' AND archive employeeId on Platform
             console.log(`[delete_employee] Deleting employee ${employee_id} on Platform...`);
 
             const { createPlatformClient } = require('../services/platform_client');
@@ -1280,22 +1334,35 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
                 return res.status(404).json({ error: 'Employee not found on Platform' });
             }
 
-            // Update status to deleted on Platform
+            // Archive the employeeId to allow future re-registration with same ID
+            const originalEmployeeId = existingEmployee.attributes?.employeeId;
+            const archiveId = originalEmployeeId ? `${originalEmployeeId}_archived_${Date.now()}` : null;
+            const originalEmail = existingEmployee.attributes?.email;
+            const archiveEmail = originalEmail ? `${originalEmail}_archived_${Date.now()}` : null;
+
+            // Update status to deleted AND archive employeeId/email on Platform
             const platformUpdate = {
                 status: 'deleted',
                 attributes: {
                     ...existingEmployee.attributes,
-                    deletedAt: new Date().toISOString()
+                    employeeId: archiveId || existingEmployee.attributes?.employeeId,
+                    email: archiveEmail || existingEmployee.attributes?.email,
+                    originalEmployeeId: originalEmployeeId,
+                    originalEmail: originalEmail,
+                    deletedAt: new Date().toISOString(),
+                    archivedAt: new Date().toISOString()
                 }
             };
 
+            console.log(`[delete_employee] Archiving: ${originalEmployeeId} -> ${archiveId}`);
             const deleteResult = await platformClient.updateActor(employee_id, platformUpdate, companyId);
 
             if (deleteResult.success) {
                 res.json({
-                    message: 'Employee deleted successfully on Platform',
+                    message: 'Employee deleted and archived successfully on Platform',
                     dataResidency: 'platform',
-                    actorId: employee_id
+                    actorId: employee_id,
+                    archivedEmployeeId: archiveId
                 });
             } else {
                 res.status(500).json({
