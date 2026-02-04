@@ -750,7 +750,8 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                 };
             }
 
-            // Build Platform actor data - images go in attributes.photos like syncEmployeeToPlatform
+            // Build Platform actor data - DON'T include photos/embeddings here
+            // They will be uploaded via /biometrics endpoint which handles pre-computed embeddings properly
             const attributes = {
                 name: data.employeeName,
                 employeeName: data.employeeName,
@@ -761,35 +762,16 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                 employeeId: inputEmployeeId || `EMP-${Date.now()}`
             };
 
-            // Set primary photo (prioritize center -> front)
-            if (imageData.center) {
-                attributes.photo = `data:image/jpeg;base64,${imageData.center}`;
-            } else if (imageData.front) {
-                attributes.photo = `data:image/jpeg;base64,${imageData.front}`;
-            } else if (imageData.left) {
-                attributes.photo = `data:image/jpeg;base64,${imageData.left}`;
-            }
-
-            // Add all images as photos map
-            if (Object.keys(imageData).length > 0) {
-                attributes.photos = {};
-                for (const [pos, base64] of Object.entries(imageData)) {
-                    attributes.photos[pos] = `data:image/jpeg;base64,${base64}`;
-                }
-            }
-
-            // Add embeddings to attributes
-            if (Object.keys(embeddingData).length > 0) {
-                attributes.embeddings = embeddingData;
-            }
+            // NOTE: Don't add photo/photos/embeddings to attributes!
+            // Platform's create_actor queues embedding jobs when it sees photos,
+            // which prevents /biometrics from setting status to 'done'.
 
             const actorData = {
                 companyId: String(companyId),
                 actorType: 'employee',
                 status: 'active',
                 attributes: attributes,
-                actorImages: imageData,
-                actorEmbeddings: embeddingData,
+                // Don't include actorImages/actorEmbeddings - use /biometrics endpoint instead
                 sourceAppId: 'vms_app_v1',
                 metadata: { sourceApp: 'vms_app_v1' }
             };
