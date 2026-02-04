@@ -501,6 +501,50 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         }
 
         const companyId = data.companyId;
+        const inputEmployeeId = data.employeeId;
+
+        // Check if an active employee exists with same employeeId (block registration)
+        if (inputEmployeeId) {
+            const activeEmployee = await collections.employees().findOne({
+                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                employeeId: inputEmployeeId,
+                status: { $ne: 'deleted' }
+            });
+
+            if (activeEmployee) {
+                return res.status(409).json({
+                    error: 'Duplicate Employee ID',
+                    message: `An active employee with ID ${inputEmployeeId} already exists`,
+                    field: 'employeeId'
+                });
+            }
+        }
+
+        // If deleted employee exists with same employeeId, rename the old one to preserve audit trail
+        // This allows creating a new record with the same employeeId
+        if (inputEmployeeId) {
+            const deletedEmployees = await collections.employees().find({
+                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                employeeId: inputEmployeeId,
+                status: 'deleted'
+            }).toArray();
+
+            for (const deletedEmployee of deletedEmployees) {
+                const archiveId = `${inputEmployeeId}_archived_${deletedEmployee.deletedAt ? deletedEmployee.deletedAt.getTime() : Date.now()}`;
+                console.log(`[register_employee] Archiving deleted employee ${deletedEmployee._id}, renaming employeeId to ${archiveId}`);
+
+                await collections.employees().updateOne(
+                    { _id: deletedEmployee._id },
+                    {
+                        $set: {
+                            employeeId: archiveId,
+                            originalEmployeeId: inputEmployeeId, // Keep reference to original ID for audit
+                            archivedAt: new Date()
+                        }
+                    }
+                );
+            }
+        }
 
         // Process face images
         const imageDict = {};
@@ -603,7 +647,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // Build employee document
+        // Build and create new employee document
         const employeeDoc = buildEmployeeDoc(data, imageDict, initialEmbeddingsDict);
         const result = await collections.employees().insertOne(employeeDoc);
         const employeeId = result.insertedId;
