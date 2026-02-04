@@ -787,6 +787,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                 if (Object.keys(imageData).length > 0 || Object.keys(embeddingData).length > 0) {
                     try {
                         const FormData = require('form-data');
+                        const axios = require('axios');
                         const formData = new FormData();
                         formData.append('companyId', companyId);
 
@@ -811,27 +812,24 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                         const biometricsUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
                         console.log(`[register_employee] Uploading biometrics to ${biometricsUrl}`);
 
-                        const biometricsResponse = await fetch(biometricsUrl, {
-                            method: 'POST',
+                        const biometricsResponse = await axios.post(biometricsUrl, formData, {
                             headers: {
                                 'Authorization': `Bearer ${platformToken}`,
                                 'X-App-Id': 'vms_app_v1',
                                 ...formData.getHeaders()
                             },
-                            body: formData,
                             timeout: 30000
                         });
 
-                        if (biometricsResponse.ok) {
-                            const bioResult = await biometricsResponse.json();
-                            console.log(`[register_employee] Biometrics uploaded:`, bioResult);
+                        if (biometricsResponse.status === 200) {
+                            console.log(`[register_employee] Biometrics uploaded:`, biometricsResponse.data);
                             biometricUploaded = true;
-                        } else {
-                            const errorText = await biometricsResponse.text();
-                            console.error(`[register_employee] Failed to upload biometrics: ${biometricsResponse.status} ${errorText}`);
                         }
                     } catch (bioError) {
                         console.error(`[register_employee] Error uploading biometrics: ${bioError.message}`);
+                        if (bioError.response) {
+                            console.error(`[register_employee] Response: ${bioError.response.status}`, bioError.response.data);
+                        }
                     }
                 }
 
@@ -890,6 +888,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                                         if (Object.keys(imageData).length > 0 || Object.keys(embeddingData).length > 0) {
                                             try {
                                                 const FormData = require('form-data');
+                                                const axios = require('axios');
                                                 const formData = new FormData();
                                                 formData.append('companyId', companyId);
 
@@ -910,17 +909,16 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                                                 }
 
                                                 const biometricsUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${retryActorId}/biometrics`;
-                                                const biometricsResponse = await fetch(biometricsUrl, {
-                                                    method: 'POST',
+                                                const biometricsResponse = await axios.post(biometricsUrl, formData, {
                                                     headers: {
                                                         'Authorization': `Bearer ${platformToken}`,
                                                         'X-App-Id': 'vms_app_v1',
                                                         ...formData.getHeaders()
                                                     },
-                                                    body: formData
+                                                    timeout: 30000
                                                 });
 
-                                                if (biometricsResponse.ok) {
+                                                if (biometricsResponse.status === 200) {
                                                     console.log(`[register_employee] Biometrics uploaded for retry actor`);
                                                     retryBioUploaded = true;
                                                 }
