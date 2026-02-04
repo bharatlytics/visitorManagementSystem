@@ -831,7 +831,9 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
 
 /**
  * DELETE /api/employees/:employee_id
- * Soft delete employee - syncs to Platform if connected
+ * Soft delete employee - respects data residency
+ * Platform mode: Updates status to 'deleted' on Platform
+ * App mode: Soft deletes in local DB, optionally syncs to Platform
  */
 router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -842,50 +844,103 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Invalid employee ID format' });
         }
 
-        // Get employee before soft delete for Platform sync
-        const employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
-
-        const result = await collections.employees().updateOne(
-            { _id: new ObjectId(employee_id) },
-            {
-                $set: {
-                    status: 'deleted',
-                    deletedAt: new Date(),
-                    lastUpdated: new Date()
-                }
-            }
-        );
-
-        if (result.matchedCount === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
+        if (!companyId) {
+            return res.status(400).json({ error: 'Company ID is required for residency-aware delete' });
         }
 
-        // Sync deletion to Platform if connected
-        let platformSync = { status: 'skipped', message: 'No platform token' };
+        // Get platform token
         let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
         if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
             platformToken = req.headers.authorization.substring(7);
         }
 
-        const syncCompanyId = companyId || (employee?.companyId?.toString());
-        if (platformToken && syncCompanyId && employee) {
-            try {
-                // Sync deleted status
-                const deletedEmployee = { ...employee, status: 'deleted' };
-                console.log(`[delete_employee] Syncing deleted employee ${employee_id} to platform...`);
-                const syncResult = await syncEmployeeToPlatform(deletedEmployee, syncCompanyId, false, platformToken);
-                if (syncResult.success) {
-                    platformSync = { status: 'success', actorId: syncResult.actorId };
-                } else {
-                    platformSync = { status: 'failed', error: syncResult.error };
-                }
-            } catch (syncError) {
-                console.error(`[delete_employee] Platform sync error: ${syncError.message}`);
-                platformSync = { status: 'failed', error: syncError.message };
-            }
-        }
+        // Check residency mode
+        const { getResidencyMode } = require('../services/residency_detector');
+        const residencyMode = await getResidencyMode(companyId, 'employee');
+        console.log(`[delete_employee] Company ${companyId}, residency mode: ${residencyMode}`);
 
-        res.json({ message: 'Employee deleted successfully', platformSync });
+        if (residencyMode === 'platform') {
+            // Platform mode: update status to 'deleted' on Platform
+            console.log(`[delete_employee] Deleting employee ${employee_id} on Platform...`);
+
+            const { createPlatformClient } = require('../services/platform_client');
+            const platformClient = createPlatformClient(companyId, platformToken);
+
+            // First check if employee exists on Platform
+            const existingEmployee = await platformClient.getEmployeeById(employee_id, companyId);
+            if (!existingEmployee) {
+                return res.status(404).json({ error: 'Employee not found on Platform' });
+            }
+
+            // Update status to deleted on Platform
+            const platformUpdate = {
+                status: 'deleted',
+                attributes: {
+                    ...existingEmployee.attributes,
+                    deletedAt: new Date().toISOString()
+                }
+            };
+
+            const deleteResult = await platformClient.updateActor(employee_id, platformUpdate, companyId);
+
+            if (deleteResult.success) {
+                res.json({
+                    message: 'Employee deleted successfully on Platform',
+                    dataResidency: 'platform',
+                    actorId: employee_id
+                });
+            } else {
+                res.status(500).json({
+                    error: 'Failed to delete employee on Platform',
+                    details: deleteResult.error
+                });
+            }
+        } else {
+            // App mode: soft delete in local database
+            console.log(`[delete_employee] Soft deleting employee ${employee_id} in local DB...`);
+
+            // Get employee before soft delete for Platform sync
+            const employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
+            if (!employee) {
+                return res.status(404).json({ error: 'Employee not found in local database' });
+            }
+
+            const result = await collections.employees().updateOne(
+                { _id: new ObjectId(employee_id) },
+                {
+                    $set: {
+                        status: 'deleted',
+                        deletedAt: new Date(),
+                        lastUpdated: new Date()
+                    }
+                }
+            );
+
+            // Sync deletion to Platform if connected
+            let platformSync = { status: 'skipped', message: 'App mode - local delete only' };
+            if (platformToken) {
+                try {
+                    // Sync deleted status
+                    const deletedEmployee = { ...employee, status: 'deleted' };
+                    console.log(`[delete_employee] Syncing deleted employee ${employee_id} to platform...`);
+                    const syncResult = await syncEmployeeToPlatform(deletedEmployee, companyId, false, platformToken);
+                    if (syncResult.success) {
+                        platformSync = { status: 'success', actorId: syncResult.actorId };
+                    } else {
+                        platformSync = { status: 'failed', error: syncResult.error };
+                    }
+                } catch (syncError) {
+                    console.error(`[delete_employee] Platform sync error: ${syncError.message}`);
+                    platformSync = { status: 'failed', error: syncError.message };
+                }
+            }
+
+            res.json({
+                message: 'Employee deleted successfully',
+                dataResidency: 'app',
+                platformSync
+            });
+        }
     } catch (error) {
         console.error('Error deleting employee:', error);
         next(error);

@@ -1,9 +1,9 @@
 # VMS API Reference - Enterprise Edition
 
-**Version:** 4.0  
+**Version:** 5.0  
 **Base URL (Local):** `http://localhost:5001/api`  
 **Base URL (Production):** `https://visitor-management-system-pearl.vercel.app/api`  
-**Last Updated:** January 2026
+**Last Updated:** February 2026
 
 ---
 
@@ -244,17 +244,28 @@ sharedPreferences.edit()
    - [API Access (Mobile/Server)](#api-access-mobileserver)
    - [Mobile/Android SSO](#mobileandroid-authentication-sso)
 1. [Visitors](#1-visitors)
+   - CRUD Operations: List, Get, Register, Update, Delete
+   - Blacklist/Unblacklist, Images, Embeddings
 2. [Visits](#2-visits)
+   - CRUD Operations: List, Get, Schedule, Update, Delete
+   - Check-in, Check-out, QR Codes
 3. [Employees](#3-employees)
+   - CRUD Operations: List, Get, Create, Register, Update (PUT/PATCH), Delete
+   - Blacklist/Unblacklist, Embeddings, Attendance
+   - Data Residency-Aware Operations
 4. [Locations](#4-locations)
 5. [Dashboard](#5-dashboard)
 6. [Analytics](#6-analytics)
 7. [Settings](#7-settings)
 8. [Security](#8-security)
-9. [Data Residency & Mapping](#9-data-residency--mapping)
-10. [Webhooks](#10-webhooks)
-11. [Error Codes](#11-error-codes)
-12. [Data Models](#12-data-models)
+9. [Data Residency & CRUD Operations](#8-data-residency--crud-operations)
+   - Residency Modes Overview
+   - Federated Queries (Visitors/Employees)
+   - Sync Operations (Visitors/Employees)
+   - Actor Type Mapping
+10. [Webhooks](#9-webhooks)
+11. [Error Codes](#10-error-codes)
+12. [Data Models](#11-data-models)
 
 ---
 
@@ -909,13 +920,31 @@ GET /api/visitors/visits/qr/{visit_id}
 
 **Base Path:** `/api/employees`
 
-VMS fetches employee data respecting the **Data Mapping** configuration from the platform. The data source and actor type are determined by the company's mapping settings.
+VMS provides full **CRUD operations** for employee management with **data residency awareness**. All operations respect the company's Data Mapping configuration from the platform.
 
-### 3.1 List Employees (Hosts)
+### Data Residency Overview
+
+| Residency Mode | Data Source | Write Behavior |
+|--------------|--------|-------------|
+| `platform` | Bharatlytics Platform API | Creates/updates actors directly on Platform |
+| `app` | Local VMS Database | Creates/updates in VMS DB, optionally syncs to Platform |
+
+---
+
+### 3.1 List Employees
 
 ```http
 GET /api/employees?companyId={companyId}
 ```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+| `status` | string | No | Filter by status: `active`, `inactive` |
+| `hostsOnly` | string | No | Set to `true` to filter active, non-blacklisted hosts |
+| `includeDeleted` | string | No | Set to `true` to include soft-deleted employees |
 
 **Data Source Logic (Residency-Aware):**
 
@@ -923,27 +952,6 @@ GET /api/employees?companyId={companyId}
 |--------------|--------|-------------|
 | `platform` | Platform API | Fetches actors of the **mapped type** from Platform |
 | `app` | Local VMS Database | Returns VMS's local employee records |
-
-**How Residency is Determined:**
-
-1. **Check ResidencyDetector** for company's employee residency mode
-2. **Safe Defaults:**
-   - Employees: `platform` (if company not in VMS DB)
-   - Visitors: `app` (always stay in VMS for safety)
-
-**Actor Type Mapping:**
-
-The manifest configuration determines WHICH Platform actor type to fetch. For example:
-
-```json
-{
-  "actorMappings": {
-    "employee": ["shift_supervisor"]
-  }
-}
-```
-
-This means VMS's "employee" concept maps to Platform's "shift_supervisor" actor type. VMS will fetch shift_supervisors from Platform, not employees.
 
 **Response:**
 ```json
@@ -956,38 +964,96 @@ This means VMS's "employee" concept maps to Platform's "shift_supervisor" actor 
     "phone": "+919876543210",
     "department": "Engineering",
     "designation": "Manager",
-    "actorType": "shift_supervisor"
+    "status": "active",
+    "blacklisted": false
   }
 ]
 ```
 
-### 3.2 Data Flow
+---
 
-```
-VMS Request → ResidencyDetector.get_mode(companyId, 'employee')
-            → Returns: 'platform' or 'app'
-            
-If mode = 'app':
-  → Fetch from VMS local database
-  → Query: employees_collection.find({companyId})
-  → Return local employee records
+### 3.2 Get Single Employee
 
-If mode = 'platform':
-  → Check manifest for actor mapping
-  → Get mapped actor type (e.g., 'shift_supervisor')
-  → Call Platform API: GET /actors?actorType={mapped_type}
-  → Return Platform actors (transformed to VMS format)
+```http
+GET /api/employees/{employee_id}?companyId={companyId}
 ```
 
-**Key Points:**
-- ✅ Always checks residency FIRST
-- ✅ Never hits Platform API without checking residency
-- ✅ Respects manifest-based actor type mappings
-- ✅ No fallback to VMS DB in platform mode (prevents data duplication)
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `employee_id` | string | Yes | Employee ObjectId or employeeId code |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | No | Company ObjectId (enables residency-aware lookup) |
+
+**Response:**
+```json
+{
+  "employee": {
+    "_id": "507f1f77bcf86cd799439012",
+    "employeeId": "EMP001",
+    "employeeName": "John Doe",
+    "email": "john.doe@company.com",
+    "phone": "+919876543210",
+    "department": "Engineering",
+    "designation": "Software Engineer",
+    "status": "active",
+    "blacklisted": false,
+    "employeeEmbeddings": {
+      "buffalo_l": {
+        "status": "completed",
+        "downloadUrl": "http://localhost:5001/api/employees/embeddings/emb123"
+      }
+    },
+    "createdAt": "2024-12-10T09:00:00Z"
+  }
+}
+```
 
 ---
 
-### 3.3 Register Employee
+### 3.3 Create Employee (JSON)
+
+```http
+POST /api/employees
+Content-Type: application/json
+```
+
+Create an employee without biometric data. For face registration, use `/api/employees/register` instead.
+
+**Request Body:**
+```json
+{
+  "companyId": "507f1f77bcf86cd799439011",
+  "employeeName": "John Doe",
+  "email": "john.doe@company.com",
+  "phone": "+919876543210",
+  "department": "Engineering",
+  "designation": "Software Engineer",
+  "employeeId": "EMP001"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Employee created successfully",
+  "_id": "507f1f77bcf86cd799439012",
+  "employeeId": "EMP001",
+  "platformSync": {
+    "status": "success",
+    "actorId": "platform_actor_id"
+  }
+}
+```
+
+---
+
+### 3.4 Register Employee (with Biometrics)
 
 ```http
 POST /api/employees/register
@@ -1003,21 +1069,17 @@ Register a new employee with face images for biometric recognition. Behavior dif
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `companyId` | string | Yes | Company ObjectId |
-| `employeeId` | string | Yes | Unique employee code (e.g., EMP001) |
 | `employeeName` | string | Yes | Full name |
 
 **Optional Form Fields:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `employeeEmail` | string | No | Email address (validated format) |
-| `employeeMobile` | string | No | Phone number (10 digits) |
+| `employeeId` | string | No | Unique employee code (auto-generated if not provided) |
+| `email` / `employeeEmail` | string | No | Email address (validated format) |
+| `phone` / `employeeMobile` | string | No | Phone number (10 digits) |
 | `department` | string | No | Department name |
 | `designation` | string | No | Job title / designation |
-| `employeeDesignation` | string | No | Alternative field for designation |
-| `gender` | string | No | Gender: `male`, `female`, `other` |
-| `joiningDate` | string | No | Date of joining (ISO 8601 format) |
-| `employeeReportingId` | string | No | Reporting manager's employee ID |
 | `status` | string | No | Initial status: `active` (default), `inactive` |
 
 **Face Image Fields (for biometric registration):**
@@ -1048,8 +1110,8 @@ curl -X POST http://localhost:5001/api/employees/register \
   -F "companyId=507f1f77bcf86cd799439011" \
   -F "employeeId=EMP001" \
   -F "employeeName=John Doe" \
-  -F "employeeEmail=john.doe@company.com" \
-  -F "employeeMobile=9876543210" \
+  -F "email=john.doe@company.com" \
+  -F "phone=9876543210" \
   -F "department=Engineering" \
   -F "designation=Software Engineer" \
   -F "center=@/path/to/center.jpg" \
@@ -1057,55 +1119,330 @@ curl -X POST http://localhost:5001/api/employees/register \
   -F "right=@/path/to/right.jpg"
 ```
 
-**Success Response - App Mode (201 Created):**
+**Success Response (201 Created):**
 ```json
 {
-  "message": "Employee registration successful",
+  "message": "Employee registered successfully",
   "_id": "507f1f77bcf86cd799439012",
   "employeeId": "EMP001",
-  "employeeName": "John Doe",
   "embeddingStatus": {
     "buffalo_l": "queued",
-    "facenet": "queued"
+    "mobile_facenet_v1": "completed"
   },
   "hasBiometric": true,
-  "residencyMode": "app",
-  "platformSync": null
+  "platformSync": {
+    "status": "success",
+    "actorId": "platform_actor_id"
+  }
 }
 ```
 
-**Success Response - Platform Mode (201 Created):**
+---
+
+### 3.5 Update Employee (PUT)
+
+```http
+PUT /api/employees/{employee_id}
+Content-Type: application/json
+```
+
+Update employee details. Automatically syncs to Platform if connected.
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `employee_id` | string | Yes | Employee ObjectId |
+
+**Request Body:**
 ```json
 {
-  "message": "Employee registered successfully on Platform",
-  "employee": {
-    "actor": {
-      "_id": "platform_actor_id",
-      "actorType": "employee",
-      "attributes": {
-        "employeeName": "John Doe",
-        "employeeId": "EMP001"
-      }
-    }
-  },
-  "residencyMode": "platform",
-  "hasPhoto": true
+  "companyId": "507f1f77bcf86cd799439011",
+  "employeeName": "John Doe Updated",
+  "email": "john.new@company.com",
+  "phone": "+919876543211",
+  "department": "Product",
+  "designation": "Senior Engineer",
+  "status": "active"
 }
 ```
 
-**Response Fields:**
+**Allowed Fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `message` | string | Success message |
-| `_id` | string | Created employee ObjectId (app mode) |
-| `employeeId` | string | Employee code |
 | `employeeName` | string | Full name |
-| `embeddingStatus` | object | Status per model: `queued`, `started`, `done`, `failed` |
-| `hasBiometric` | boolean | Whether face images were provided |
-| `residencyMode` | string | Where data is stored: `app` (local) or `platform` |
-| `platformSync` | object | Platform sync details (app mode only) |
-| `employee` | object | Created actor data (platform mode only) |
+| `email` | string | Email address |
+| `phone` | string | Phone number |
+| `department` | string | Department name |
+| `designation` | string | Job title |
+| `employeeId` | string | Employee code |
+| `status` | string | `active`, `inactive` |
+
+**Response:**
+```json
+{
+  "message": "Employee updated successfully",
+  "platformSync": {
+    "status": "success",
+    "actorId": "platform_actor_id"
+  }
+}
+```
+
+---
+
+### 3.6 Update Employee (PATCH - Residency-Aware)
+
+```http
+PATCH /api/employees/update
+Content-Type: application/json
+```
+
+**Residency-aware update** - updates Platform or local DB based on company's data residency mode.
+
+**Request Body:**
+```json
+{
+  "_id": "507f1f77bcf86cd799439012",
+  "companyId": "507f1f77bcf86cd799439011",
+  "employeeName": "John Doe Updated",
+  "department": "Product",
+  "status": "active"
+}
+```
+
+**Response - Platform Mode:**
+```json
+{
+  "message": "Employee updated successfully on Platform",
+  "dataResidency": "platform",
+  "actorId": "507f1f77bcf86cd799439012"
+}
+```
+
+**Response - App Mode:**
+```json
+{
+  "message": "Employee updated successfully",
+  "dataResidency": "app",
+  "platformSync": {
+    "status": "success",
+    "actorId": "platform_actor_id"
+  }
+}
+```
+
+> [!IMPORTANT]
+> This endpoint checks the company's residency mode and routes the update to either the Platform API (for `platform` mode) or the local VMS database (for `app` mode).
+
+---
+
+### 3.7 Delete Employee (Residency-Aware)
+
+```http
+DELETE /api/employees/{employee_id}?companyId={companyId}
+```
+
+**Residency-aware soft delete** - deletes on Platform or local DB based on company's data residency mode.
+
+**Behavior:**
+- **Platform mode**: Updates status to `deleted` on Platform API
+- **App mode**: Soft-deletes in VMS local DB, optionally syncs to Platform
+- Records `deletedAt` timestamp in both modes
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `employee_id` | string | Yes | Employee ObjectId |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | **Yes** | Company ObjectId (required for residency check) |
+
+**Response - Platform Mode:**
+```json
+{
+  "message": "Employee deleted successfully on Platform",
+  "dataResidency": "platform",
+  "actorId": "507f1f77bcf86cd799439012"
+}
+```
+
+**Response - App Mode:**
+```json
+{
+  "message": "Employee deleted successfully",
+  "dataResidency": "app",
+  "platformSync": {
+    "status": "success",
+    "actorId": "platform_actor_id"
+  }
+}
+```
+
+> [!IMPORTANT]
+> This endpoint now checks the company's residency mode and routes the delete operation accordingly. Employees stored on Platform will be deleted on Platform; employees in VMS local DB will be soft-deleted locally.
+
+> [!NOTE]
+> Soft-deleted employees are kept for audit purposes. They will not appear in regular listing queries unless `includeDeleted=true` is specified.
+
+---
+
+### 3.8 Blacklist Employee
+
+```http
+POST /api/employees/{employee_id}/blacklist
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "reason": "Policy violation"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Employee blacklisted successfully"
+}
+```
+
+---
+
+### 3.9 Unblacklist Employee
+
+```http
+POST /api/employees/{employee_id}/unblacklist
+```
+
+**Response:**
+```json
+{
+  "message": "Employee unblacklisted successfully"
+}
+```
+
+---
+
+### 3.10 Get Employee Embedding
+
+```http
+GET /api/employees/embeddings/{embedding_id}?companyId={companyId}
+```
+
+Download employee embedding file. Automatically proxies to Platform API when not found locally.
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `embedding_id` | string | Yes | Embedding ObjectId |
+
+**Response:** Binary embedding data (`application/octet-stream`)
+
+**Data Flow:**
+1. First attempts to fetch from local GridFS (app mode embeddings)
+2. If not found locally, proxies request to Platform API
+3. Returns embedding file with appropriate content-disposition header
+
+---
+
+### 3.11 Employee Attendance
+
+#### Get Attendance Records
+
+```http
+GET /api/employees/attendance?companyId={companyId}&employeeId={employeeId}&startDate={date}&endDate={date}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | No | Filter by company |
+| `employeeId` | string | No | Filter by employee |
+| `startDate` | string | No | Start date (ISO 8601) |
+| `endDate` | string | No | End date (ISO 8601) |
+
+**Response:**
+```json
+{
+  "attendance": [
+    {
+      "_id": "attendance_123",
+      "employeeId": "emp_12345",
+      "date": "2024-12-13",
+      "checkIn": "2024-12-13T09:00:00Z",
+      "checkOut": "2024-12-13T18:00:00Z",
+      "status": "present"
+    }
+  ]
+}
+```
+
+#### Create Attendance Records
+
+```http
+POST /api/employees/attendance
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "records": [
+    {
+      "companyId": "company_123",
+      "employeeId": "emp_12345",
+      "date": "2024-12-13",
+      "checkIn": "2024-12-13T09:00:00Z",
+      "checkOut": "2024-12-13T18:00:00Z",
+      "status": "present"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Attendance records created",
+  "records": [
+    { "_id": "attendance_456", "status": "created" }
+  ]
+}
+```
+
+---
+
+### 3.12 Data Flow Diagram
+
+```
+VMS Request → ResidencyDetector.get_mode(companyId, 'employee')
+            → Returns: 'platform' or 'app'
+            
+If mode = 'app':
+  → CRUD operations on VMS local database
+  → employees_collection (MongoDB)
+  → Optional: sync to Platform after local operation
+
+If mode = 'platform':
+  → CRUD operations via Platform API
+  → GET/POST/PUT/DELETE /bharatlytics/v1/actors
+  → Data stored centrally on Platform
+```
+
+**Key Points:**
+- ✅ Always checks residency before operations
+- ✅ Respects manifest-based actor type mappings
+- ✅ Syncs to Platform when connected (even in app mode)
+- ✅ Supports pre-calculated embeddings from mobile apps
 
 ---
 
@@ -1800,41 +2137,77 @@ GET /api/security/alerts?companyId={companyId}
 
 ---
 
-## 8. Data Residency
+## 8. Data Residency & CRUD Operations
 
-**Base Path:** `/api`
+**Base Path:** `/api/residency`
 
-These endpoints support the Bharatlytics Platform v3 Data Residency feature.
+VMS implements **Bharatlytics Platform v3 Data Residency** - a flexible architecture that allows companies to choose where their data lives:
 
-### Overview
+- **Platform Mode (`platform`)**: Data stored centrally on Bharatlytics Platform
+- **App Mode (`app`)**: Data stored locally in VMS database (federated queries from Platform)
 
-VMS respects the company's **Data Mapping** configuration from the platform:
+### Residency Modes Overview
 
-| Configuration | VMS Behavior |
-|---------------|--------------|
-| `residencyMode.actor_employee.mode = 'platform'` | Fetch employees from Platform |
-| `residencyMode.actor_employee.mode = 'app'` | Use VMS's local employees (standalone) |
-| `actorMappings.employee = ['shift_supervisor']` | Fetch Platform's `shift_supervisor` actors instead of `employee` |
+| Actor Type | Default Mode | Description |
+|------------|--------------|-------------|
+| `visitor` | `app` | Visitors always managed locally by VMS for reliability |
+| `employee` | `platform` | Employees typically shared across apps via Platform |
 
-### How VMS Fetches Configuration
+> [!IMPORTANT]
+> Residency mode is configured per company via the **Platform UI** under Company → Installed Apps → VMS → Data Mapping.
+
+---
+
+### CRUD Behavior by Residency Mode
+
+#### Visitors (Default: App Mode)
+
+| Operation | App Mode | Platform Mode |
+|-----------|----------|---------------|
+| **Create** | Stored in VMS local DB | Synced to Platform actors |
+| **Read** | Fetched from VMS DB | Fetched from Platform actors |
+| **Update** | Updated in VMS DB | Updated on Platform |
+| **Delete** | Soft-deleted in VMS DB | Status synced to Platform |
+
+#### Employees (Default: Platform Mode)
+
+| Operation | App Mode | Platform Mode |
+|-----------|----------|---------------|
+| **Create** | Stored in VMS local DB | Posted to Platform actors API |
+| **Read** | Fetched from VMS DB | Fetched from Platform actors |
+| **Update** | Updated in VMS DB | PUT to Platform actors API |
+| **Delete** | Soft-deleted in VMS DB | Status synced to Platform |
+
+---
+
+### How Residency is Determined
+
+VMS uses **ResidencyDetector** to check the company's configuration:
 
 ```
 1. Get app_id from local installations collection (stored by install webhook)
 2. Call Platform API: GET /bharatlytics/integration/v1/installations/mapping?appId=X&companyId=Y
 3. Parse response:
-   - residencyMode.actor_employee.mode → determines source (platform/app)
-   - actorMappings.employee → determines which actor type to fetch
+   - residencyMode.actor_visitor.mode → 'app' or 'platform'
+   - residencyMode.actor_employee.mode → 'app' or 'platform'
+   - actorMappings.employee → ['employee'] or ['shift_supervisor'], etc.
 ```
 
-### 8.1 Federated Query (Platform → VMS)
+**Safe Defaults:**
+- Visitors: Always `app` mode (prevents data loss if Platform unreachable)
+- Employees: `platform` mode if no explicit configuration
+
+---
+
+### 8.1 Federated Query - Visitors (Platform → VMS)
 
 ```http
-POST /api/query/visitors
+POST /api/residency/query/visitors
 X-Platform-Token: <platform_token>
 Content-Type: application/json
 ```
 
-Called by the Platform when residency mode is `app` (federated).
+Called by the Platform when residency mode is `app` (federated). Allows other Platform apps to query visitors stored in VMS.
 
 **Request Body:**
 ```json
@@ -1843,13 +2216,34 @@ Called by the Platform when residency mode is `app` (federated).
   "filters": {
     "status": "active",
     "blacklisted": false,
-    "visitorType": "guest"
+    "visitorType": "guest",
+    "ids": ["visitor_id_1", "visitor_id_2"]
   },
-  "fields": ["name", "phone", "email", "embedding"],
+  "fields": ["name", "phone", "email", "photo", "company", "embedding"],
   "limit": 100,
   "offset": 0
 }
 ```
+
+**Filter Options:**
+
+| Filter | Type | Description |
+|--------|------|-------------|
+| `status` | string | `active`, `inactive`, `deleted` |
+| `blacklisted` | boolean | Filter by blacklist status |
+| `visitorType` | string | `guest`, `vendor`, `contractor`, etc. |
+| `ids` | array | Specific visitor IDs to fetch |
+
+**Field Mapping:**
+
+| Requested Field | VMS Internal Field |
+|-----------------|-------------------|
+| `name` | `visitorName` |
+| `phone` | `phone` |
+| `email` | `email` |
+| `photo` | `visitorImages` |
+| `company` | `organization` |
+| `embedding` | `visitorEmbeddings` |
 
 **Response:**
 ```json
@@ -1860,11 +2254,17 @@ Called by the Platform when residency mode is `app` (federated).
       "name": "John Doe",
       "phone": "+919876543210",
       "email": "john@example.com",
+      "company": "Acme Corp",
       "embedding": {
-        "Facenet512": {
+        "buffalo_l": {
           "embeddingId": "emb_abc123",
-          "status": "done",
-          "model": "Facenet512"
+          "status": "completed",
+          "model": "buffalo_l"
+        },
+        "mobile_facenet_v1": {
+          "embeddingId": "emb_def456",
+          "status": "completed",
+          "model": "mobile_facenet_v1"
         }
       }
     }
@@ -1878,14 +2278,38 @@ Called by the Platform when residency mode is `app` (federated).
 
 ---
 
-### 8.2 Trigger Sync (VMS → Platform)
+### 8.2 Federated Query - Employees (Platform → VMS)
 
 ```http
-POST /api/sync/visitors
+POST /api/residency/query/employees
+X-Platform-Token: <platform_token>
 Content-Type: application/json
 ```
 
-Trigger manual sync when residency mode is `platform`.
+Same structure as visitor query. Used when employee residency is set to `app` mode.
+
+**Field Mapping:**
+
+| Requested Field | VMS Internal Field |
+|-----------------|-------------------|
+| `name` | `employeeName` |
+| `phone` | `phone` |
+| `email` | `email` |
+| `photo` | `employeeImages` |
+| `code` | `employeeId` |
+| `department` | `department` |
+| `embedding` | `employeeEmbeddings` |
+
+---
+
+### 8.3 Trigger Sync - Visitors (VMS → Platform)
+
+```http
+POST /api/residency/sync/visitors
+Content-Type: application/json
+```
+
+Trigger manual sync to push VMS visitor data to Platform. Used when transitioning from `app` to `platform` mode.
 
 **Request Body:**
 ```json
@@ -1895,35 +2319,139 @@ Trigger manual sync when residency mode is `platform`.
 }
 ```
 
-| Field | Options |
-|-------|---------|
-| `mode` | `full`, `incremental` |
+| Field | Type | Options | Description |
+|-------|------|---------|-------------|
+| `mode` | string | `full`, `incremental` | Full resync or only changes since date |
+| `since` | string | ISO 8601 | Only sync records updated after this time |
 
 **Response:**
 ```json
 {
-  "message": "Sync completed",
+  "message": "Sync prepared",
   "mode": "incremental",
   "total": 25,
-  "synced": 24,
-  "failed": 1
+  "syncBatch": 25,
+  "note": "Platform sync would be triggered here"
 }
 ```
 
 ---
 
-### 8.3 Sync Single Visitor
+### 8.4 Trigger Sync - Employees (VMS → Platform)
 
 ```http
-POST /api/sync/visitors/{visitor_id}
+POST /api/residency/sync/employees
+Content-Type: application/json
 ```
+
+Same structure as visitor sync.
+
+---
+
+### 8.5 Sync Single Visitor
+
+```http
+POST /api/residency/sync/visitors/{visitor_id}
+```
+
+Sync a specific visitor to Platform.
 
 **Response:**
 ```json
 {
-  "message": "Visitor synced successfully"
+  "message": "Sync prepared",
+  "syncData": {
+    "type": "visitor",
+    "id": "507f1f77bcf86cd799439012",
+    "data": {
+      "name": "John Doe",
+      "phone": "+919876543210",
+      "email": "john@example.com"
+    }
+  }
 }
 ```
+
+---
+
+### 8.6 Sync Single Employee
+
+```http
+POST /api/residency/sync/employees/{employee_id}
+```
+
+Sync a specific employee to Platform.
+
+---
+
+### Actor Type Mapping
+
+VMS uses **manifest configuration** to map its internal concepts to Platform actor types. This allows flexibility in deployment:
+
+**Example Configuration:**
+```json
+{
+  "actorMappings": {
+    "employee": ["shift_supervisor"],
+    "visitor": ["visitor"]
+  }
+}
+```
+
+**Effect:**
+- VMS's "employee" concept → Platform's "shift_supervisor" actor type
+- VMS fetches shift_supervisors from Platform, not generic employees
+- Allows different apps to use different actor types without conflict
+
+---
+
+### Data Flow Diagrams
+
+#### App Mode (Federated)
+
+```
+Platform App (e.g., People Tracking)
+         │
+         │ GET /bharatlytics/v1/actors?actorType=visitor
+         ▼
+    Bharatlytics Platform
+         │
+         │ Checks residencyMode.actor_visitor = 'app'
+         │ Finds VMS registered as data producer
+         ▼
+    POST /api/residency/query/visitors (to VMS)
+         │
+         │ VMS queries local MongoDB
+         ▼
+    Returns actors to Platform → forwarded to requesting app
+```
+
+#### Platform Mode (Centralized)
+
+```
+VMS (Create Visitor)
+         │
+         │ POST /bharatlytics/v1/actors
+         ▼
+    Bharatlytics Platform
+         │
+         │ Stores in central actors collection
+         ▼
+    Available to all Platform apps immediately
+```
+
+---
+
+### Best Practices
+
+> [!TIP]
+> **Choosing Residency Mode**
+> - Use **App Mode** for visitors (VMS-specific data, high reliability)
+> - Use **Platform Mode** for employees (shared across apps, centralized management)
+
+> [!WARNING]
+> **Mode Transitions**
+> When changing from `app` to `platform` mode, trigger a full sync to migrate existing data.
 
 ---
 
