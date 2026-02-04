@@ -21,6 +21,7 @@ const {
     rewriteEmbeddingUrls
 } = require('../utils/helpers');
 const { getDataProvider } = require('../services/data_provider');
+const { createPlatformClient } = require('../services/platform_client');
 
 // Multer for file uploads
 const upload = multer({
@@ -34,6 +35,7 @@ const upload = multer({
 
 /**
  * Sync employee to platform actors collection with images
+ * Handles duplicate entries by updating existing actors (including reactivating deleted ones)
  */
 async function syncEmployeeToPlatform(employeeData, companyId, includeImages = true, platformToken) {
     try {
@@ -130,6 +132,66 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
             body: JSON.stringify(actorData)
         });
 
+        // Handle duplicate entry error (409 Conflict) - update existing actor instead
+        if (response.status === 409) {
+            console.log(`[sync_employee] Duplicate detected, attempting to update existing actor...`);
+
+            try {
+                // Find existing actor by sourceActorId
+                const platformClient = createPlatformClient(companyId, platformToken);
+
+                // Search for actor with same sourceActorId
+                const searchUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors?companyId=${companyId}&sourceActorId=${employeeData._id}`;
+                const searchResponse = await fetch(searchUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${platformToken}`,
+                        'X-App-Id': 'vms_app_v1'
+                    }
+                });
+
+                let existingActorId = null;
+                if (searchResponse.ok) {
+                    const searchResult = await searchResponse.json();
+                    const actors = searchResult.actors || searchResult.data || [];
+                    if (actors.length > 0) {
+                        existingActorId = actors[0]._id;
+                        console.log(`[sync_employee] Found existing actor: ${existingActorId}`);
+                    }
+                }
+
+                if (existingActorId) {
+                    // Update the existing actor (reactivate if deleted)
+                    const updateData = {
+                        status: employeeData.status || 'active',
+                        attributes: {
+                            ...attributes
+                        }
+                    };
+
+                    const updateResult = await platformClient.updateActor(existingActorId, updateData, companyId);
+
+                    if (updateResult.success) {
+                        console.log(`[sync_employee] Updated existing actor ${existingActorId} (reactivated)`);
+                        return {
+                            success: true,
+                            actorId: existingActorId,
+                            hasPhoto: Boolean(photoData),
+                            reactivated: true
+                        };
+                    } else {
+                        console.log(`[sync_employee] Failed to update existing actor: ${updateResult.error}`);
+                        return { success: false, error: updateResult.error };
+                    }
+                } else {
+                    console.log(`[sync_employee] Could not find existing actor to update`);
+                    return { success: false, error: 'Duplicate entry but could not find existing actor' };
+                }
+            } catch (updateError) {
+                console.log(`[sync_employee] Error handling duplicate: ${updateError.message}`);
+                return { success: false, error: `Duplicate handling failed: ${updateError.message}` };
+            }
+        }
+
         if (response.ok) {
             const result = await response.json();
 
@@ -179,24 +241,25 @@ async function syncEmployeeToPlatform(employeeData, companyId, includeImages = t
                                 form.append('companyId', String(companyId));
                                 form.append('embeddingAttached', 'true');
                                 form.append('embeddingVersion', model);
-                                form.append('embedding', buffer, { filename: `${model}.bin` });
+                                form.append('embedding', buffer, {
+                                    filename: `${model}.bin`,
+                                    contentType: 'application/octet-stream'
+                                });
 
-                                const uploadUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
-                                console.log(`[sync_employee] Uploading ${model} embedding to: ${uploadUrl}`);
+                                const embedUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
+                                console.log(`[sync_employee] Posting embedding to ${embedUrl}`);
 
-                                await axios.post(
-                                    uploadUrl,
-                                    form,
-                                    {
-                                        headers: {
-                                            'Authorization': `Bearer ${platformToken}`,
-                                            ...form.getHeaders()
-                                        }
-                                    }
-                                );
-                                console.log(`[sync_employee] Uploaded ${model} embedding successfully`);
+                                const embedResp = await axios.post(embedUrl, form, {
+                                    headers: {
+                                        ...form.getHeaders(),
+                                        'Authorization': `Bearer ${platformToken}`,
+                                        'X-App-Id': 'vms_app_v1'
+                                    },
+                                    timeout: 30000
+                                });
+                                console.log(`[sync_employee] Embedding sync result for ${model}: ${embedResp.status}`);
                             } catch (error) {
-                                console.log(`[sync_employee] Error uploading ${model}: ${error.message}`);
+                                console.log(`[sync_employee] Embedding sync error for ${model}: ${error.message}`);
                                 if (error.response) console.log(`[sync_employee] Response data: ${JSON.stringify(error.response.data)}`);
                             }
                         }
