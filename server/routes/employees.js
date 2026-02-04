@@ -324,7 +324,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required.' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required.' });
         }
 
         // Use DataProvider for residency-aware fetching
@@ -360,8 +360,8 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         // Pass Config.PLATFORM_API_URL to generate direct links
         rewriteEmbeddingUrls(employees, baseUrl, 'employees', Config.PLATFORM_API_URL);
 
-        // Return as direct array (matching Python API format)
-        res.json(convertObjectIds(employees));
+        // Return with status field for client-side parsing
+        res.json({ status: 'success', employees: convertObjectIds(employees), count: employees.length });
     } catch (error) {
         console.error('Error listing employees:', error);
         next(error);
@@ -403,14 +403,14 @@ router.get('/:employee_id', requireCompanyAccess, async (req, res, next) => {
         }
 
         if (!employee) {
-            return res.status(404).json({ error: 'Employee not found' });
+            return res.status(404).json({ status: 'error', error: 'Employee not found' });
         }
 
         // Rewrite embedding URLs
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         rewriteEmbeddingUrls([employee], baseUrl, 'employees', Config.PLATFORM_API_URL);
 
-        res.json({ employee: convertObjectIds(employee) });
+        res.json({ status: 'success', employee: convertObjectIds(employee) });
     } catch (error) {
         console.error('Error getting employee:', error);
         next(error);
@@ -430,12 +430,12 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
         const requiredFields = ['companyId', 'employeeName'];
         const validation = validateRequiredFields(data, requiredFields);
         if (!validation.valid) {
-            return res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
+            return res.status(400).json({ status: 'error', error: `Missing required fields: ${validation.missing.join(', ')}` });
         }
 
         // Validate email if provided
         if (data.email && !validateEmailFormat(data.email)) {
-            return res.status(400).json({ error: 'Invalid email format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid email format' });
         }
 
         const companyId = data.companyId;
@@ -458,6 +458,7 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
             if (!platformToken) {
                 return res.status(401).json({
+                    status: 'error',
                     error: 'Platform token required',
                     message: 'Employee data resides on Platform. Please provide a valid platform token.'
                 });
@@ -488,6 +489,7 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
             if (createResult.success) {
                 res.status(201).json({
+                    status: 'success',
                     message: 'Employee created successfully on Platform',
                     dataResidency: 'platform',
                     actorId: createResult.actorId,
@@ -497,12 +499,14 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
                 // Handle duplicate - check if it's a deleted actor we can update
                 if (createResult.error && createResult.error.includes('duplicate')) {
                     return res.status(409).json({
+                        status: 'error',
                         error: 'Duplicate Employee',
                         message: 'An employee with this ID already exists on Platform',
                         dataResidency: 'platform'
                     });
                 }
                 res.status(500).json({
+                    status: 'error',
                     error: 'Failed to create employee on Platform',
                     details: createResult.error
                 });
@@ -521,6 +525,7 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
                 if (activeEmployee) {
                     return res.status(409).json({
+                        status: 'error',
                         error: 'Duplicate Employee ID',
                         message: `An active employee with ID ${inputEmployeeId} already exists`,
                         field: 'employeeId'
@@ -592,6 +597,7 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
             // App mode: NO Platform sync, local DB is source of truth
             res.status(201).json({
+                status: 'success',
                 message: 'Employee created successfully',
                 dataResidency: 'app',
                 _id: result.insertedId.toString(),
@@ -624,13 +630,13 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const requiredFields = ['companyId', 'employeeName'];
         const validation = validateRequiredFields(data, requiredFields);
         if (!validation.valid) {
-            return res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
+            return res.status(400).json({ status: 'error', error: `Missing required fields: ${validation.missing.join(', ')}` });
         }
 
         // Validate email if provided
         const email = data.email || data.employeeEmail;
         if (email && !validateEmailFormat(email)) {
-            return res.status(400).json({ error: 'Invalid email format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid email format' });
         }
 
         const companyId = data.companyId;
@@ -672,6 +678,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                         if (existingActor) {
                             if (existingActor.status !== 'deleted') {
                                 return res.status(409).json({
+                                    status: 'error',
                                     error: 'Duplicate Employee ID',
                                     message: `An active employee with ID ${inputEmployeeId} already exists on Platform`,
                                     field: 'employeeId',
@@ -696,6 +703,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
                 if (activeEmployee) {
                     return res.status(409).json({
+                        status: 'error',
                         error: 'Duplicate Employee ID',
                         message: `An active employee with ID ${inputEmployeeId} already exists`,
                         field: 'employeeId',
@@ -834,6 +842,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                 }
 
                 res.status(201).json({
+                    status: 'success',
                     message: 'Employee registered successfully on Platform',
                     dataResidency: 'platform',
                     actorId: actorId,
@@ -928,6 +937,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                                         }
 
                                         return res.status(201).json({
+                                            status: 'success',
                                             message: 'Employee registered successfully on Platform',
                                             dataResidency: 'platform',
                                             actorId: retryActorId,
@@ -945,12 +955,14 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     }
 
                     return res.status(409).json({
+                        status: 'error',
                         error: 'Duplicate Employee',
                         message: 'An employee with this ID already exists on Platform',
                         dataResidency: 'platform'
                     });
                 }
                 res.status(500).json({
+                    status: 'error',
                     error: 'Failed to register employee on Platform',
                     details: createResult.error
                 });
@@ -1142,6 +1154,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
         // App mode: NO Platform sync
         res.status(201).json({
+            status: 'success',
             message: 'Employee registered successfully',
             dataResidency: 'app',
             _id: employeeId.toString(),
@@ -1170,11 +1183,11 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
         const companyId = data.companyId;
 
         if (!isValidObjectId(employee_id)) {
-            return res.status(400).json({ error: 'Invalid employee ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid employee ID format' });
         }
 
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required for residency-aware update' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required for residency-aware update' });
         }
 
         // Get platform token
@@ -1198,7 +1211,7 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
         }
 
         if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({ error: 'No fields to update' });
+            return res.status(400).json({ status: 'error', error: 'No fields to update' });
         }
 
         updateFields.lastUpdated = new Date();
@@ -1209,6 +1222,7 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
 
             if (!platformToken) {
                 return res.status(401).json({
+                    status: 'error',
                     error: 'Platform token required',
                     message: 'Employee data resides on Platform. Please provide a valid platform token.'
                 });
@@ -1218,7 +1232,7 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             const existingEmployee = await platformClient.getEmployeeById(employee_id, companyId);
 
             if (!existingEmployee) {
-                return res.status(404).json({ error: 'Employee not found on Platform' });
+                return res.status(404).json({ status: 'error', error: 'Employee not found on Platform' });
             }
 
             // Build Platform update payload
@@ -1243,12 +1257,14 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
 
             if (updateResult.success) {
                 res.json({
+                    status: 'success',
                     message: 'Employee updated successfully on Platform',
                     dataResidency: 'platform',
                     actorId: employee_id
                 });
             } else {
                 res.status(500).json({
+                    status: 'error',
                     error: 'Failed to update employee on Platform',
                     details: updateResult.error
                 });
@@ -1263,10 +1279,11 @@ router.put('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             );
 
             if (result.matchedCount === 0) {
-                return res.status(404).json({ error: 'Employee not found' });
+                return res.status(404).json({ status: 'error', error: 'Employee not found' });
             }
 
             res.json({
+                status: 'success',
                 message: 'Employee updated successfully',
                 dataResidency: 'app'
             });
@@ -1288,15 +1305,15 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
         const companyId = data.companyId;
 
         if (!employeeId) {
-            return res.status(400).json({ error: 'Employee ID (_id or employeeId) is required' });
+            return res.status(400).json({ status: 'error', error: 'Employee ID (_id or employeeId) is required' });
         }
 
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required' });
         }
 
         if (!isValidObjectId(employeeId)) {
-            return res.status(400).json({ error: 'Invalid employee ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid employee ID format' });
         }
 
         // Get platform token
@@ -1320,7 +1337,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
         }
 
         if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({ error: 'No fields to update' });
+            return res.status(400).json({ status: 'error', error: 'No fields to update' });
         }
 
         updateFields.lastUpdated = new Date().toISOString();
@@ -1335,7 +1352,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             // First check if employee exists on Platform
             const existingEmployee = await platformClient.getEmployeeById(employeeId, companyId);
             if (!existingEmployee) {
-                return res.status(404).json({ error: 'Employee not found on Platform' });
+                return res.status(404).json({ status: 'error', error: 'Employee not found on Platform' });
             }
 
             // Build Platform update payload
@@ -1362,12 +1379,14 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
 
             if (updateResult.success) {
                 res.json({
+                    status: 'success',
                     message: 'Employee updated successfully on Platform',
                     dataResidency: 'platform',
                     actorId: employeeId
                 });
             } else {
                 res.status(500).json({
+                    status: 'error',
                     error: 'Failed to update employee on Platform',
                     details: updateResult.error
                 });
@@ -1378,7 +1397,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
 
             const employee = await collections.employees().findOne({ _id: new ObjectId(employeeId) });
             if (!employee) {
-                return res.status(404).json({ error: 'Employee not found in local database' });
+                return res.status(404).json({ status: 'error', error: 'Employee not found in local database' });
             }
 
             await collections.employees().updateOne(
@@ -1387,6 +1406,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             );
 
             res.json({
+                status: 'success',
                 message: 'Employee updated successfully',
                 dataResidency: 'app'
             });
@@ -1410,11 +1430,11 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
         const companyId = req.query.companyId || req.body.companyId;
 
         if (!isValidObjectId(employee_id)) {
-            return res.status(400).json({ error: 'Invalid employee ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid employee ID format' });
         }
 
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required for residency-aware delete' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required for residency-aware delete' });
         }
 
         // Get platform token
@@ -1438,7 +1458,7 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             // First check if employee exists on Platform
             const existingEmployee = await platformClient.getEmployeeById(employee_id, companyId);
             if (!existingEmployee) {
-                return res.status(404).json({ error: 'Employee not found on Platform' });
+                return res.status(404).json({ status: 'error', error: 'Employee not found on Platform' });
             }
 
             // Archive the employeeId to allow future re-registration with same ID
@@ -1466,6 +1486,7 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
 
             if (deleteResult.success) {
                 res.json({
+                    status: 'success',
                     message: 'Employee deleted and archived successfully on Platform',
                     dataResidency: 'platform',
                     actorId: employee_id,
@@ -1473,6 +1494,7 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
                 });
             } else {
                 res.status(500).json({
+                    status: 'error',
                     error: 'Failed to delete employee on Platform',
                     details: deleteResult.error
                 });
@@ -1483,7 +1505,7 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
 
             const employee = await collections.employees().findOne({ _id: new ObjectId(employee_id) });
             if (!employee) {
-                return res.status(404).json({ error: 'Employee not found in local database' });
+                return res.status(404).json({ status: 'error', error: 'Employee not found in local database' });
             }
 
             await collections.employees().updateOne(
@@ -1498,6 +1520,7 @@ router.delete('/:employee_id', requireCompanyAccess, async (req, res, next) => {
             );
 
             res.json({
+                status: 'success',
                 message: 'Employee deleted successfully',
                 dataResidency: 'app'
             });
@@ -1519,7 +1542,7 @@ router.post('/:employee_id/blacklist', requireCompanyAccess, async (req, res, ne
         const { reason = 'No reason provided' } = req.body;
 
         if (!isValidObjectId(employee_id)) {
-            return res.status(400).json({ error: 'Invalid employee ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid employee ID format' });
         }
 
         const result = await collections.employees().updateOne(
@@ -1534,10 +1557,10 @@ router.post('/:employee_id/blacklist', requireCompanyAccess, async (req, res, ne
         );
 
         if (result.matchedCount === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
+            return res.status(404).json({ status: 'error', error: 'Employee not found' });
         }
 
-        res.json({ message: 'Employee blacklisted successfully' });
+        res.json({ status: 'success', message: 'Employee blacklisted successfully' });
     } catch (error) {
         console.error('Error blacklisting employee:', error);
         next(error);
@@ -1553,7 +1576,7 @@ router.post('/:employee_id/unblacklist', requireCompanyAccess, async (req, res, 
         const { employee_id } = req.params;
 
         if (!isValidObjectId(employee_id)) {
-            return res.status(400).json({ error: 'Invalid employee ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid employee ID format' });
         }
 
         const result = await collections.employees().updateOne(
@@ -1568,10 +1591,10 @@ router.post('/:employee_id/unblacklist', requireCompanyAccess, async (req, res, 
         );
 
         if (result.matchedCount === 0) {
-            return res.status(404).json({ error: 'Employee not found' });
+            return res.status(404).json({ status: 'error', error: 'Employee not found' });
         }
 
-        res.json({ message: 'Employee unblacklisted successfully' });
+        res.json({ status: 'success', message: 'Employee unblacklisted successfully' });
     } catch (error) {
         console.error('Error unblacklisting employee:', error);
         next(error);
@@ -1608,7 +1631,7 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
 
         const records = await collections.attendance().find(query).sort({ date: -1 }).toArray();
 
-        res.json({ attendance: convertObjectIds(records) });
+        res.json({ status: 'success', attendance: convertObjectIds(records) });
     } catch (error) {
         console.error('Error fetching attendance:', error);
         next(error);
@@ -1637,6 +1660,7 @@ router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
         }
 
         res.status(201).json({
+            status: 'success',
             message: 'Attendance records created',
             records: results
         });
