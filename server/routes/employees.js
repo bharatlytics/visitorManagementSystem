@@ -615,20 +615,72 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const companyId = data.companyId;
         const inputEmployeeId = data.employeeId;
 
-        // Check if an active employee exists with same employeeId (block registration)
-        if (inputEmployeeId) {
-            const activeEmployee = await collections.employees().findOne({
-                companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
-                employeeId: inputEmployeeId,
-                status: { $ne: 'deleted' }
-            });
+        // Get platform token
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
 
-            if (activeEmployee) {
-                return res.status(409).json({
-                    error: 'Duplicate Employee ID',
-                    message: `An active employee with ID ${inputEmployeeId} already exists`,
-                    field: 'employeeId'
+        // Check residency mode for proper duplicate detection
+        const { getResidencyMode } = require('../services/residency_detector');
+        const residencyMode = await getResidencyMode(companyId, 'employee');
+        console.log(`[register_employee] Company ${companyId}, residency mode: ${residencyMode}`);
+
+        // Residency-aware duplicate check
+        if (inputEmployeeId) {
+            if (residencyMode === 'platform' && platformToken) {
+                // Platform mode: check Platform for existing employees
+                console.log(`[register_employee] Platform mode - checking Platform for existing employee ${inputEmployeeId}...`);
+                const platformClient = createPlatformClient(companyId, platformToken);
+
+                // Get all employees with this employeeId from Platform
+                try {
+                    const url = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors`;
+                    const response = await fetch(url + `?companyId=${companyId}&actorType=employee`, {
+                        headers: {
+                            'Authorization': `Bearer ${platformToken}`,
+                            'X-App-Id': 'vms_app_v1'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const actors = await response.json();
+                        const existingActor = (Array.isArray(actors) ? actors : actors.actors || [])
+                            .find(a => a.attributes?.employeeId === inputEmployeeId);
+
+                        if (existingActor) {
+                            if (existingActor.status !== 'deleted') {
+                                return res.status(409).json({
+                                    error: 'Duplicate Employee ID',
+                                    message: `An active employee with ID ${inputEmployeeId} already exists on Platform`,
+                                    field: 'employeeId',
+                                    dataResidency: 'platform'
+                                });
+                            } else {
+                                // Employee exists but is deleted - allow registration
+                                console.log(`[register_employee] Found deleted employee ${inputEmployeeId} on Platform, allowing registration`);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.log(`[register_employee] Platform check failed: ${err.message}, falling back to local check`);
+                }
+            } else {
+                // App mode: check local DB for duplicates
+                const activeEmployee = await collections.employees().findOne({
+                    companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+                    employeeId: inputEmployeeId,
+                    status: { $ne: 'deleted' }
                 });
+
+                if (activeEmployee) {
+                    return res.status(409).json({
+                        error: 'Duplicate Employee ID',
+                        message: `An active employee with ID ${inputEmployeeId} already exists`,
+                        field: 'employeeId',
+                        dataResidency: 'app'
+                    });
+                }
             }
         }
 
@@ -801,14 +853,8 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
         }
 
-        // Sync to Platform (if connected)
+        // Sync to Platform (if connected) - platformToken already set above
         let platformSync = { status: 'skipped', message: 'No platform token' };
-        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
-
-        // Fallback to Bearer token
-        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-            platformToken = req.headers.authorization.substring(7);
-        }
 
         if (platformToken) {
             console.log(`[register_employee] Syncing employee ${employeeId} to platform...`);
