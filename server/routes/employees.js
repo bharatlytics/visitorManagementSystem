@@ -370,6 +370,50 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
 
 
 /**
+ * GET /api/employees/attendance
+ * Retrieve attendance records - MUST be before /:employee_id to avoid path conflict
+ */
+router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const companyId = req.query.companyId;
+        const employeeId = req.query.employeeId;
+        // Support both naming conventions
+        const startDate = req.query.startDate || req.query.startTime;
+        const endDate = req.query.endDate || req.query.endTime;
+
+        let query = {};
+
+        if (companyId) {
+            query.companyId = isValidObjectId(companyId) ? new ObjectId(companyId) : companyId;
+        }
+
+        if (employeeId) {
+            query.employeeId = isValidObjectId(employeeId) ? new ObjectId(employeeId) : employeeId;
+        }
+
+        if (startDate || endDate) {
+            // Query both legacy 'date' field and new 'attendanceTime' field
+            const timeQuery = {};
+            if (startDate) timeQuery.$gte = new Date(startDate);
+            if (endDate) timeQuery.$lte = new Date(endDate);
+
+            query.$or = [
+                { date: timeQuery },
+                { attendanceTime: timeQuery }
+            ];
+        }
+
+        const records = await collections.attendance().find(query).sort({ attendanceTime: -1, date: -1 }).toArray();
+
+        res.json({ status: 'success', attendance: convertObjectIds(records) });
+    } catch (error) {
+        console.error('Error fetching attendance:', error);
+        next(error);
+    }
+});
+
+
+/**
  * GET /api/employees/:employee_id
  * Get single employee by ID - respects data residency
  */
@@ -1601,42 +1645,7 @@ router.post('/:employee_id/unblacklist', requireCompanyAccess, async (req, res, 
     }
 });
 
-/**
- * GET /api/employees/attendance
- * GET: Retrieve attendance records
- * POST: Upload/sync attendance records
- */
-router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
-    try {
-        const companyId = req.query.companyId;
-        const employeeId = req.query.employeeId;
-        const startDate = req.query.startDate;
-        const endDate = req.query.endDate;
 
-        let query = {};
-
-        if (companyId) {
-            query.companyId = isValidObjectId(companyId) ? new ObjectId(companyId) : companyId;
-        }
-
-        if (employeeId) {
-            query.employeeId = isValidObjectId(employeeId) ? new ObjectId(employeeId) : employeeId;
-        }
-
-        if (startDate || endDate) {
-            query.date = {};
-            if (startDate) query.date.$gte = new Date(startDate);
-            if (endDate) query.date.$lte = new Date(endDate);
-        }
-
-        const records = await collections.attendance().find(query).sort({ date: -1 }).toArray();
-
-        res.json({ status: 'success', attendance: convertObjectIds(records) });
-    } catch (error) {
-        console.error('Error fetching attendance:', error);
-        next(error);
-    }
-});
 
 router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
     try {
