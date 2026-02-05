@@ -1674,24 +1674,57 @@ router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
 
                 // Parse attendance time
                 const attendanceTime = record.attendanceTime ? new Date(record.attendanceTime) : new Date();
+                const attendanceType = record.attendanceType || 'check_in';
+
+                // Build query IDs
+                const employeeOid = isValidObjectId(record.employeeId) ? new ObjectId(record.employeeId) : record.employeeId;
+                const companyOid = isValidObjectId(record.companyId) ? new ObjectId(record.companyId) : record.companyId;
+
+                // Check for duplicate: same employee, same attendanceType, within 1 minute window
+                const duplicateWindow = new Date(attendanceTime.getTime());
+                const windowStart = new Date(duplicateWindow.getTime() - 60000); // 1 minute before
+                const windowEnd = new Date(duplicateWindow.getTime() + 60000); // 1 minute after
+
+                const existingRecord = await collections.attendance().findOne({
+                    $or: [
+                        { employeeId: employeeOid },
+                        { employeeId: record.employeeId }
+                    ],
+                    attendanceType: attendanceType,
+                    attendanceTime: { $gte: windowStart, $lte: windowEnd }
+                });
+
+                if (existingRecord) {
+                    results.push({
+                        _id: existingRecord._id.toString(),
+                        employeeId: record.employeeId,
+                        attendanceType: attendanceType,
+                        status: 'duplicate',
+                        message: 'Record already exists within 1 minute window'
+                    });
+                    continue;
+                }
+
 
                 // Build document with all supported fields
                 const doc = {
                     _id: new ObjectId(),
-                    companyId: isValidObjectId(record.companyId) ? new ObjectId(record.companyId) : record.companyId,
-                    employeeId: isValidObjectId(record.employeeId) ? new ObjectId(record.employeeId) : record.employeeId,
+                    companyId: companyOid,
+                    employeeId: employeeOid,
 
                     // Core attendance fields
                     personType: record.personType || 'employee',
                     attendanceTime: attendanceTime,
-                    attendanceType: record.attendanceType || 'check_in',
+                    attendanceType: attendanceType,
                     shiftId: record.shiftId || null,
+
 
                     // Legacy fields (for backwards compatibility)
                     date: attendanceTime,
-                    checkIn: record.attendanceType === 'check_in' ? attendanceTime : (record.checkIn ? new Date(record.checkIn) : null),
-                    checkOut: record.attendanceType === 'check_out' ? attendanceTime : (record.checkOut ? new Date(record.checkOut) : null),
+                    checkIn: attendanceType === 'check_in' || attendanceType === 'IN' ? attendanceTime : (record.checkIn ? new Date(record.checkIn) : null),
+                    checkOut: attendanceType === 'check_out' || attendanceType === 'OUT' ? attendanceTime : (record.checkOut ? new Date(record.checkOut) : null),
                     status: record.status || 'present',
+
 
                     // Location data
                     location: record.location ? {
