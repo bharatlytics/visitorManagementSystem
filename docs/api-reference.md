@@ -468,7 +468,7 @@ Update visitor details and optionally update face images/embeddings. Syncs to Pl
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `visitorId` | string | Yes | Visitor ObjectId |
-| `companyId` | string | No | Company ObjectId (for Platform sync) |
+| `companyId` | string | Yes | Company ObjectId (required for Platform sync) |
 | `visitorName` | string | No | Updated name |
 | `email` | string | No | Updated email |
 | `phone` | string | No | Updated phone |
