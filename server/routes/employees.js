@@ -408,14 +408,22 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
 
         // Enrich with employee details (employeeId string and employeeName)
         if (records.length > 0) {
-            // Get unique employee MongoDB IDs
-            const employeeMongoIds = [...new Set(records.map(r => r.employeeId?.toString()).filter(Boolean))];
+            // Get unique employee MongoDB IDs - handle both ObjectId and string types
+            const employeeMongoIds = [...new Set(records.map(r => {
+                if (r.employeeId) {
+                    return typeof r.employeeId === 'object' ? r.employeeId.toString() : r.employeeId;
+                }
+                return null;
+            }).filter(Boolean))];
 
-            // Fetch employee details
+            console.log('[Attendance] Looking up employees:', employeeMongoIds);
+
+            // Fetch employee details - query by both _id and string
             const employeeQuery = {
-                $or: employeeMongoIds.map(id =>
-                    isValidObjectId(id) ? { _id: new ObjectId(id) } : { employeeId: id }
-                )
+                $or: employeeMongoIds.flatMap(id => [
+                    isValidObjectId(id) ? { _id: new ObjectId(id) } : null,
+                    { employeeId: id }
+                ].filter(Boolean))
             };
 
             const employees = await collections.employees()
@@ -423,18 +431,28 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
                 .project({ _id: 1, employeeId: 1, employeeName: 1 })
                 .toArray();
 
-            // Create lookup map
+            console.log('[Attendance] Found employees:', employees.length);
+
+            // Create lookup map - index by both _id string and employeeId
             const employeeMap = {};
             for (const emp of employees) {
-                employeeMap[emp._id.toString()] = {
-                    employeeId: emp.employeeId || emp._id.toString(),
+                const idStr = emp._id.toString();
+                employeeMap[idStr] = {
+                    employeeId: emp.employeeId || idStr,
                     employeeName: emp.employeeName || 'Unknown'
                 };
+                // Also map by employeeId field
+                if (emp.employeeId) {
+                    employeeMap[emp.employeeId] = employeeMap[idStr];
+                }
             }
 
             // Enrich attendance records
             for (const record of records) {
-                const empMongoId = record.employeeId?.toString();
+                const empMongoId = typeof record.employeeId === 'object'
+                    ? record.employeeId.toString()
+                    : record.employeeId;
+
                 if (empMongoId && employeeMap[empMongoId]) {
                     // Store MongoDB ID separately
                     record.employeeMongoId = empMongoId;
@@ -444,6 +462,7 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
                 }
             }
         }
+
 
 
         res.json({ status: 'success', attendance: convertObjectIds(records) });
