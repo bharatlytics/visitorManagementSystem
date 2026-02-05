@@ -372,6 +372,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
 /**
  * GET /api/employees/attendance
  * Retrieve attendance records - MUST be before /:employee_id to avoid path conflict
+ * Returns attendance with employee details (employeeId, employeeName)
  */
 router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -404,6 +405,42 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
         }
 
         const records = await collections.attendance().find(query).sort({ attendanceTime: -1, date: -1 }).toArray();
+
+        // Enrich with employee details (employeeId string and employeeName)
+        if (records.length > 0) {
+            // Get unique employee MongoDB IDs
+            const employeeMongoIds = [...new Set(records.map(r => r.employeeId?.toString()).filter(Boolean))];
+
+            // Fetch employee details
+            const employeeQuery = {
+                $or: employeeMongoIds.map(id =>
+                    isValidObjectId(id) ? { _id: new ObjectId(id) } : { employeeId: id }
+                )
+            };
+
+            const employees = await collections.employees()
+                .find(employeeQuery)
+                .project({ _id: 1, employeeId: 1, employeeName: 1 })
+                .toArray();
+
+            // Create lookup map
+            const employeeMap = {};
+            for (const emp of employees) {
+                employeeMap[emp._id.toString()] = {
+                    employeeIdString: emp.employeeId || emp._id.toString(),
+                    employeeName: emp.employeeName || 'Unknown'
+                };
+            }
+
+            // Enrich attendance records
+            for (const record of records) {
+                const empId = record.employeeId?.toString();
+                if (empId && employeeMap[empId]) {
+                    record.employeeIdString = employeeMap[empId].employeeIdString;
+                    record.employeeName = employeeMap[empId].employeeName;
+                }
+            }
+        }
 
         res.json({ status: 'success', attendance: convertObjectIds(records) });
     } catch (error) {
