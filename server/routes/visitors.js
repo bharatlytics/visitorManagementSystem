@@ -719,8 +719,8 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 });
 
 /**
- * PATCH /api/visitors/update
- * Update visitor details - syncs to Platform if connected
+ * POST /api/visitors/update-biometrics
+ * Update visitor with images and embeddings - syncs to Platform if connected
  * 
  * Supports multipart form-data for image/embedding updates:
  * - left, right, center, front: face images
@@ -735,7 +735,7 @@ const updateVisitorFields = upload.fields([
     { name: 'embedding', maxCount: 1 }
 ]);
 
-router.patch('/update', requireCompanyAccess, updateVisitorFields, async (req, res, next) => {
+router.post('/update-biometrics', requireCompanyAccess, updateVisitorFields, async (req, res, next) => {
     try {
         const data = req.body;
         const visitorId = data.visitorId;

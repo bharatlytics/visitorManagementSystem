@@ -454,20 +454,20 @@ curl -X POST http://localhost:5001/api/visitors/register \
 
 ---
 
-### 1.3 Update Visitor
+### 1.3 Update Visitor with Biometrics (POST)
 
 ```http
-PATCH /api/visitors/update
+POST /api/visitors/update-biometrics
 Content-Type: multipart/form-data
 ```
 
-Update visitor details and optionally update face images/embeddings. Syncs to Platform if connected.
+Update visitor details and biometrics. Syncs to Platform if connected.
 
 **Form Fields:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `visitorId` | string | Yes | Visitor ObjectId |
+| `visitorId` | string | Yes | Visitor MongoDB ObjectId |
 | `companyId` | string | Yes | Company ObjectId (required for Platform sync) |
 | `visitorName` | string | No | Updated name |
 | `email` | string | No | Updated email |
@@ -484,7 +484,7 @@ Update visitor details and optionally update face images/embeddings. Syncs to Pl
 
 **Example Request (cURL):**
 ```bash
-curl -X PATCH "https://your-vms.app/api/visitors/update" \
+curl -X POST "https://your-vms.app/api/visitors/update-biometrics" \
   -H "Authorization: Bearer <token>" \
   -F "visitorId=507f1f77bcf86cd799439012" \
   -F "companyId=6827296ab6e06b08639107c4" \
@@ -492,6 +492,7 @@ curl -X PATCH "https://your-vms.app/api/visitors/update" \
   -F "center=@/path/to/photo.jpg" \
   -F "embedding=@/path/to/embedding.pkl"
 ```
+
 
 **Response:**
 ```json
@@ -1178,25 +1179,20 @@ curl -X POST http://localhost:5001/api/employees/register \
 
 ---
 
-### 3.5 Update Employee (PUT)
+### 3.5 Update Employee with Biometrics (POST)
 
 ```http
-PUT /api/employees/{employee_id}
-Content-Type: multipart/form-data  OR  application/json
+POST /api/employees/update-biometrics
+Content-Type: multipart/form-data
 ```
 
-Update employee details. Residency-aware - updates Platform or local DB based on company's data residency mode. Supports updating face images and embeddings.
-
-**Path Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `employee_id` | string | Yes | Employee ObjectId |
+Update employee details and biometrics. Residency-aware - updates Platform or local DB based on company's data residency mode. Supports updating face images and embeddings.
 
 **Form Fields (multipart/form-data):**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `_id` or `employeeMongoId` | string | Yes | Employee MongoDB ObjectId |
 | `companyId` | string | Yes | Company ObjectId |
 | `employeeName` | string | No | Full name |
 | `email` | string | No | Email address |
@@ -1215,14 +1211,16 @@ Update employee details. Residency-aware - updates Platform or local DB based on
 
 **Example Request (cURL):**
 ```bash
-curl -X PUT "https://your-vms.app/api/employees/698449ec2150c21bc32b5361" \
+curl -X POST "https://your-vms.app/api/employees/update-biometrics" \
   -H "Authorization: Bearer <token>" \
+  -F "_id=698449ec2150c21bc32b5361" \
   -F "companyId=6827296ab6e06b08639107c4" \
   -F "employeeName=John Doe Updated" \
   -F "center=@/path/to/photo.jpg" \
   -F "embedding=@/path/to/embedding.pkl" \
   -F "embeddingVersion=mobile_facenet_v1"
 ```
+
 
 **Response (Platform Mode):**
 ```json

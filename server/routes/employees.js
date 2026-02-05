@@ -1278,8 +1278,8 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 });
 
 /**
- * PUT /api/employees/:employee_id
- * Update employee - residency-aware
+ * POST /api/employees/update-biometrics
+ * Update employee with images and embeddings - residency-aware
  * Platform mode: Updates Platform directly (including biometrics)
  * App mode: Updates local DB only, no Platform sync
  * 
@@ -1297,9 +1297,9 @@ const updateEmployeeFields = upload.fields([
     { name: 'embedding', maxCount: 1 }
 ]);
 
-router.put('/:employee_id', requireCompanyAccess, updateEmployeeFields, async (req, res, next) => {
+router.post('/update-biometrics', requireCompanyAccess, updateEmployeeFields, async (req, res, next) => {
     try {
-        const { employee_id } = req.params;
+        const employee_id = req.body._id || req.body.employeeMongoId;
         const data = req.body;
         const companyId = data.companyId;
 
