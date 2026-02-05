@@ -461,22 +461,61 @@ PATCH /api/visitors/update
 Content-Type: multipart/form-data
 ```
 
+Update visitor details and optionally update face images/embeddings. Syncs to Platform if connected.
+
 **Form Fields:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `visitorId` | string | Yes | Visitor ObjectId |
+| `companyId` | string | No | Company ObjectId (for Platform sync) |
 | `visitorName` | string | No | Updated name |
 | `email` | string | No | Updated email |
 | `phone` | string | No | Updated phone |
 | `organization` | string | No | Updated organization |
+| `purpose` | string | No | Visit purpose |
+| `status` | string | No | `checked_in`, `checked_out`, `blacklisted` |
+| `left` | file | No | Left pose face image |
+| `right` | file | No | Right pose face image |
+| `center` | file | No | Center pose face image |
+| `front` | file | No | Front pose face image |
+| `embedding` | file | No | Pre-computed embedding file (.pkl) |
+| `embeddingVersion` | string | No | Embedding model version (default: `mobile_facenet_v1`) |
+
+**Example Request (cURL):**
+```bash
+curl -X PATCH "https://your-vms.app/api/visitors/update" \
+  -H "Authorization: Bearer <token>" \
+  -F "visitorId=507f1f77bcf86cd799439012" \
+  -F "companyId=6827296ab6e06b08639107c4" \
+  -F "visitorName=Jane Doe Updated" \
+  -F "center=@/path/to/photo.jpg" \
+  -F "embedding=@/path/to/embedding.pkl"
+```
 
 **Response:**
 ```json
 {
-  "message": "Visitor updated successfully"
+  "status": "success",
+  "message": "Visitor updated successfully",
+  "platformSync": {
+    "status": "success",
+    "actorId": "platform_actor_id"
+  },
+  "biometricUpdated": true,
+  "trainingJobQueued": false
 }
 ```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `biometricUpdated` | boolean | Whether images/embeddings were uploaded |
+| `trainingJobQueued` | boolean | True if images uploaded without embedding |
+
+> [!TIP]
+> Pre-computed embeddings bypass the training job queue. Without embeddings, images trigger a Platform training job.
 
 ---
 
@@ -1143,10 +1182,10 @@ curl -X POST http://localhost:5001/api/employees/register \
 
 ```http
 PUT /api/employees/{employee_id}
-Content-Type: application/json
+Content-Type: multipart/form-data  OR  application/json
 ```
 
-Update employee details. Automatically syncs to Platform if connected.
+Update employee details. Residency-aware - updates Platform or local DB based on company's data residency mode. Supports updating face images and embeddings.
 
 **Path Parameters:**
 
@@ -1154,41 +1193,60 @@ Update employee details. Automatically syncs to Platform if connected.
 |-----------|------|----------|-------------|
 | `employee_id` | string | Yes | Employee ObjectId |
 
-**Request Body:**
+**Form Fields (multipart/form-data):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+| `employeeName` | string | No | Full name |
+| `email` | string | No | Email address |
+| `phone` | string | No | Phone number |
+| `department` | string | No | Department name |
+| `designation` | string | No | Job title |
+| `employeeId` | string | No | Employee code (e.g., "EMP001") |
+| `status` | string | No | `active`, `inactive`, `deleted` |
+| `left` | file | No | Left pose face image |
+| `right` | file | No | Right pose face image |
+| `center` | file | No | Center pose face image |
+| `front` | file | No | Front pose face image |
+| `side` | file | No | Side pose face image |
+| `embedding` | file | No | Pre-computed embedding file (.pkl) |
+| `embeddingVersion` | string | No | Embedding model version (default: `mobile_facenet_v1`) |
+
+**Example Request (cURL):**
+```bash
+curl -X PUT "https://your-vms.app/api/employees/698449ec2150c21bc32b5361" \
+  -H "Authorization: Bearer <token>" \
+  -F "companyId=6827296ab6e06b08639107c4" \
+  -F "employeeName=John Doe Updated" \
+  -F "center=@/path/to/photo.jpg" \
+  -F "embedding=@/path/to/embedding.pkl" \
+  -F "embeddingVersion=mobile_facenet_v1"
+```
+
+**Response (Platform Mode):**
 ```json
 {
-  "companyId": "507f1f77bcf86cd799439011",
-  "employeeName": "John Doe Updated",
-  "email": "john.new@company.com",
-  "phone": "+919876543211",
-  "department": "Product",
-  "designation": "Senior Engineer",
-  "status": "active"
+  "status": "success",
+  "message": "Employee updated successfully on Platform",
+  "dataResidency": "platform",
+  "actorId": "698449ec2150c21bc32b5361",
+  "attributesUpdated": true,
+  "biometricUpdated": true,
+  "trainingJobQueued": false
 }
 ```
 
-**Allowed Fields:**
+**Response Fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `employeeName` | string | Full name |
-| `email` | string | Email address |
-| `phone` | string | Phone number |
-| `department` | string | Department name |
-| `designation` | string | Job title |
-| `employeeId` | string | Employee code |
-| `status` | string | `active`, `inactive` |
+| `attributesUpdated` | boolean | Whether profile fields were updated |
+| `biometricUpdated` | boolean | Whether images/embeddings were uploaded |
+| `trainingJobQueued` | boolean | True if images uploaded without embedding (Platform will train) |
 
-**Response:**
-```json
-{
-  "message": "Employee updated successfully",
-  "platformSync": {
-    "status": "success",
-    "actorId": "platform_actor_id"
-  }
-}
-```
+> [!TIP]
+> If you provide pre-computed embeddings with `embeddingAttached=true`, the embedding status is set to `done` immediately. If only images are provided without embeddings, a training job is queued on the Platform.
 
 ---
 
