@@ -407,7 +407,7 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
         const records = await collections.attendance().find(query).sort({ attendanceTime: -1, date: -1 }).toArray();
 
         // Enrich with employee details (employeeId string and employeeName)
-        if (records.length > 0) {
+        if (records.length > 0 && companyId) {
             // Get unique employee MongoDB IDs - handle both ObjectId and string types
             const employeeMongoIds = [...new Set(records.map(r => {
                 if (r.employeeId) {
@@ -418,34 +418,34 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
 
             console.log('[Attendance] Looking up employees:', employeeMongoIds);
 
-            // Fetch employee details - query by both _id and string
-            const employeeQuery = {
-                $or: employeeMongoIds.flatMap(id => [
-                    isValidObjectId(id) ? { _id: new ObjectId(id) } : null,
-                    { employeeId: id }
-                ].filter(Boolean))
-            };
+            // Use DataProvider for Platform-aware lookup
+            let platformToken = req.session?.platformToken;
+            if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+                platformToken = req.headers.authorization.substring(7);
+            }
 
-            const employees = await collections.employees()
-                .find(employeeQuery)
-                .project({ _id: 1, employeeId: 1, employeeName: 1 })
-                .toArray();
+            const dataProvider = getDataProvider(companyId, platformToken);
+            const allEmployees = await dataProvider.getEmployees(companyId);
 
-            console.log('[Attendance] Found employees:', employees.length);
+            console.log('[Attendance] Total employees from provider:', allEmployees.length);
 
-            // Create lookup map - index by both _id string and employeeId
+            // Create lookup map - index by _id, and other identifiers
             const employeeMap = {};
-            for (const emp of employees) {
-                const idStr = emp._id.toString();
-                employeeMap[idStr] = {
-                    employeeId: emp.employeeId || idStr,
-                    employeeName: emp.employeeName || 'Unknown'
-                };
-                // Also map by employeeId field
-                if (emp.employeeId) {
-                    employeeMap[emp.employeeId] = employeeMap[idStr];
+            for (const emp of allEmployees) {
+                const idStr = emp._id?.toString() || emp.id?.toString();
+                if (idStr) {
+                    employeeMap[idStr] = {
+                        employeeId: emp.employeeId || idStr,
+                        employeeName: emp.employeeName || emp.name || 'Unknown'
+                    };
+                    // Also map by employeeId field
+                    if (emp.employeeId) {
+                        employeeMap[emp.employeeId] = employeeMap[idStr];
+                    }
                 }
             }
+
+            console.log('[Attendance] Employee map keys:', Object.keys(employeeMap).length);
 
             // Enrich attendance records
             for (const record of records) {
@@ -459,9 +459,12 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
                     // Replace employeeId with the custom ID (e.g., "EMP001")
                     record.employeeId = employeeMap[empMongoId].employeeId;
                     record.employeeName = employeeMap[empMongoId].employeeName;
+                } else {
+                    console.log('[Attendance] No match for:', empMongoId);
                 }
             }
         }
+
 
 
 
