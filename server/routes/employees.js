@@ -427,20 +427,24 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
             const employeeMap = {};
             for (const emp of employees) {
                 employeeMap[emp._id.toString()] = {
-                    employeeIdString: emp.employeeId || emp._id.toString(),
+                    employeeId: emp.employeeId || emp._id.toString(),
                     employeeName: emp.employeeName || 'Unknown'
                 };
             }
 
             // Enrich attendance records
             for (const record of records) {
-                const empId = record.employeeId?.toString();
-                if (empId && employeeMap[empId]) {
-                    record.employeeIdString = employeeMap[empId].employeeIdString;
-                    record.employeeName = employeeMap[empId].employeeName;
+                const empMongoId = record.employeeId?.toString();
+                if (empMongoId && employeeMap[empMongoId]) {
+                    // Store MongoDB ID separately
+                    record.employeeMongoId = empMongoId;
+                    // Replace employeeId with the custom ID (e.g., "EMP001")
+                    record.employeeId = employeeMap[empMongoId].employeeId;
+                    record.employeeName = employeeMap[empMongoId].employeeName;
                 }
             }
         }
+
 
         res.json({ status: 'success', attendance: convertObjectIds(records) });
     } catch (error) {
