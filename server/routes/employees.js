@@ -1640,35 +1640,115 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
 
 router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
     try {
+        // Support both array of records or single record wrapped in records array
         const records = req.body.records || [req.body];
 
-        const results = [];
-        for (const record of records) {
-            const doc = {
-                _id: new ObjectId(),
-                companyId: isValidObjectId(record.companyId) ? new ObjectId(record.companyId) : record.companyId,
-                employeeId: isValidObjectId(record.employeeId) ? new ObjectId(record.employeeId) : record.employeeId,
-                date: new Date(record.date || new Date()),
-                checkIn: record.checkIn ? new Date(record.checkIn) : null,
-                checkOut: record.checkOut ? new Date(record.checkOut) : null,
-                status: record.status || 'present',
-                createdAt: new Date()
-            };
+        if (!records || records.length === 0) {
+            return res.status(400).json({ status: 'error', error: 'No attendance records provided' });
+        }
 
-            await collections.attendance().insertOne(doc);
-            results.push({ _id: doc._id.toString(), status: 'created' });
+        const results = [];
+        const errors = [];
+
+        for (const record of records) {
+            try {
+                // Validate required fields
+                if (!record.employeeId) {
+                    errors.push({ record, error: 'employeeId is required' });
+                    continue;
+                }
+
+                // Parse attendance time
+                const attendanceTime = record.attendanceTime ? new Date(record.attendanceTime) : new Date();
+
+                // Build document with all supported fields
+                const doc = {
+                    _id: new ObjectId(),
+                    companyId: isValidObjectId(record.companyId) ? new ObjectId(record.companyId) : record.companyId,
+                    employeeId: isValidObjectId(record.employeeId) ? new ObjectId(record.employeeId) : record.employeeId,
+
+                    // Core attendance fields
+                    personType: record.personType || 'employee',
+                    attendanceTime: attendanceTime,
+                    attendanceType: record.attendanceType || 'check_in',
+                    shiftId: record.shiftId || null,
+
+                    // Legacy fields (for backwards compatibility)
+                    date: attendanceTime,
+                    checkIn: record.attendanceType === 'check_in' ? attendanceTime : (record.checkIn ? new Date(record.checkIn) : null),
+                    checkOut: record.attendanceType === 'check_out' ? attendanceTime : (record.checkOut ? new Date(record.checkOut) : null),
+                    status: record.status || 'present',
+
+                    // Location data
+                    location: record.location ? {
+                        latitude: record.location.latitude || 0,
+                        longitude: record.location.longitude || 0,
+                        accuracy: record.location.accuracy || 0,
+                        address: record.location.address || ''
+                    } : null,
+
+                    // Recognition/biometric data
+                    recognition: record.recognition ? {
+                        confidenceScore: record.recognition.confidenceScore || 0,
+                        algorithm: record.recognition.algorithm || 'face_recognition_v2',
+                        processingTime: record.recognition.processingTime || 0
+                    } : null,
+
+                    // Device info
+                    device: record.device ? {
+                        deviceId: record.device.deviceId || '',
+                        platform: record.device.platform || 'android',
+                        appVersion: record.device.appVersion || '',
+                        ipAddress: record.device.ipAddress || ''
+                    } : null,
+
+                    // Sync and metadata
+                    syncStatus: record.syncStatus || 1,
+                    transactionFrom: record.transactionFrom || 'api',
+                    remarks: record.remarks || '',
+
+                    // Timestamps
+                    createdAt: record.createdAt ? new Date(record.createdAt) : new Date(),
+                    updatedAt: record.updatedAt ? new Date(record.updatedAt) : new Date()
+                };
+
+                await collections.attendance().insertOne(doc);
+                results.push({
+                    _id: doc._id.toString(),
+                    employeeId: record.employeeId,
+                    attendanceType: doc.attendanceType,
+                    status: 'created'
+                });
+            } catch (recordError) {
+                console.error(`Error processing attendance record:`, recordError);
+                errors.push({
+                    employeeId: record.employeeId,
+                    error: recordError.message
+                });
+            }
+        }
+
+        // Return results
+        if (results.length === 0 && errors.length > 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'All records failed to process',
+                errors
+            });
         }
 
         res.status(201).json({
             status: 'success',
-            message: 'Attendance records created',
-            records: results
+            message: `${results.length} attendance record(s) created`,
+            records: results,
+            errors: errors.length > 0 ? errors : undefined
         });
     } catch (error) {
         console.error('Error creating attendance:', error);
         next(error);
     }
 });
+
 
 /**
  * GET /api/employees/embeddings/:embedding_id

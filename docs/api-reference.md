@@ -1391,33 +1391,190 @@ GET /api/employees/attendance?companyId={companyId}&employeeId={employeeId}&star
 ```http
 POST /api/employees/attendance
 Content-Type: application/json
+Authorization: Bearer <token>
 ```
 
+Creates attendance records for employees. Supports both single record and batch processing.
+
 **Request Body:**
+
+Single record format (automatically wrapped in array):
+```json
+{
+  "employeeId": "507f1f77bcf86cd799439012",
+  "personType": "employee",
+  "attendanceTime": "2026-01-28T12:34:56.789+0000",
+  "attendanceType": "check_in",
+  "companyId": "507f1f77bcf86cd799439011",
+  "shiftId": "SHIFT1",
+  "location": {
+    "latitude": 28.6139,
+    "longitude": 77.2090,
+    "accuracy": 5.0,
+    "address": "Office Building, New Delhi"
+  },
+  "recognition": {
+    "confidenceScore": 0.95,
+    "algorithm": "face_recognition_v2",
+    "processingTime": 150
+  },
+  "device": {
+    "deviceId": "android_device_12345",
+    "platform": "android",
+    "appVersion": "1.0.0",
+    "ipAddress": "192.168.1.100"
+  },
+  "syncStatus": 1,
+  "transactionFrom": "androidApplication",
+  "remarks": "Morning attendance"
+}
+```
+
+Batch format (array of records):
 ```json
 {
   "records": [
     {
-      "companyId": "company_123",
-      "employeeId": "emp_12345",
-      "date": "2024-12-13",
-      "checkIn": "2024-12-13T09:00:00Z",
-      "checkOut": "2024-12-13T18:00:00Z",
-      "status": "present"
+      "employeeId": "507f1f77bcf86cd799439012",
+      "attendanceType": "check_in",
+      "attendanceTime": "2026-01-28T09:00:00.000+0000",
+      "companyId": "507f1f77bcf86cd799439011"
+    },
+    {
+      "employeeId": "507f1f77bcf86cd799439013",
+      "attendanceType": "check_out",
+      "attendanceTime": "2026-01-28T18:00:00.000+0000",
+      "companyId": "507f1f77bcf86cd799439011"
     }
   ]
 }
 ```
 
-**Response:**
+**Request Body Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `employeeId` | string | **Yes** | Employee MongoDB ObjectId |
+| `companyId` | string | **Yes** | Company ObjectId |
+| `attendanceTime` | string | No | ISO 8601 timestamp (default: current time) |
+| `attendanceType` | string | No | `check_in` or `check_out` (default: `check_in`) |
+| `personType` | string | No | `employee` or `visitor` (default: `employee`) |
+| `shiftId` | string | No | Shift identifier (e.g., `SHIFT1`, `SHIFT2`) |
+| `location` | object | No | Location data (see below) |
+| `recognition` | object | No | Biometric recognition data (see below) |
+| `device` | object | No | Device information (see below) |
+| `syncStatus` | number | No | Sync status: `0` = pending, `1` = synced (default: `1`) |
+| `transactionFrom` | string | No | Source: `androidApplication`, `iosApplication`, `web`, `api` |
+| `remarks` | string | No | Additional notes |
+
+**Location Object:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `latitude` | number | GPS latitude coordinate |
+| `longitude` | number | GPS longitude coordinate |
+| `accuracy` | number | GPS accuracy in meters |
+| `address` | string | Optional address string |
+
+**Recognition Object:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `confidenceScore` | number | Face recognition confidence (0.0 - 1.0) |
+| `algorithm` | string | Algorithm used: `face_recognition_v2`, `buffalo_l`, etc. |
+| `processingTime` | number | Processing time in milliseconds |
+
+**Device Object:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deviceId` | string | Unique device identifier |
+| `platform` | string | `android`, `ios`, `web` |
+| `appVersion` | string | Application version string |
+| `ipAddress` | string | Device IP address |
+
+**Success Response (201 Created):**
 ```json
 {
-  "message": "Attendance records created",
+  "status": "success",
+  "message": "2 attendance record(s) created",
   "records": [
-    { "_id": "attendance_456", "status": "created" }
+    {
+      "_id": "507f1f77bcf86cd799439050",
+      "employeeId": "507f1f77bcf86cd799439012",
+      "attendanceType": "check_in",
+      "status": "created"
+    },
+    {
+      "_id": "507f1f77bcf86cd799439051",
+      "employeeId": "507f1f77bcf86cd799439013",
+      "attendanceType": "check_out",
+      "status": "created"
+    }
   ]
 }
 ```
+
+**Partial Success Response (201 Created with errors):**
+```json
+{
+  "status": "success",
+  "message": "1 attendance record(s) created",
+  "records": [
+    { "_id": "507f1f77bcf86cd799439050", "employeeId": "emp_1", "status": "created" }
+  ],
+  "errors": [
+    { "employeeId": null, "error": "employeeId is required" }
+  ]
+}
+```
+
+**Error Response (400 Bad Request):**
+```json
+{
+  "status": "error",
+  "message": "All records failed to process",
+  "errors": [
+    { "employeeId": null, "error": "employeeId is required" }
+  ]
+}
+```
+
+**Example cURL (Android App Style):**
+```bash
+curl -X POST "https://visitor-management-system-pearl.vercel.app/api/employees/attendance" \
+  -H "Authorization: Bearer <vms_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "employeeId": "507f1f77bcf86cd799439012",
+    "personType": "employee",
+    "attendanceTime": "2026-01-28T12:34:56.789+0000",
+    "attendanceType": "check_in",
+    "companyId": "507f1f77bcf86cd799439011",
+    "shiftId": "SHIFT1",
+    "location": {
+      "latitude": 28.6139,
+      "longitude": 77.2090,
+      "accuracy": 5.0,
+      "address": ""
+    },
+    "recognition": {
+      "confidenceScore": 0.95,
+      "algorithm": "face_recognition_v2",
+      "processingTime": 150
+    },
+    "device": {
+      "deviceId": "android_12345",
+      "platform": "android",
+      "appVersion": "1.0.0",
+      "ipAddress": ""
+    },
+    "syncStatus": 1,
+    "transactionFrom": "androidApplication",
+    "remarks": ""
+  }'
+```
+
 
 ---
 
