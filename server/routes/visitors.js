@@ -721,8 +721,21 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 /**
  * PATCH /api/visitors/update
  * Update visitor details - syncs to Platform if connected
+ * 
+ * Supports multipart form-data for image/embedding updates:
+ * - left, right, center, front: face images
+ * - embedding: pre-computed embedding file (.pkl)
+ * - embeddingVersion: e.g., 'mobile_facenet_v1'
  */
-router.patch('/update', requireCompanyAccess, async (req, res, next) => {
+const updateVisitorFields = upload.fields([
+    { name: 'left', maxCount: 1 },
+    { name: 'right', maxCount: 1 },
+    { name: 'center', maxCount: 1 },
+    { name: 'front', maxCount: 1 },
+    { name: 'embedding', maxCount: 1 }
+]);
+
+router.patch('/update', requireCompanyAccess, updateVisitorFields, async (req, res, next) => {
     try {
         const data = req.body;
         const visitorId = data.visitorId;
@@ -757,19 +770,56 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ status: 'error', error: 'Invalid phone format' });
         }
 
-        if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({ status: 'error', error: 'No fields to update' });
+        // Extract image data from files or base64 in body
+        const imageData = {};
+        const imagePositions = ['left', 'right', 'center', 'front'];
+
+        for (const position of imagePositions) {
+            if (req.files && req.files[position]) {
+                const file = req.files[position][0];
+                imageData[position] = file.buffer.toString('base64');
+            } else if (data[position]) {
+                let base64Data = data[position];
+                if (base64Data.includes(',')) {
+                    base64Data = base64Data.split(',')[1];
+                }
+                imageData[position] = base64Data;
+            }
+        }
+
+        // Extract embedding data
+        const embeddingData = {};
+        if (req.files && req.files['embedding']) {
+            const file = req.files['embedding'][0];
+            const version = data.embeddingVersion || 'mobile_facenet_v1';
+            embeddingData[version] = {
+                data: file.buffer.toString('base64'),
+                status: 'completed'
+            };
+        }
+
+        const hasFields = Object.keys(updateFields).length > 0;
+        const hasBiometrics = Object.keys(imageData).length > 0 || Object.keys(embeddingData).length > 0;
+
+        if (!hasFields && !hasBiometrics) {
+            return res.status(400).json({ status: 'error', error: 'No fields or biometrics to update' });
         }
 
         updateFields.lastUpdated = new Date();
 
-        await collections.visitors().updateOne(
-            { _id: new ObjectId(visitorId) },
-            { $set: updateFields }
-        );
+        // Update local DB
+        if (hasFields) {
+            await collections.visitors().updateOne(
+                { _id: new ObjectId(visitorId) },
+                { $set: updateFields }
+            );
+        }
 
-        // Sync update to Platform if connected
+        // Platform sync and biometrics upload
         let platformSync = { status: 'skipped', message: 'No platform token' };
+        let biometricUpdated = false;
+        let trainingJobQueued = false;
+
         let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
         if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
             platformToken = req.headers.authorization.substring(7);
@@ -780,11 +830,64 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             try {
                 // Fetch updated visitor for sync
                 const updatedVisitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
-                if (updatedVisitor) {
+                if (updatedVisitor && hasFields) {
                     console.log(`[update_visitor] Syncing updated visitor ${visitorId} to platform...`);
                     const syncResult = await syncVisitorToPlatform(updatedVisitor, companyId, false, platformToken);
                     if (syncResult.success) {
                         platformSync = { status: 'success', actorId: syncResult.actorId };
+
+                        // Upload biometrics if provided
+                        if (hasBiometrics) {
+                            try {
+                                const FormData = require('form-data');
+                                const axios = require('axios');
+                                const formData = new FormData();
+                                formData.append('companyId', companyId);
+
+                                // Add face images
+                                for (const [pose, base64] of Object.entries(imageData)) {
+                                    const buffer = Buffer.from(base64, 'base64');
+                                    formData.append(pose, buffer, { filename: `${pose}.jpg`, contentType: 'image/jpeg' });
+                                }
+
+                                // Add pre-computed embedding if available
+                                if (Object.keys(embeddingData).length > 0) {
+                                    const embVersion = Object.keys(embeddingData)[0];
+                                    const embData = embeddingData[embVersion];
+                                    if (embData && embData.data) {
+                                        formData.append('embeddingAttached', 'true');
+                                        formData.append('embeddingVersion', embVersion);
+                                        const embBuffer = Buffer.from(embData.data, 'base64');
+                                        formData.append('embedding', embBuffer, { filename: `${embVersion}.pkl`, contentType: 'application/octet-stream' });
+                                    }
+                                } else if (Object.keys(imageData).length > 0) {
+                                    // No pre-computed embedding: queue training job
+                                    formData.append('embeddingAttached', 'false');
+                                    trainingJobQueued = true;
+                                }
+
+                                const Config = require('../config');
+                                const actorId = syncResult.actorId;
+                                const biometricsUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
+                                console.log(`[update_visitor] Uploading biometrics to: ${biometricsUrl}`);
+
+                                const biometricsResponse = await axios.post(biometricsUrl, formData, {
+                                    headers: {
+                                        'Authorization': `Bearer ${platformToken}`,
+                                        'X-App-Id': 'vms_app_v1',
+                                        ...formData.getHeaders()
+                                    },
+                                    timeout: 60000
+                                });
+
+                                if (biometricsResponse.status === 200) {
+                                    console.log(`[update_visitor] Biometrics updated successfully`);
+                                    biometricUpdated = true;
+                                }
+                            } catch (bioErr) {
+                                console.error(`[update_visitor] Error uploading biometrics: ${bioErr.message}`);
+                            }
+                        }
                     } else {
                         platformSync = { status: 'failed', error: syncResult.error };
                     }
@@ -795,7 +898,13 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             }
         }
 
-        res.json({ status: 'success', message: 'Visitor updated successfully', platformSync });
+        res.json({
+            status: 'success',
+            message: 'Visitor updated successfully',
+            platformSync,
+            biometricUpdated,
+            trainingJobQueued
+        });
     } catch (error) {
         console.error('Error updating visitor:', error);
         next(error);
