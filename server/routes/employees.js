@@ -1640,12 +1640,26 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
 
 router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
     try {
-        // Support both array of records or single record wrapped in records array
-        const records = req.body.records || [req.body];
+        // Support three input formats:
+        // 1. Direct array: [{...}, {...}]
+        // 2. Wrapped in records: { records: [{...}, {...}] }
+        // 3. Single object: {...}
+        let records;
+        if (Array.isArray(req.body)) {
+            // Direct array from Android app
+            records = req.body;
+        } else if (req.body.records && Array.isArray(req.body.records)) {
+            // Wrapped in records property
+            records = req.body.records;
+        } else {
+            // Single object - wrap in array
+            records = [req.body];
+        }
 
         if (!records || records.length === 0) {
             return res.status(400).json({ status: 'error', error: 'No attendance records provided' });
         }
+
 
         const results = [];
         const errors = [];
