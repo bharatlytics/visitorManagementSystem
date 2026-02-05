@@ -215,7 +215,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required.' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required.' });
         }
 
         // Get platform token for residency-aware fetching
@@ -243,7 +243,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         // Convert ObjectIds to strings
         const result = convertObjectIds(visitors);
 
-        res.json({ visitors: result });
+        res.json({ status: 'success', visitors: result });
     } catch (error) {
         console.error('Error listing visitors:', error);
         next(error);
@@ -259,7 +259,7 @@ router.get('/list', requireCompanyAccess, async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required.' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required.' });
         }
 
         // Get platform token for residency-aware fetching
@@ -282,7 +282,7 @@ router.get('/list', requireCompanyAccess, async (req, res, next) => {
         // Pass Config.PLATFORM_API_URL to generate direct links
         rewriteEmbeddingUrls(visitors, baseUrl, 'visitors', Config.PLATFORM_API_URL);
 
-        res.json({ visitors: convertObjectIds(visitors) });
+        res.json({ status: 'success', visitors: convertObjectIds(visitors) });
     } catch (error) {
         console.error('Error listing visitors:', error);
         next(error);
@@ -299,7 +299,7 @@ router.get('/visits', requireCompanyAccess, async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         if (!companyId) {
-            return res.status(400).json({ error: 'Company ID is required.' });
+            return res.status(400).json({ status: 'error', error: 'Company ID is required.' });
         }
 
         let query;
@@ -319,7 +319,7 @@ router.get('/visits', requireCompanyAccess, async (req, res, next) => {
             .sort({ expectedArrival: -1 })
             .toArray();
 
-        res.json({ visits: convertObjectIds(visits) });
+        res.json({ status: 'success', visits: convertObjectIds(visits) });
     } catch (error) {
         console.error('Error listing visits:', error);
         next(error);
@@ -336,7 +336,7 @@ router.get('/:visitor_id', requireCompanyAccess, async (req, res, next) => {
         const companyId = req.query.companyId;
 
         if (!isValidObjectId(visitor_id)) {
-            return res.status(400).json({ error: 'Invalid visitor ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid visitor ID format' });
         }
 
         // Get platform token for residency-aware fetching
@@ -359,14 +359,14 @@ router.get('/:visitor_id', requireCompanyAccess, async (req, res, next) => {
         }
 
         if (!visitor) {
-            return res.status(404).json({ error: 'Visitor not found' });
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
         }
 
         // Rewrite embedding URLs
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         rewriteEmbeddingUrls([visitor], baseUrl, 'visitors', Config.PLATFORM_API_URL);
 
-        res.json({ visitor: convertObjectIds(visitor) });
+        res.json({ status: 'success', visitor: convertObjectIds(visitor) });
     } catch (error) {
         console.error('Error getting visitor:', error);
         next(error);
@@ -383,7 +383,7 @@ router.get('/images/:image_id', async (req, res, next) => {
         const { image_id } = req.params;
 
         if (!isValidObjectId(image_id)) {
-            return res.status(400).json({ error: 'Invalid image ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid image ID format' });
         }
 
         const bucket = getGridFSBucket('visitorImages');
@@ -395,7 +395,7 @@ router.get('/images/:image_id', async (req, res, next) => {
         downloadStream.pipe(res);
 
         downloadStream.on('error', () => {
-            res.status(404).json({ error: 'Image not found' });
+            res.status(404).json({ status: 'error', error: 'Image not found' });
         });
     } catch (error) {
         console.error('Error serving visitor image:', error);
@@ -450,15 +450,15 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const requiredFields = ['companyId', 'visitorName', 'phone', 'hostEmployeeId'];
         const validation = validateRequiredFields(data, requiredFields);
         if (!validation.valid) {
-            return res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
+            return res.status(400).json({ status: 'error', error: `Missing required fields: ${validation.missing.join(', ')}` });
         }
 
         // Validate email/phone
         if (data.email && !validateEmailFormat(data.email)) {
-            return res.status(400).json({ error: 'Invalid email format.' });
+            return res.status(400).json({ status: 'error', error: 'Invalid email format.' });
         }
         if (!validatePhoneFormat(data.phone)) {
-            return res.status(400).json({ error: 'Invalid phone number format.' });
+            return res.status(400).json({ status: 'error', error: 'Invalid phone number format.' });
         }
 
         // Check for existing visitor with same phone
@@ -470,6 +470,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const existingVisitor = await collections.visitors().findOne(existingQuery);
         if (existingVisitor) {
             return res.json({
+                status: 'success',
                 message: 'Visitor already registered with this phone number',
                 _id: existingVisitor._id.toString(),
                 visitorId: existingVisitor._id.toString(),
@@ -495,7 +496,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         }
 
         if (!hostEmployee) {
-            return res.status(400).json({ error: 'Host employee not found or not active.' });
+            return res.status(400).json({ status: 'error', error: 'Host employee not found or not active.' });
         }
 
         // Check status (handle both local and platform formats)
@@ -505,7 +506,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const isBlacklisted = hostEmployee.blacklisted === true || hostEmployee.blacklisted === 'true';
 
         if (status !== 'active' || isBlacklisted) {
-            return res.status(400).json({ error: 'Host employee not found or not active.' });
+            return res.status(400).json({ status: 'error', error: 'Host employee not found or not active.' });
         }
 
         // Process face images
@@ -700,6 +701,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         }
 
         res.status(201).json({
+            status: 'success',
             message: 'Visitor registration successful',
             _id: visitorId.toString(),
             embeddingStatus: Object.fromEntries(
@@ -726,16 +728,16 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
         const visitorId = data.visitorId;
 
         if (!visitorId) {
-            return res.status(400).json({ error: 'Visitor ID is required' });
+            return res.status(400).json({ status: 'error', error: 'Visitor ID is required' });
         }
 
         if (!isValidObjectId(visitorId)) {
-            return res.status(400).json({ error: 'Invalid visitor ID format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid visitor ID format' });
         }
 
         const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
         if (!visitor) {
-            return res.status(404).json({ error: 'Visitor not found' });
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
         }
 
         const updateFields = {};
@@ -749,14 +751,14 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
 
         // Validate email/phone if provided
         if (updateFields.email && !validateEmailFormat(updateFields.email)) {
-            return res.status(400).json({ error: 'Invalid email format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid email format' });
         }
         if (updateFields.phone && !validatePhoneFormat(updateFields.phone)) {
-            return res.status(400).json({ error: 'Invalid phone format' });
+            return res.status(400).json({ status: 'error', error: 'Invalid phone format' });
         }
 
         if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({ error: 'No fields to update' });
+            return res.status(400).json({ status: 'error', error: 'No fields to update' });
         }
 
         updateFields.lastUpdated = new Date();
@@ -793,7 +795,7 @@ router.patch('/update', requireCompanyAccess, async (req, res, next) => {
             }
         }
 
-        res.json({ message: 'Visitor updated successfully', platformSync });
+        res.json({ status: 'success', message: 'Visitor updated successfully', platformSync });
     } catch (error) {
         console.error('Error updating visitor:', error);
         next(error);
@@ -810,7 +812,7 @@ router.post('/blacklist', requireCompanyAccess, async (req, res, next) => {
         const { visitorId, reason = 'No reason provided' } = req.body;
 
         if (!visitorId) {
-            return res.status(400).json({ error: 'Visitor ID is required' });
+            return res.status(400).json({ status: 'error', error: 'Visitor ID is required' });
         }
 
         const result = await collections.visitors().updateOne(
@@ -825,10 +827,10 @@ router.post('/blacklist', requireCompanyAccess, async (req, res, next) => {
         );
 
         if (result.matchedCount === 0) {
-            return res.status(404).json({ error: 'Visitor not found' });
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
         }
 
-        res.json({ message: 'Visitor blacklisted successfully' });
+        res.json({ status: 'success', message: 'Visitor blacklisted successfully' });
     } catch (error) {
         console.error('Error blacklisting visitor:', error);
         next(error);
@@ -844,7 +846,7 @@ router.post('/unblacklist', requireCompanyAccess, async (req, res, next) => {
         const { visitorId } = req.body;
 
         if (!visitorId) {
-            return res.status(400).json({ error: 'Visitor ID is required' });
+            return res.status(400).json({ status: 'error', error: 'Visitor ID is required' });
         }
 
         const result = await collections.visitors().updateOne(
@@ -859,10 +861,10 @@ router.post('/unblacklist', requireCompanyAccess, async (req, res, next) => {
         );
 
         if (result.matchedCount === 0) {
-            return res.status(404).json({ error: 'Visitor not found' });
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
         }
 
-        res.json({ message: 'Visitor unblacklisted successfully' });
+        res.json({ status: 'success', message: 'Visitor unblacklisted successfully' });
     } catch (error) {
         console.error('Error unblacklisting visitor:', error);
         next(error);
@@ -878,12 +880,12 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
         const { visitorId, companyId } = req.body;
 
         if (!visitorId) {
-            return res.status(400).json({ error: 'Visitor ID is required' });
+            return res.status(400).json({ status: 'error', error: 'Visitor ID is required' });
         }
 
         const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
         if (!visitor) {
-            return res.status(404).json({ error: 'Visitor not found' });
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
         }
 
         // Soft delete
@@ -935,7 +937,7 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
             }
         }
 
-        res.json({ message: 'Visitor deleted successfully', platformSync });
+        res.json({ status: 'success', message: 'Visitor deleted successfully', platformSync });
     } catch (error) {
         console.error('Error deleting visitor:', error);
         next(error);
@@ -956,7 +958,7 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
         const requiredFields = ['companyId', 'hostEmployeeId', 'expectedArrival'];
         const validation = validateRequiredFields(data, requiredFields);
         if (!validation.valid) {
-            return res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
+            return res.status(400).json({ status: 'error', error: `Missing required fields: ${validation.missing.join(', ')}` });
         }
 
         // Parse dates
@@ -965,17 +967,18 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
 
         // Check for overlapping visit
         if (await hasOverlappingVisit(visitorId, arrival, departure)) {
-            return res.status(409).json({ error: 'Visitor already has an overlapping visit.' });
+            return res.status(409).json({ status: 'error', error: 'Visitor already has an overlapping visit.' });
         }
 
         // Fetch visitor
         const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
         if (!visitor) {
-            return res.status(404).json({ error: 'Visitor not found.' });
+            return res.status(404).json({ status: 'error', error: 'Visitor not found.' });
         }
 
         if (visitor.blacklisted) {
             return res.status(403).json({
+                status: 'error',
                 error: `Visitor is blacklisted. Reason: ${visitor.blacklistReason || 'No reason provided'}`
             });
         }
@@ -991,7 +994,7 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             hostEmployee = await collections.employees().findOne({ employeeId: hostId });
         }
         if (!hostEmployee) {
-            return res.status(404).json({ error: 'Host employee not found.' });
+            return res.status(404).json({ status: 'error', error: 'Host employee not found.' });
         }
 
         // Build visit document
@@ -1039,6 +1042,7 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
         visitResponse.qrCodeUrl = `/api/visitors/visits/qr/${visitResponse._id}`;
 
         res.status(201).json({
+            status: 'success',
             message: 'Visit scheduled successfully',
             visit: visitResponse
         });
@@ -1058,16 +1062,16 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
         const data = req.body;
 
         if (!data.checkInMethod) {
-            return res.status(400).json({ error: 'Check-in method is required.' });
+            return res.status(400).json({ status: 'error', error: 'Check-in method is required.' });
         }
 
         const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
         if (!visit) {
-            return res.status(404).json({ error: 'Visit not found.' });
+            return res.status(404).json({ status: 'error', error: 'Visit not found.' });
         }
 
         if (visit.status !== 'scheduled') {
-            return res.status(400).json({ error: 'Visit is not in scheduled state.' });
+            return res.status(400).json({ status: 'error', error: 'Visit is not in scheduled state.' });
         }
 
         await collections.visits().updateOne(
@@ -1083,6 +1087,7 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
         );
 
         res.json({
+            status: 'success',
             message: 'Check-in successful',
             visitId
         });
@@ -1102,11 +1107,11 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
 
         const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
         if (!visit) {
-            return res.status(404).json({ error: 'Visit not found.' });
+            return res.status(404).json({ status: 'error', error: 'Visit not found.' });
         }
 
         if (visit.status !== 'checked_in') {
-            return res.status(400).json({ error: 'Visit is not checked in.' });
+            return res.status(400).json({ status: 'error', error: 'Visit is not checked in.' });
         }
 
         await collections.visits().updateOne(
@@ -1121,6 +1126,7 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
         );
 
         res.json({
+            status: 'success',
             message: 'Check-out successful',
             visitId
         });
