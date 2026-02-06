@@ -402,6 +402,83 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
     }
 });
 
+// Alias routes without hyphens (support both /check-in and /checkin patterns)
+router.post('/visits/:visitId/checkin', requireCompanyAccess, async (req, res, next) => {
+    req.url = req.url.replace('/checkin', '/check-in');
+    router.handle(req, res, next);
+});
+router.post('/visits/:visitId/checkout', requireCompanyAccess, async (req, res, next) => {
+    req.url = req.url.replace('/checkout', '/check-out');
+    router.handle(req, res, next);
+});
+
+// Direct /api/visits/:visitId routes (when mounted at /api/visits)
+router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitId } = req.params;
+        const { method = 'manual' } = req.body;
+
+        if (!isValidObjectId(visitId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
+        }
+
+        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
+        if (!visit) {
+            return res.status(404).json({ status: 'error', error: 'Visit not found' });
+        }
+
+        if (visit.status !== 'scheduled') {
+            return res.status(400).json({ status: 'error', error: `Visit cannot be checked in. Current status: ${visit.status}` });
+        }
+
+        const now = new Date();
+        await collections.visits().updateOne(
+            { _id: new ObjectId(visitId) },
+            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
+        );
+
+        res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString() });
+    } catch (error) {
+        next(error);
+    }
+});
+router.post('/:visitId/check-out', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitId } = req.params;
+
+        if (!isValidObjectId(visitId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
+        }
+
+        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
+        if (!visit) {
+            return res.status(404).json({ status: 'error', error: 'Visit not found' });
+        }
+
+        if (visit.status !== 'checked_in') {
+            return res.status(400).json({ status: 'error', error: `Visit cannot be checked out. Current status: ${visit.status}` });
+        }
+
+        const now = new Date();
+        await collections.visits().updateOne(
+            { _id: new ObjectId(visitId) },
+            { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
+        );
+
+        res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString() });
+    } catch (error) {
+        next(error);
+    }
+});
+router.post('/:visitId/checkin', requireCompanyAccess, async (req, res, next) => {
+    req.url = req.url.replace('/checkin', '/check-in');
+    router.handle(req, res, next);
+});
+router.post('/:visitId/checkout', requireCompanyAccess, async (req, res, next) => {
+    req.url = req.url.replace('/checkout', '/check-out');
+    router.handle(req, res, next);
+});
+
 /**
  * GET /api/visitors/:id
  * Get a single visitor by ID - respects data residency

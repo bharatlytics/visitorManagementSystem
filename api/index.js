@@ -199,6 +199,7 @@ app.use('/auth', authRoutes);
 
 // Core API routes
 app.use('/api/visitors', visitorRoutes);
+app.use('/api/visits', visitorRoutes); // Alias - reuses /visits/* routes from visitorRoutes
 app.use('/api/employees', employeeRoutes);
 app.use('/api/locations', entityRoutes);
 app.use('/api/entities', entityRoutes); // Alias
