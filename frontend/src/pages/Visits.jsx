@@ -540,7 +540,7 @@ export default function Visits() {
             <Modal isOpen={showDetailsModal} onClose={() => setShowDetailsModal(false)} title="Visit Details">
                 {selectedVisit && (
                     <div className="h-full flex flex-col">
-                        {/* Header with Status */}
+                        {/* Header with Status and Actions */}
                         <div className="flex items-start justify-between pb-6 border-b border-gray-200">
                             <div className="flex items-center gap-4">
                                 <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
@@ -552,12 +552,31 @@ export default function Visits() {
                                     <p className="text-sm text-gray-500 mt-1">{selectedVisit.organization || selectedVisit.visitorCompany || 'Individual'}</p>
                                 </div>
                             </div>
-                            <div className="text-right">
+                            <div className="flex flex-col items-end gap-3">
                                 <span className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full ${statusConfig[selectedVisit.status]?.bg} ${statusConfig[selectedVisit.status]?.text}`}>
                                     {(() => { const Icon = statusConfig[selectedVisit.status]?.icon; return Icon ? <Icon className="w-4 h-4" /> : null })()}
                                     {statusConfig[selectedVisit.status]?.label}
                                 </span>
-                                <p className="text-xs text-gray-400 mt-2">Visit ID: {selectedVisit._id?.slice(-8)}</p>
+                                <p className="text-xs text-gray-400">Visit ID: {selectedVisit._id?.slice(-8)}</p>
+                                {/* Action buttons in header */}
+                                <div className="flex items-center gap-2 mt-2">
+                                    <button onClick={() => { openBadgeModal(selectedVisit); setShowDetailsModal(false) }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors">
+                                        <BadgeCheck className="w-3.5 h-3.5" /> Badge
+                                    </button>
+                                    {selectedVisit.status === 'scheduled' && (
+                                        <button onClick={() => { handleCheckIn(selectedVisit._id); setShowDetailsModal(false) }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                            <LogIn className="w-3.5 h-3.5" /> Check In
+                                        </button>
+                                    )}
+                                    {selectedVisit.status === 'checked_in' && (
+                                        <button onClick={() => { handleCheckOut(selectedVisit._id); setShowDetailsModal(false) }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
+                                            <LogOut className="w-3.5 h-3.5" /> Check Out
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -618,33 +637,6 @@ export default function Visits() {
                                         <h5 className="text-xs font-semibold uppercase mb-2">Approval Status</h5>
                                         <p className="text-sm font-medium">{selectedVisit.approvalStatus?.toUpperCase()}</p>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Actions Footer */}
-                        <div className="flex items-center justify-between pt-6 mt-auto border-t border-gray-200">
-                            <button onClick={() => { openBadgeModal(selectedVisit); setShowDetailsModal(false) }}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-purple-600 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors">
-                                <BadgeCheck className="w-4 h-4" /> View Badge
-                            </button>
-
-                            <div className="flex items-center gap-3">
-                                <button onClick={() => setShowDetailsModal(false)}
-                                    className="px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
-                                    Close
-                                </button>
-                                {selectedVisit.status === 'scheduled' && (
-                                    <button onClick={() => { handleCheckIn(selectedVisit._id); setShowDetailsModal(false) }}
-                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl shadow-lg shadow-green-500/25 hover:from-green-700 hover:to-green-800 transition-all">
-                                        <LogIn className="w-4 h-4" /> Check In Now
-                                    </button>
-                                )}
-                                {selectedVisit.status === 'checked_in' && (
-                                    <button onClick={() => { handleCheckOut(selectedVisit._id); setShowDetailsModal(false) }}
-                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl shadow-lg shadow-orange-500/25 hover:from-orange-700 hover:to-orange-800 transition-all">
-                                        <LogOut className="w-4 h-4" /> Check Out
-                                    </button>
                                 )}
                             </div>
                         </div>
