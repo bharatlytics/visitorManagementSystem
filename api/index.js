@@ -128,6 +128,7 @@ const employeeRoutes = require('../server/routes/employees');
 const entityRoutes = require('../server/routes/entities');
 const deviceRoutes = require('../server/routes/devices');
 const dashboardRoutes = require('../server/routes/dashboard');
+const badgeRoutes = require('../server/routes/badge');
 
 // Extended Routes
 const watchlistRoutes = require('../server/routes/watchlist');
@@ -203,6 +204,7 @@ app.use('/api/locations', entityRoutes);
 app.use('/api/entities', entityRoutes); // Alias
 app.use('/api/devices', deviceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/badge', badgeRoutes);
 app.use('/api/advanced-analytics', advancedAnalyticsRoutes);
 
 // Extended API routes
