@@ -326,6 +326,15 @@ router.get('/visits', requireCompanyAccess, async (req, res, next) => {
     }
 });
 
+// Helper: Get current time in IST (UTC+5:30) stored as Date object
+// This ensures uniform storage with expectedArrival/expectedDeparture which come from frontend as local time
+function getCurrentISTTime() {
+    const now = new Date();
+    // Add 5 hours 30 minutes to UTC to get IST
+    const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+    return new Date(now.getTime() + istOffset);
+}
+
 /**
  * POST /api/visitors/visits/:visitId/check-in
  * Manual check-in for a scheduled visit
@@ -348,7 +357,8 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
             return res.status(400).json({ status: 'error', error: `Visit cannot be checked in. Current status: ${visit.status}` });
         }
 
-        const now = new Date();
+        // Use IST time to match expectedArrival format
+        const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
@@ -383,7 +393,8 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
             return res.status(400).json({ status: 'error', error: `Visit cannot be checked out. Current status: ${visit.status}` });
         }
 
-        const now = new Date();
+        // Use IST time to match expectedArrival format
+        const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
@@ -431,7 +442,8 @@ router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) =
             return res.status(400).json({ status: 'error', error: `Visit cannot be checked in. Current status: ${visit.status}` });
         }
 
-        const now = new Date();
+        // Use IST time to match expectedArrival format
+        const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
@@ -459,7 +471,8 @@ router.post('/:visitId/check-out', requireCompanyAccess, async (req, res, next) 
             return res.status(400).json({ status: 'error', error: `Visit cannot be checked out. Current status: ${visit.status}` });
         }
 
-        const now = new Date();
+        // Use IST time to match expectedArrival format
+        const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
