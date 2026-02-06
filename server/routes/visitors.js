@@ -624,14 +624,16 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     uploadStream.on('error', reject);
                 });
 
+                const embeddingId = uploadStream.id;
                 initialEmbeddingsDict[version] = {
                     status: 'completed',
-                    embeddingId: uploadStream.id,
+                    embeddingId: embeddingId,
+                    downloadUrl: `/api/visitors/embeddings/${embeddingId}`,
                     model: version,
                     createdAt: new Date(),
                     finishedAt: new Date()
                 };
-                console.log(`[register_visitor] Stored pre-calculated embedding for ${version}`);
+                console.log(`[register_visitor] Stored pre-calculated embedding for ${version}, id=${embeddingId}`);
             } catch (e) {
                 console.log(`[register_visitor] Error processing embedding file: ${e.message}`);
             }
