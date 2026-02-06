@@ -327,6 +327,82 @@ router.get('/visits', requireCompanyAccess, async (req, res, next) => {
 });
 
 /**
+ * POST /api/visitors/visits/:visitId/check-in
+ * Manual check-in for a scheduled visit
+ */
+router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitId } = req.params;
+        const { method = 'manual' } = req.body;
+
+        if (!isValidObjectId(visitId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
+        }
+
+        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
+        if (!visit) {
+            return res.status(404).json({ status: 'error', error: 'Visit not found' });
+        }
+
+        if (visit.status !== 'scheduled') {
+            return res.status(400).json({ status: 'error', error: `Visit cannot be checked in. Current status: ${visit.status}` });
+        }
+
+        const now = new Date();
+        await collections.visits().updateOne(
+            { _id: new ObjectId(visitId) },
+            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
+        );
+
+        console.log(`[check-in] Visit ${visitId} checked in via ${method}`);
+        res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString() });
+    } catch (error) {
+        console.error('Error in check-in:', error);
+        next(error);
+    }
+});
+
+/**
+ * POST /api/visitors/visits/:visitId/check-out
+ * Manual check-out for a checked-in visit
+ */
+router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitId } = req.params;
+
+        if (!isValidObjectId(visitId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
+        }
+
+        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
+        if (!visit) {
+            return res.status(404).json({ status: 'error', error: 'Visit not found' });
+        }
+
+        if (visit.status !== 'checked_in') {
+            return res.status(400).json({ status: 'error', error: `Visit cannot be checked out. Current status: ${visit.status}` });
+        }
+
+        const now = new Date();
+        await collections.visits().updateOne(
+            { _id: new ObjectId(visitId) },
+            { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
+        );
+
+        let duration = null;
+        if (visit.actualArrival) {
+            duration = Math.round((now - new Date(visit.actualArrival)) / 60000);
+        }
+
+        console.log(`[check-out] Visit ${visitId} checked out. Duration: ${duration} minutes`);
+        res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString(), duration });
+    } catch (error) {
+        console.error('Error in check-out:', error);
+        next(error);
+    }
+});
+
+/**
  * GET /api/visitors/:id
  * Get a single visitor by ID - respects data residency
  */
