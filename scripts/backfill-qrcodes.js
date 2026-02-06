@@ -6,21 +6,22 @@
  * This script adds a qrCode field to all visits that don't have one.
  */
 
-require('dotenv').config();
+const path = require('path');
+// Load config from server
+const Config = require(path.join(__dirname, '..', 'server', 'config'));
 const { MongoClient, ObjectId } = require('mongodb');
 
-// MongoDB connection string from environment
-const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+// MongoDB connection string from Config
+const MONGODB_URI = Config.VMS_MONGODB_URI;
 
 async function backfillQrCodes() {
     if (!MONGODB_URI) {
-        console.error('ERROR: MONGODB_URI or MONGO_URI environment variable not set');
-        console.log('Set it in .env file or export it:');
-        console.log('  export MONGODB_URI="mongodb+srv://..."');
+        console.error('ERROR: VMS_MONGODB_URI not set in Config');
         process.exit(1);
     }
 
     console.log('Connecting to MongoDB...');
+    console.log('URI:', MONGODB_URI.substring(0, 40) + '...');
     const client = new MongoClient(MONGODB_URI);
 
     try {
