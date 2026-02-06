@@ -30,18 +30,20 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# Get MongoDB URI from environment variable (required in production)
-VMS_MONGODB_URI = os.environ.get('VMS_MONGODB_URI', 'mongodb://localhost:27017/vms_db')
+# MongoDB Atlas URI for VMS database
+# Can be overridden via environment variable VMS_MONGODB_URI
+VMS_MONGODB_URI = os.environ.get(
+    'VMS_MONGODB_URI', 
+    'mongodb+srv://bharatlytics:nN9AEW7exNdqoQ3r@cluster0.tato9.mongodb.net/blGroup_visitorManagementSystem?retryWrites=true&w=majority&appName=Cluster0'
+)
 VMS_URL = os.environ.get('VMS_URL', 'http://localhost:5001')
 
 # MongoDB connection
-print(f"[VMS Worker] Connecting to VMS MongoDB: {VMS_MONGODB_URI[:60]}...")
+print(f"[VMS Worker] Connecting to VMS MongoDB Atlas...")
 client = MongoClient(VMS_MONGODB_URI)
-# Extract database name from URI or use default
-# Handle MongoDB Atlas URIs that may not have db name in path
-db_name = VMS_MONGODB_URI.split('/')[-1].split('?')[0] if '/' in VMS_MONGODB_URI else ''
-if not db_name:
-    db_name = 'blGroup_visitorManagementSystem'  # Default VMS database
+
+# Database name is blGroup_visitorManagementSystem
+db_name = 'blGroup_visitorManagementSystem'
 print(f"[VMS Worker] Using database: {db_name}")
 db = client[db_name]
 
