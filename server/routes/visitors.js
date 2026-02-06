@@ -1520,4 +1520,64 @@ router.get('/embeddings/:embedding_id', async (req, res, next) => {
     }
 });
 
+/**
+ * POST /api/visitors/visits/backfill-qrcodes
+ * Backfill qrCode field for existing visits that don't have one
+ * Admin utility endpoint
+ */
+router.post('/visits/backfill-qrcodes', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const companyId = req.query.companyId;
+        if (!companyId) {
+            return res.status(400).json({ error: 'Company ID is required.' });
+        }
+
+        const companyQuery = isValidObjectId(companyId)
+            ? { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] }
+            : { companyId };
+
+        // Find all visits without qrCode
+        const visitsWithoutQr = await collections.visits().find({
+            ...companyQuery,
+            $or: [
+                { qrCode: { $exists: false } },
+                { qrCode: null },
+                { qrCode: '' }
+            ]
+        }).toArray();
+
+        console.log(`[backfill-qrcodes] Found ${visitsWithoutQr.length} visits without qrCode for company ${companyId}`);
+
+        if (visitsWithoutQr.length === 0) {
+            return res.json({
+                status: 'success',
+                message: 'All visits already have qrCode',
+                updated: 0
+            });
+        }
+
+        // Update each visit with a new qrCode
+        const bulkOps = visitsWithoutQr.map(visit => ({
+            updateOne: {
+                filter: { _id: visit._id },
+                update: { $set: { qrCode: new ObjectId().toString() } }
+            }
+        }));
+
+        const result = await collections.visits().bulkWrite(bulkOps);
+
+        console.log(`[backfill-qrcodes] Updated ${result.modifiedCount} visits with qrCode`);
+
+        res.json({
+            status: 'success',
+            message: `Backfilled qrCode for ${result.modifiedCount} visits`,
+            updated: result.modifiedCount,
+            total: visitsWithoutQr.length
+        });
+    } catch (error) {
+        console.error('[backfill-qrcodes] Error:', error);
+        next(error);
+    }
+});
+
 module.exports = router;
