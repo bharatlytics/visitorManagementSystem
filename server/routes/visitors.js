@@ -1079,8 +1079,18 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             return res.status(409).json({ status: 'error', error: 'Visitor already has an overlapping visit.' });
         }
 
-        // Fetch visitor
-        const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
+        // Use DataProvider for residency-aware lookups
+        const platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        const dataProvider = getDataProvider(data.companyId, platformToken);
+
+        // Fetch visitor (residency-aware)
+        let visitor = null;
+        try {
+            visitor = await dataProvider.getVisitorById(visitorId);
+        } catch (e) {
+            console.log(`[schedule_visit] Error fetching visitor: ${e.message}`);
+        }
+
         if (!visitor) {
             return res.status(404).json({ status: 'error', error: 'Visitor not found.' });
         }
@@ -1092,18 +1102,24 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             });
         }
 
-        // Fetch host employee
+        // Fetch host employee (residency-aware)
         const hostId = data.hostEmployeeId;
         let hostEmployee = null;
 
-        if (isValidObjectId(hostId)) {
-            hostEmployee = await collections.employees().findOne({ _id: new ObjectId(hostId) });
+        try {
+            hostEmployee = await dataProvider.getEmployeeById(hostId);
+        } catch (e) {
+            console.log(`[schedule_visit] Error fetching host employee: ${e.message}`);
         }
-        if (!hostEmployee) {
-            hostEmployee = await collections.employees().findOne({ employeeId: hostId });
-        }
+
         if (!hostEmployee) {
             return res.status(404).json({ status: 'error', error: 'Host employee not found.' });
+        }
+
+        // Check if employee is active (handle both local and platform formats)
+        const empStatus = hostEmployee.status || (hostEmployee.attributes && hostEmployee.attributes.status) || 'active';
+        if (empStatus !== 'active') {
+            return res.status(404).json({ status: 'error', error: 'Host employee not found or not active.' });
         }
 
         // Build visit document
