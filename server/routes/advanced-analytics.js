@@ -9,49 +9,61 @@ const { ObjectId } = require('mongodb');
 const { collections } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
 const { convertObjectIds, isValidObjectId } = require('../utils/helpers');
+const { getDataProvider } = require('../services/data_provider');
 
 /**
  * GET /api/advanced-analytics/dashboard
  * Main analytics dashboard data
+ * Returns: totalVisitors, thisMonth, avgDuration, activeNow (matching Analytics.jsx expectations)
  */
 router.get('/dashboard', requireCompanyAccess, async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
-        const startDate = req.query.startDate ? new Date(req.query.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
 
         if (!companyId) {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
+        // Get platform token for residency-aware fetching
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        // Use DataProvider for residency-aware visitor counting
+        const dataProvider = getDataProvider(companyId, platformToken);
+        const visitors = await dataProvider.getVisitors(companyId);
+        const totalVisitors = visitors.filter(v => v.status !== 'deleted').length;
+
         const companyMatch = isValidObjectId(companyId)
             ? { companyId: new ObjectId(companyId) }
             : { companyId };
 
+        // Date ranges
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
         // Parallel queries for dashboard stats
-        const [totalVisits, uniqueVisitors, avgDuration, peakHour] = await Promise.all([
-            // Total visits in range
+        const [thisMonthVisits, avgDuration, activeNow] = await Promise.all([
+            // This month's visits
             collections.visits().countDocuments({
                 ...companyMatch,
-                createdAt: { $gte: startDate, $lte: endDate }
+                createdAt: { $gte: startOfMonth, $lte: endOfMonth }
             }),
-            // Unique visitors count (approximate)
-            collections.visits().distinct('visitorId', {
-                ...companyMatch,
-                createdAt: { $gte: startDate, $lte: endDate }
-            }).then(ids => ids.length),
-            // Average duration
+            // Average duration (from completed visits)
             collections.visits().aggregate([
                 {
                     $match: {
                         ...companyMatch,
-                        createdAt: { $gte: startDate, $lte: endDate },
-                        checkOut: { $exists: true }
+                        actualArrival: { $ne: null },
+                        actualDeparture: { $ne: null }
                     }
                 },
                 {
                     $project: {
-                        duration: { $subtract: ['$checkOut', '$checkIn'] }
+                        duration: { $subtract: ['$actualDeparture', '$actualArrival'] }
                     }
                 },
                 {
@@ -61,37 +73,22 @@ router.get('/dashboard', requireCompanyAccess, async (req, res, next) => {
                     }
                 }
             ]).toArray().then(r => r[0]?.avgDuration ? Math.round(r[0].avgDuration / (1000 * 60)) : 0),
-            // Peak hour calculation
-            collections.visits().aggregate([
-                {
-                    $match: {
-                        ...companyMatch,
-                        createdAt: { $gte: startDate, $lte: endDate }
-                    }
-                },
-                {
-                    $project: {
-                        hour: { $hour: '$createdAt' }
-                    }
-                },
-                {
-                    $group: {
-                        _id: '$hour',
-                        count: { $sum: 1 }
-                    }
-                },
-                { $sort: { count: -1 } },
-                { $limit: 1 }
-            ]).toArray().then(r => r[0] ? `${r[0]._id}:00` : 'N/A')
+            // Currently active (checked_in status)
+            collections.visits().countDocuments({
+                ...companyMatch,
+                status: 'checked_in'
+            })
         ]);
 
+        // Response format matching Analytics.jsx expectations
         res.json({
-            summary: {
-                totalVisits,
-                uniqueVisitors,
-                avgDuration,
-                peakHour
-            }
+            totalVisitors,
+            thisMonth: thisMonthVisits,
+            avgDuration,
+            activeNow,
+            // Trends (optional)
+            visitorTrend: null,
+            monthTrend: null
         });
     } catch (error) {
         console.error('Error fetching analytics dashboard:', error);
