@@ -195,8 +195,10 @@ function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedAr
         return new Date(date.getTime() + istOffset);
     };
 
+    const visitId = new ObjectId();
+
     return {
-        _id: new ObjectId(),
+        _id: visitId,
         visitorId: visitorId instanceof ObjectId ? visitorId : new ObjectId(visitorId),
         companyId: companyId instanceof ObjectId ? companyId : new ObjectId(companyId),
         hostEmployeeId: hostEmployeeId instanceof ObjectId ? hostEmployeeId : new ObjectId(hostEmployeeId),
@@ -214,6 +216,13 @@ function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedAr
         numberOfPersons: options.numberOfPersons || 1,
         belongings: options.belongings || [],
         visitType: options.visitType || 'meeting',
+        qrCode: new ObjectId().toString(),  // Unique QR code for badge
+        accessAreas: options.accessAreas || [],
+        assets: options.assets || {},
+        facilities: options.facilities || {},
+        vehicle: options.vehicle || {},
+        compliance: options.compliance || {},
+        notes: options.notes || '',
         createdAt: new Date(),
         lastUpdated: new Date()
     };
