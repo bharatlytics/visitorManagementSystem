@@ -1,7 +1,7 @@
 /**
  * Dashboard API
  * Statistics and metrics for VMS dashboard
- * Matching Python app/api/dashboard.py
+ * Supports data residency - fetches from Platform or local VMS based on company settings
  */
 const express = require('express');
 const router = express.Router();
@@ -10,10 +10,11 @@ const { ObjectId } = require('mongodb');
 const { collections } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/helpers');
+const { getDataProvider } = require('../services/data_provider');
 
 /**
  * GET /api/dashboard/stats
- * Get dashboard statistics
+ * Get dashboard statistics - residency-aware
  */
 router.get('/stats', requireCompanyAccess, async (req, res, next) => {
     try {
@@ -22,6 +23,25 @@ router.get('/stats', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
+        // Get platform token for residency-aware fetching
+        let platformToken = req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        // Use DataProvider for residency-aware employee/visitor counts
+        const dataProvider = getDataProvider(companyId, platformToken);
+
+        // Get employees and visitors from appropriate source (Platform or local)
+        const [employees, visitors] = await Promise.all([
+            dataProvider.getEmployees(companyId),
+            dataProvider.getVisitors(companyId)
+        ]);
+
+        const totalEmployees = employees.filter(e => e.status !== 'deleted').length;
+        const totalVisitors = visitors.filter(v => v.status !== 'deleted').length;
+
+        // Visits are always in local VMS DB
         const companyQuery = isValidObjectId(companyId)
             ? { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] }
             : { companyId };
@@ -32,17 +52,13 @@ router.get('/stats', requireCompanyAccess, async (req, res, next) => {
         const endOfDay = new Date();
         endOfDay.setHours(23, 59, 59, 999);
 
-        // Parallel queries for stats
+        // Parallel queries for visit stats (visits always in VMS DB)
         const [
-            totalVisitors,
-            totalEmployees,
             activeVisits,
             todayVisits,
             pendingApprovals,
             checkedInToday
         ] = await Promise.all([
-            collections.visitors().countDocuments({ ...companyQuery, status: { $ne: 'deleted' } }),
-            collections.employees().countDocuments({ ...companyQuery, status: { $ne: 'deleted' } }),
             collections.visits().countDocuments({ ...companyQuery, status: 'checked_in' }),
             collections.visits().countDocuments({
                 ...companyQuery,
