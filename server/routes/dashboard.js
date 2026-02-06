@@ -54,31 +54,66 @@ router.get('/stats', requireCompanyAccess, async (req, res, next) => {
 
         // Parallel queries for visit stats (visits always in VMS DB)
         const [
-            activeVisits,
-            todayVisits,
-            pendingApprovals,
-            checkedInToday
+            currentlyOnSite,
+            todayTotal,
+            todayScheduled,
+            todayCheckedIn,
+            todayCheckedOut,
+            pendingApprovals
         ] = await Promise.all([
+            // Currently on-site (checked_in status)
             collections.visits().countDocuments({ ...companyQuery, status: 'checked_in' }),
+            // Today's total visits (any visit today)
             collections.visits().countDocuments({
                 ...companyQuery,
+                $or: [
+                    { expectedArrival: { $gte: startOfDay, $lte: endOfDay } },
+                    { actualArrival: { $gte: startOfDay, $lte: endOfDay } }
+                ]
+            }),
+            // Scheduled for today
+            collections.visits().countDocuments({
+                ...companyQuery,
+                status: 'scheduled',
                 expectedArrival: { $gte: startOfDay, $lte: endOfDay }
             }),
-            collections.visits().countDocuments({ ...companyQuery, status: 'pending_approval' }),
+            // Checked in today
             collections.visits().countDocuments({
                 ...companyQuery,
                 status: { $in: ['checked_in', 'checked_out'] },
                 actualArrival: { $gte: startOfDay }
-            })
+            }),
+            // Checked out today
+            collections.visits().countDocuments({
+                ...companyQuery,
+                status: 'checked_out',
+                actualDeparture: { $gte: startOfDay }
+            }),
+            // Pending approvals
+            collections.visits().countDocuments({ ...companyQuery, status: 'pending_approval' })
         ]);
 
+        // Response format matching Dashboard.jsx expectations
         res.json({
+            // Main stats
+            currentlyOnSite,
+            currently_on_site: currentlyOnSite, // alias for compatibility
             totalVisitors,
             totalEmployees,
-            activeVisits,
-            todayVisits,
             pendingApprovals,
-            checkedInToday,
+            capacity: 100, // Default capacity, can be made configurable
+
+            // Today's breakdown (for Today's Activity section)
+            today: {
+                total: todayTotal,
+                scheduled: todayScheduled,
+                checkedIn: todayCheckedIn,
+                checkedOut: todayCheckedOut
+            },
+
+            // Average duration (placeholder)
+            avgDuration: 45,
+
             timestamp: new Date().toISOString()
         });
     } catch (error) {
