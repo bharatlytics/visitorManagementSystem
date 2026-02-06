@@ -133,16 +133,20 @@ function generateUniqueId(prefix = 'VIS') {
  * Rewrite embedding download URLs to use VMS proxy URLs
  * Matching Python app/api/employees.py and visitors.py pattern
  * 
+ * IMPORTANT: 
+ * - visitorEmbeddings/employeeEmbeddings are stored in VMS GridFS -> use VMS baseUrl
+ * - actorEmbeddings from Platform are stored in Platform GridFS -> use platformUrl if provided
+ * 
  * @param {Array|Object} records - Single record or array of records (employees/visitors)
  * @param {string} baseUrl - VMS base URL (e.g., http://localhost:5001)
  * @param {string} entityType - 'employees' or 'visitors' for URL path
- * @param {string} platformUrl - Optional. If provided, links directly to Platform instead of proxying.
+ * @param {string} platformUrl - Optional. If provided, links actorEmbeddings to Platform.
  */
 function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees', platformUrl = null) {
     const recordsArray = Array.isArray(records) ? records : [records];
 
     for (const record of recordsArray) {
-        // Handle Platform actorEmbeddings
+        // Handle Platform actorEmbeddings (stored in Platform GridFS)
         if (record.actorEmbeddings) {
             for (const [model, embData] of Object.entries(record.actorEmbeddings)) {
                 if (embData && typeof embData === 'object' && embData.status === 'done') {
@@ -155,13 +159,11 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees', platfo
 
                     if (embeddingId) {
                         if (platformUrl) {
-                            // DIRECT LINK to Platform (Bypass VMS Proxy)
+                            // DIRECT LINK to Platform (for Platform-stored embeddings)
                             // /bharatlytics/v1/actors/embeddings/:id
                             embData.downloadUrl = `${platformUrl}/bharatlytics/v1/actors/embeddings/${embeddingId}`;
                         } else {
                             // PROXY through VMS
-                            // Only rewrite if not already an absolute URL (unless we want to force proxy?)
-                            // Current logic: force proxy if no platformUrl provided
                             embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
                         }
                     }
@@ -170,6 +172,7 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees', platfo
         }
 
         // Handle legacy VMS embeddings (employeeEmbeddings / visitorEmbeddings)
+        // These are stored in VMS GridFS, so ALWAYS use VMS baseUrl (not Platform!)
         const legacyKey = entityType === 'employees' ? 'employeeEmbeddings' : 'visitorEmbeddings';
         if (record[legacyKey]) {
             for (const [model, embData] of Object.entries(record[legacyKey])) {
@@ -177,11 +180,8 @@ function rewriteEmbeddingUrls(records, baseUrl, entityType = 'employees', platfo
                     const embeddingId = embData.embeddingId;
 
                     if (embeddingId) {
-                        if (platformUrl) {
-                            embData.downloadUrl = `${platformUrl}/bharatlytics/v1/actors/embeddings/${embeddingId}`;
-                        } else {
-                            embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
-                        }
+                        // VMS embeddings are always served from VMS, not Platform
+                        embData.downloadUrl = `${baseUrl}/api/${entityType}/embeddings/${embeddingId}`;
                     }
                 }
             }
