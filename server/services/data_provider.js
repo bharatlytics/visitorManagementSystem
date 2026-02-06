@@ -248,12 +248,11 @@ class DataProvider {
     }
 
     /**
-     * Fetch visitors from Platform (rare)
+     * Fetch visitors from Platform
      */
     async _getVisitorsFromPlatform(companyId) {
-        console.log(`[DataProvider] Fetching visitors from Platform (unusual)`);
-        // Visitors rarely go to platform, but support it anyway
-        return this.platformClient.getEmployees(companyId); // reuse actor fetch
+        console.log(`[DataProvider] Fetching visitors from Platform`);
+        return this.platformClient.getVisitors(companyId);
     }
 }
 

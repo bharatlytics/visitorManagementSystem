@@ -102,6 +102,59 @@ class PlatformClient {
     }
 
     /**
+     * Fetch visitors from Platform actors API
+     * 
+     * @param {string} companyId - Company ID
+     * @returns {Promise<Array>} List of visitors
+     */
+    async getVisitors(companyId = null) {
+        const cid = companyId || this.companyId;
+        console.log(`[PlatformClient] Fetching visitors from Platform for company ${cid}`);
+
+        try {
+            const url = `${this.baseUrl}/bharatlytics/v1/actors`;
+            console.log(`[PlatformClient] GET ${url} with params: companyId=${cid}, actorType=visitor`);
+
+            const response = await axios.get(url, {
+                params: {
+                    companyId: cid,
+                    actorType: 'visitor',
+                    status: 'active'
+                },
+                headers: this.getHeaders(),
+                timeout: 10000
+            });
+
+            if (response.status === 200) {
+                const data = response.data;
+                const actors = Array.isArray(data) ? data : (data.actors || data.data || []);
+                console.log(`[PlatformClient] Fetched ${actors.length} visitors from Platform`);
+
+                // Transform Platform actors to VMS visitor format
+                return actors.map(actor => this.transformActorToVisitor(actor));
+            }
+        } catch (error) {
+            console.error(`[PlatformClient] Error fetching visitors: ${error.message}`);
+        }
+        return [];
+    }
+
+    /**
+     * Transform Platform actor to VMS visitor format
+     */
+    transformActorToVisitor(actor) {
+        const attrs = actor.attributes || {};
+
+        return {
+            ...actor,
+            visitorName: attrs.name || attrs.visitorName || 'Unknown',
+            visitorMobile: attrs.phone || attrs.visitorMobile || null,
+            email: attrs.email || null,
+            company: attrs.company || attrs.visitorCompany || null
+        };
+    }
+
+    /**
      * Transform Platform actor to VMS employee format
      * Keeps all Platform fields + adds VMS convenience fields
      */
