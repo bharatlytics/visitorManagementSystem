@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash } from 'lucide-react'
+import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash, Users, Package, Car } from 'lucide-react'
 import api from '../api/client'
 
 // Enterprise Modal Component - 80% viewport
@@ -587,7 +587,24 @@ export default function Visits() {
                             <div className="space-y-4">
                                 <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Additional Details</h4>
                                 <InfoField icon={BadgeCheck} label="Check-In Method" value={selectedVisit.checkInMethod === 'FR' ? 'Face Recognition' : selectedVisit.checkInMethod || '—'} />
-                                <InfoField icon={Building} label="Vehicle Number" value={selectedVisit.vehicleNumber} />
+                                <InfoField icon={Car} label="Vehicle Number" value={selectedVisit.vehicleNumber} />
+                                <InfoField icon={Users} label="Number of Persons" value={selectedVisit.numberOfPersons || 1} />
+
+                                {/* Belongings */}
+                                {selectedVisit.belongings && selectedVisit.belongings.length > 0 && (
+                                    <div className="p-4 bg-blue-50 rounded-xl">
+                                        <h5 className="text-xs font-semibold text-blue-800 uppercase mb-2 flex items-center gap-2">
+                                            <Package className="w-3.5 h-3.5" /> Belongings
+                                        </h5>
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedVisit.belongings.map((item, idx) => (
+                                                <span key={idx} className="px-2.5 py-1 bg-white text-blue-700 text-xs font-medium rounded-lg border border-blue-200">
+                                                    {item}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {selectedVisit.notes && (
                                     <div className="p-4 bg-yellow-50 rounded-xl">
@@ -606,22 +623,26 @@ export default function Visits() {
                         </div>
 
                         {/* Actions Footer */}
-                        <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+                        <div className="flex items-center justify-between pt-6 mt-auto border-t border-gray-200">
                             <button onClick={() => { openBadgeModal(selectedVisit); setShowDetailsModal(false) }}
                                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-purple-600 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors">
                                 <BadgeCheck className="w-4 h-4" /> View Badge
                             </button>
 
-                            <div className="flex gap-3">
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setShowDetailsModal(false)}
+                                    className="px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
+                                    Close
+                                </button>
                                 {selectedVisit.status === 'scheduled' && (
                                     <button onClick={() => { handleCheckIn(selectedVisit._id); setShowDetailsModal(false) }}
-                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-green-600 text-white rounded-xl shadow-lg hover:bg-green-700 transition-all">
+                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl shadow-lg shadow-green-500/25 hover:from-green-700 hover:to-green-800 transition-all">
                                         <LogIn className="w-4 h-4" /> Check In Now
                                     </button>
                                 )}
                                 {selectedVisit.status === 'checked_in' && (
                                     <button onClick={() => { handleCheckOut(selectedVisit._id); setShowDetailsModal(false) }}
-                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-orange-600 text-white rounded-xl shadow-lg hover:bg-orange-700 transition-all">
+                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl shadow-lg shadow-orange-500/25 hover:from-orange-700 hover:to-orange-800 transition-all">
                                         <LogOut className="w-4 h-4" /> Check Out
                                     </button>
                                 )}
@@ -648,9 +669,9 @@ export default function Visits() {
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-4 pt-6">
-                            <button onClick={() => setShowBadgeModal(false)} className="px-6 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Close</button>
-                            <button onClick={printBadge} className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700">
+                        <div className="flex items-center justify-center gap-4 pt-6 border-t border-gray-200 mt-auto">
+                            <button onClick={() => setShowBadgeModal(false)} className="px-6 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Close</button>
+                            <button onClick={printBadge} className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/25 hover:from-blue-700 hover:to-blue-800 transition-all">
                                 <Printer className="w-4 h-4" /> Print Badge
                             </button>
                         </div>
