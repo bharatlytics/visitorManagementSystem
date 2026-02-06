@@ -193,9 +193,18 @@ export default function Visits() {
 
     const formatDate = (dateStr) => {
         if (!dateStr) return '—'
-        return new Date(dateStr).toLocaleString('en-IN', {
-            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-        })
+        // Display the stored time directly without timezone conversion
+        // Since backend stores local time values, we use UTC methods to show them as stored
+        const date = new Date(dateStr)
+        const day = date.getUTCDate()
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        const month = months[date.getUTCMonth()]
+        const year = date.getUTCFullYear()
+        let hours = date.getUTCHours()
+        const minutes = date.getUTCMinutes().toString().padStart(2, '0')
+        const ampm = hours >= 12 ? 'pm' : 'am'
+        hours = hours % 12 || 12
+        return `${day} ${month} ${year}, ${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`
     }
 
     const calculateDuration = (checkIn, checkOut) => {

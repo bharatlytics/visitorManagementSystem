@@ -178,16 +178,31 @@ function buildVisitorDoc(data, imageDict, embeddingsDict, documentDict) {
 
 /**
  * Build visit document
+ * 
+ * TIMEZONE HANDLING:
+ * Frontend sends datetime as ISO string in local time (e.g., "2026-02-06T15:24:00.000+05:30")
+ * JavaScript's `new Date()` converts this to UTC internally
+ * To preserve the local time values in the database, we add the IST offset (5.5 hours)
+ * This way, what user sees in the form is what appears in the database
  */
 function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedArrival, expectedDeparture, options = {}) {
+    // Helper to preserve local time - add IST offset so DB shows same time as user entered
+    const preserveLocalTime = (dateInput) => {
+        if (!dateInput) return null;
+        const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+        // Add 5 hours 30 minutes to compensate for UTC conversion
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        return new Date(date.getTime() + istOffset);
+    };
+
     return {
         _id: new ObjectId(),
         visitorId: visitorId instanceof ObjectId ? visitorId : new ObjectId(visitorId),
         companyId: companyId instanceof ObjectId ? companyId : new ObjectId(companyId),
         hostEmployeeId: hostEmployeeId instanceof ObjectId ? hostEmployeeId : new ObjectId(hostEmployeeId),
         purpose: purpose || '',
-        expectedArrival: expectedArrival instanceof Date ? expectedArrival : new Date(expectedArrival),
-        expectedDeparture: expectedDeparture instanceof Date ? expectedDeparture : new Date(expectedDeparture),
+        expectedArrival: preserveLocalTime(expectedArrival),
+        expectedDeparture: preserveLocalTime(expectedDeparture),
         actualArrival: null,
         actualDeparture: null,
         status: options.approved ? 'scheduled' : 'pending_approval',
@@ -198,6 +213,7 @@ function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedAr
         vehicleNumber: options.vehicleNumber || null,
         numberOfPersons: options.numberOfPersons || 1,
         belongings: options.belongings || [],
+        visitType: options.visitType || 'meeting',
         createdAt: new Date(),
         lastUpdated: new Date()
     };
