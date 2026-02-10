@@ -1361,68 +1361,82 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
         let approvalData = null;
         if (data.requiresApproval) {
             try {
-                // Get host employee email
-                let hostEmail = hostEmployee.email ||
-                    (hostEmployee.attributes && hostEmployee.attributes.email);
+                // Step 1: Generate approval token (always, regardless of email)
+                const { createApprovalToken } = require('./approval_tokens');
+                const tokenResult = await createApprovalToken(visitId, hostEmployee._id, data.companyId);
 
-                if (!hostEmail) {
-                    console.log('[schedule_visit] Warning: No email found for host employee, skipping approval email');
-                } else {
-                    // Generate approval token
-                    const { createApprovalToken } = require('./approval_tokens');
-                    const tokenResult = await createApprovalToken(visitId, hostEmployee._id, data.companyId);
-
-                    if (tokenResult.success) {
-                        // Send approval email
-                        const { sendApprovalEmail } = require('../services/email_service');
-                        const emailData = {
-                            visitorName: visitor.visitorName,
-                            visitorMobile: visitor.phone,
-                            purpose: data.purpose || 'Not specified',
-                            visitType: visitDoc.visitType,
-                            expectedArrival: arrival,
-                            expectedDeparture: departure,
-                            hostEmployeeName: hostEmployee.employeeName
-                        };
-
-                        const emailResult = await sendApprovalEmail(
-                            data.companyId,
-                            hostEmail,
-                            emailData,
-                            tokenResult.token,
-                            req  // Pass request for URL auto-detection
-                        );
-
-                        approvalData = {
-                            emailSent: emailResult.success,
-                            emailError: emailResult.error || null,
-                            token: tokenResult.token,
-                            expiresAt: tokenResult.expiresAt,
-                            approvalUrl: emailResult.approvalUrl
-                        };
-
-                        // Store approval URL in visit for easy access
-                        await collections.visits().updateOne(
-                            { _id: visitId },
-                            {
-                                $set: {
-                                    status: 'pending_approval',
-                                    approvalToken: tokenResult.token,
-                                    approvalTokenExpiresAt: tokenResult.expiresAt,
-                                    approvalUrl: emailResult.approvalUrl
-                                }
-                            }
-                        );
-
-                        console.log(`[schedule_visit] Approval email ${emailResult.success ? 'sent' : 'failed'} for visit ${visitId}`);
-                    } else {
-                        console.error(`[schedule_visit] Failed to create approval token: ${tokenResult.error}`);
-                        approvalData = { emailSent: false, emailError: tokenResult.error };
+                if (tokenResult.success) {
+                    // Step 2: Build approval URL from request headers
+                    let frontendUrl = process.env.FRONTEND_URL;
+                    if (!frontendUrl && req) {
+                        if (req.headers.origin) {
+                            frontendUrl = req.headers.origin;
+                        } else if (req.headers.referer) {
+                            try { frontendUrl = new URL(req.headers.referer).origin; } catch (e) { }
+                        } else {
+                            const host = req.headers['x-forwarded-host'] || req.headers.host;
+                            const proto = req.headers['x-forwarded-proto'] || 'https';
+                            if (host) frontendUrl = `${proto}://${host}`;
+                        }
                     }
+                    if (!frontendUrl) frontendUrl = 'http://localhost:3000';
+                    const approvalUrl = `${frontendUrl}/approval/${tokenResult.token}`;
+
+                    // Step 3: Always store token + URL in visit document
+                    await collections.visits().updateOne(
+                        { _id: visitId },
+                        {
+                            $set: {
+                                status: 'pending_approval',
+                                approvalToken: tokenResult.token,
+                                approvalTokenExpiresAt: tokenResult.expiresAt,
+                                approvalUrl: approvalUrl
+                            }
+                        }
+                    );
+
+                    approvalData = {
+                        emailSent: false,
+                        token: tokenResult.token,
+                        expiresAt: tokenResult.expiresAt,
+                        approvalUrl: approvalUrl
+                    };
+
+                    // Step 4: Try to send email (optional, does not block approval link)
+                    let hostEmail = hostEmployee.email ||
+                        (hostEmployee.attributes && hostEmployee.attributes.email);
+                    if (hostEmail) {
+                        try {
+                            const { sendApprovalEmail } = require('../services/email_service');
+                            const emailData = {
+                                visitorName: visitor.visitorName,
+                                visitorMobile: visitor.phone,
+                                purpose: data.purpose || 'Not specified',
+                                visitType: visitDoc.visitType,
+                                expectedArrival: arrival,
+                                expectedDeparture: departure,
+                                hostEmployeeName: hostEmployee.employeeName
+                            };
+                            const emailResult = await sendApprovalEmail(
+                                data.companyId, hostEmail, emailData, tokenResult.token, req
+                            );
+                            approvalData.emailSent = emailResult.success;
+                            approvalData.emailError = emailResult.error || null;
+                            console.log(`[schedule_visit] Approval email ${emailResult.success ? 'sent' : 'failed'} for visit ${visitId}`);
+                        } catch (emailErr) {
+                            console.log('[schedule_visit] Email sending failed:', emailErr.message);
+                            approvalData.emailError = emailErr.message;
+                        }
+                    } else {
+                        console.log('[schedule_visit] No host email - approval link generated without email');
+                    }
+                } else {
+                    console.error(`[schedule_visit] Failed to create approval token: ${tokenResult.error}`);
+                    approvalData = { emailSent: false, emailError: tokenResult.error };
                 }
-            } catch (emailError) {
-                console.error('[schedule_visit] Error in approval workflow:', emailError);
-                approvalData = { emailSent: false, emailError: emailError.message };
+            } catch (approvalError) {
+                console.error('[schedule_visit] Error in approval workflow:', approvalError);
+                approvalData = { emailSent: false, emailError: approvalError.message };
             }
         }
 
