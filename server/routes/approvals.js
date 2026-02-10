@@ -128,7 +128,7 @@ router.get('/history', requireCompanyAccess, async (req, res, next) => {
             visitorName: visit.visitorName || 'Unknown',
             hostEmployeeName: visit.hostEmployeeName || 'Unknown',
             purpose: visit.purpose || '',
-            status: visit.status === 'scheduled' ? 'approved' : visit.status,
+            status: ['scheduled', 'checked_in', 'checked_out', 'completed'].includes(visit.status) ? 'approved' : visit.status,
             approvedAt: visit.approvedAt || null,
             rejectedAt: visit.rejectedAt || null,
             rejectionReason: visit.rejectionReason || null,
