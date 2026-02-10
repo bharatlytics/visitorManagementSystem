@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import api from '../utils/api';
 
 export default function VisitApproval() {
@@ -89,11 +88,7 @@ export default function VisitApproval() {
     if (error && !visit) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4">
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center"
-                >
+                <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -104,7 +99,7 @@ export default function VisitApproval() {
                     <p className="text-sm text-gray-500">
                         This approval link may have expired, been used already, or is invalid. Please contact the visitor or your security team for assistance.
                     </p>
-                </motion.div>
+                </div>
             </div>
         );
     }
@@ -112,11 +107,7 @@ export default function VisitApproval() {
     if (success || visit?.status === 'scheduled' || visit?.status === 'rejected') {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4">
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center"
-                >
+                <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
                     <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${visit?.status === 'scheduled' ? 'bg-green-100' : 'bg-red-100'
                         }`}>
                         {visit?.status === 'scheduled' ? (
@@ -137,18 +128,14 @@ export default function VisitApproval() {
                         <p className="text-sm text-gray-500 mb-1">Visitor</p>
                         <p className="font-medium text-gray-900">{visit?.visitorName}</p>
                     </div>
-                </motion.div>
+                </div>
             </div>
         );
     }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 py-12 px-4">
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="max-w-2xl mx-auto"
-            >
+            <div className="max-w-2xl mx-auto">
                 {/* Header */}
                 <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-6">
                     <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-6 text-white">
@@ -279,7 +266,7 @@ export default function VisitApproval() {
                     <p>Visitor Management System • Automated Approval Request</p>
                     <p className="mt-1">If you did not expect this request, please contact your security team</p>
                 </div>
-            </motion.div>
+            </div>
         </div>
     );
 }
