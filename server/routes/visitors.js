@@ -386,7 +386,7 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
         const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: {`r`n                                    status: 'pending_approval', status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
+            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
         );
 
         console.log(`[check-in] Visit ${visitId} checked in via ${method}`);
@@ -422,7 +422,7 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
         const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: {`r`n                                    status: 'pending_approval', status: 'checked_out', actualDeparture: now, lastUpdated: now } }
+            { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
         );
 
         let duration = null;
@@ -471,7 +471,7 @@ router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) =
         const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: {`r`n                                    status: 'pending_approval', status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
+            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
         );
 
         res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString() });
@@ -500,7 +500,7 @@ router.post('/:visitId/check-out', requireCompanyAccess, async (req, res, next) 
         const now = getCurrentISTTime();
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: {`r`n                                    status: 'pending_approval', status: 'checked_out', actualDeparture: now, lastUpdated: now } }
+            { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
         );
 
         res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString() });
@@ -1120,7 +1120,8 @@ router.post('/blacklist', requireCompanyAccess, async (req, res, next) => {
         const result = await collections.visitors().updateOne(
             { _id: new ObjectId(visitorId) },
             {
-                $set: {`r`n                                    status: 'pending_approval',
+                $set: {
+                    $([char]13)$([char]10)                                    status: 'pending_approval',
                     blacklisted: true,
                     blacklistReason: reason,
                     lastUpdated: new Date()
@@ -1154,7 +1155,8 @@ router.post('/unblacklist', requireCompanyAccess, async (req, res, next) => {
         const result = await collections.visitors().updateOne(
             { _id: new ObjectId(visitorId) },
             {
-                $set: {`r`n                                    status: 'pending_approval',
+                $set: {
+                    $([char]13)$([char]10)                                    status: 'pending_approval',
                     blacklisted: false,
                     blacklistReason: '',
                     lastUpdated: new Date()
@@ -1194,7 +1196,8 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
         await collections.visitors().updateOne(
             { _id: new ObjectId(visitorId) },
             {
-                $set: {`r`n                                    status: 'pending_approval',
+                $set: {
+                    $([char]13)$([char]10)                                    status: 'pending_approval',
                     status: 'deleted',
                     deletedAt: new Date(),
                     lastUpdated: new Date()
@@ -1206,7 +1209,8 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
         await collections.visits().updateMany(
             { visitorId: new ObjectId(visitorId), status: 'scheduled' },
             {
-                $set: {`r`n                                    status: 'pending_approval',
+                $set: {
+                    $([char]13)$([char]10)                                    status: 'pending_approval',
                     status: 'cancelled',
                     cancelReason: 'Visitor deleted',
                     lastUpdated: new Date()
@@ -1400,7 +1404,8 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
                         await collections.visits().updateOne(
                             { _id: visitId },
                             {
-                                $set: {`r`n                                    status: 'pending_approval',
+                                $set: {
+                                    status: 'pending_approval',
                                     approvalToken: tokenResult.token,
                                     approvalTokenExpiresAt: tokenResult.expiresAt,
                                     approvalUrl: emailResult.approvalUrl
@@ -1469,7 +1474,8 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             {
-                $set: {`r`n                                    status: 'pending_approval',
+                $set: {
+                    $([char]13)$([char]10)                                    status: 'pending_approval',
                     status: 'checked_in',
                     checkInMethod: data.checkInMethod,
                     actualArrival: new Date(),
@@ -1509,7 +1515,8 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             {
-                $set: {`r`n                                    status: 'pending_approval',
+                $set: {
+                    $([char]13)$([char]10)                                    status: 'pending_approval',
                     status: 'checked_out',
                     actualDeparture: new Date(),
                     lastUpdated: new Date()
@@ -1634,7 +1641,7 @@ router.post('/visits/backfill-qrcodes', requireCompanyAccess, async (req, res, n
         const bulkOps = visitsWithoutQr.map(visit => ({
             updateOne: {
                 filter: { _id: visit._id },
-                update: { $set: {`r`n                                    status: 'pending_approval', qrCode: new ObjectId().toString() } }
+                update: { $set: { qrCode: new ObjectId().toString() } }
             }
         }));
 
