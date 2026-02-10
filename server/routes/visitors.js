@@ -1121,7 +1121,7 @@ router.post('/blacklist', requireCompanyAccess, async (req, res, next) => {
             { _id: new ObjectId(visitorId) },
             {
                 $set: {
-                    $([char]13)$([char]10)                                    status: 'pending_approval',
+                    status: 'pending_approval',
                     blacklisted: true,
                     blacklistReason: reason,
                     lastUpdated: new Date()
@@ -1156,7 +1156,7 @@ router.post('/unblacklist', requireCompanyAccess, async (req, res, next) => {
             { _id: new ObjectId(visitorId) },
             {
                 $set: {
-                    $([char]13)$([char]10)                                    status: 'pending_approval',
+                    status: 'pending_approval',
                     blacklisted: false,
                     blacklistReason: '',
                     lastUpdated: new Date()
@@ -1197,7 +1197,7 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
             { _id: new ObjectId(visitorId) },
             {
                 $set: {
-                    $([char]13)$([char]10)                                    status: 'pending_approval',
+                    status: 'pending_approval',
                     status: 'deleted',
                     deletedAt: new Date(),
                     lastUpdated: new Date()
@@ -1210,7 +1210,7 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
             { visitorId: new ObjectId(visitorId), status: 'scheduled' },
             {
                 $set: {
-                    $([char]13)$([char]10)                                    status: 'pending_approval',
+                    status: 'pending_approval',
                     status: 'cancelled',
                     cancelReason: 'Visitor deleted',
                     lastUpdated: new Date()
@@ -1475,7 +1475,7 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
             { _id: new ObjectId(visitId) },
             {
                 $set: {
-                    $([char]13)$([char]10)                                    status: 'pending_approval',
+                    status: 'pending_approval',
                     status: 'checked_in',
                     checkInMethod: data.checkInMethod,
                     actualArrival: new Date(),
@@ -1516,7 +1516,7 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
             { _id: new ObjectId(visitId) },
             {
                 $set: {
-                    $([char]13)$([char]10)                                    status: 'pending_approval',
+                    status: 'pending_approval',
                     status: 'checked_out',
                     actualDeparture: new Date(),
                     lastUpdated: new Date()
