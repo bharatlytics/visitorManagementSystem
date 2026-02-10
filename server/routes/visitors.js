@@ -1324,7 +1324,7 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             arrival,
             departure,
             {
-                approved: data.approved || true,
+                approved: !data.requiresApproval,  // False if approval required
                 hostEmployeeName: hostEmployee.employeeName,
                 hostEmployeeCode: hostEmployee.employeeId,
                 visitorName: visitor.visitorName,
@@ -1353,17 +1353,91 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             { $push: { visits: visitId.toString() } }
         );
 
+        // Handle approval workflow if required
+        let approvalData = null;
+        if (data.requiresApproval) {
+            try {
+                // Get host employee email
+                let hostEmail = hostEmployee.email ||
+                    (hostEmployee.attributes && hostEmployee.attributes.email);
+
+                if (!hostEmail) {
+                    console.log('[schedule_visit] Warning: No email found for host employee, skipping approval email');
+                } else {
+                    // Generate approval token
+                    const { createApprovalToken } = require('./approval_tokens');
+                    const tokenResult = await createApprovalToken(visitId, hostEmployee._id, data.companyId);
+
+                    if (tokenResult.success) {
+                        // Send approval email
+                        const { sendApprovalEmail } = require('../services/email_service');
+                        const emailData = {
+                            visitorName: visitor.visitorName,
+                            visitorMobile: visitor.phone,
+                            purpose: data.purpose || 'Not specified',
+                            visitType: visitDoc.visitType,
+                            expectedArrival: arrival,
+                            expectedDeparture: departure,
+                            hostEmployeeName: hostEmployee.employeeName
+                        };
+
+                        const emailResult = await sendApprovalEmail(
+                            data.companyId,
+                            hostEmail,
+                            emailData,
+                            tokenResult.token
+                        );
+
+                        approvalData = {
+                            emailSent: emailResult.success,
+                            emailError: emailResult.error || null,
+                            token: tokenResult.token,
+                            expiresAt: tokenResult.expiresAt,
+                            approvalUrl: emailResult.approvalUrl
+                        };
+
+                        // Store approval URL in visit for easy access
+                        await collections.visits().updateOne(
+                            { _id: visitId },
+                            {
+                                $set: {
+                                    approvalToken: tokenResult.token,
+                                    approvalTokenExpiresAt: tokenResult.expiresAt,
+                                    approvalUrl: emailResult.approvalUrl
+                                }
+                            }
+                        );
+
+                        console.log(`[schedule_visit] Approval email ${emailResult.success ? 'sent' : 'failed'} for visit ${visitId}`);
+                    } else {
+                        console.error(`[schedule_visit] Failed to create approval token: ${tokenResult.error}`);
+                        approvalData = { emailSent: false, emailError: tokenResult.error };
+                    }
+                }
+            } catch (emailError) {
+                console.error('[schedule_visit] Error in approval workflow:', emailError);
+                approvalData = { emailSent: false, emailError: emailError.message };
+            }
+        }
+
         // Fetch and return the visit
         const visit = await collections.visits().findOne({ _id: visitId });
         const visitResponse = convertObjectIds(visit);
         visitResponse.qrCode = visitResponse._id;
         visitResponse.qrCodeUrl = `/api/visitors/visits/qr/${visitResponse._id}`;
 
-        res.status(201).json({
+        const responseData = {
             status: 'success',
             message: 'Visit scheduled successfully',
             visit: visitResponse
-        });
+        };
+
+        // Include approval information if applicable
+        if (approvalData) {
+            responseData.approval = approvalData;
+        }
+
+        res.status(201).json(responseData);
     } catch (error) {
         console.error('Error in schedule_visit:', error);
         next(error);

@@ -65,6 +65,14 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
                 primaryColor: '#1976d2',
                 logoUrl: '',
                 kioskWelcomeMessage: 'Welcome! Please check in.'
+            },
+            smtp: {
+                host: '',
+                port: 587,
+                secure: false,
+                user: '',
+                password: '',
+                fromEmail: ''
             }
         };
 
@@ -96,7 +104,7 @@ router.put('/', requireCompanyAccess, async (req, res, next) => {
             lastUpdated: new Date()
         };
 
-        const settingsCategories = ['general', 'visitor', 'notifications', 'security', 'branding'];
+        const settingsCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp'];
         for (const category of settingsCategories) {
             if (data[category]) {
                 updateFields[category] = data[category];
@@ -129,7 +137,7 @@ router.get('/:category', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding'];
+        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp'];
         if (!validCategories.includes(category)) {
             return res.status(400).json({ error: `Invalid category. Valid categories: ${validCategories.join(', ')}` });
         }
@@ -164,7 +172,7 @@ router.patch('/:category', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding'];
+        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp'];
         if (!validCategories.includes(category)) {
             return res.status(400).json({ error: `Invalid category. Valid categories: ${validCategories.join(', ')}` });
         }
@@ -185,6 +193,39 @@ router.patch('/:category', requireCompanyAccess, async (req, res, next) => {
         res.json({ message: `${category} settings updated successfully` });
     } catch (error) {
         console.error('Error updating settings category:', error);
+        next(error);
+    }
+});
+
+/**
+ * POST /api/settings/test-email
+ * Send a test email to verify SMTP configuration
+ */
+router.post('/test-email', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { companyId, toEmail } = req.body;
+
+        if (!companyId || !toEmail) {
+            return res.status(400).json({ error: 'Company ID and email address are required.' });
+        }
+
+        const { sendTestEmail } = require('../services/email_service');
+        const result = await sendTestEmail(companyId, toEmail);
+
+        if (result.success) {
+            res.json({
+                success: true,
+                message: 'Test email sent successfully',
+                messageId: result.messageId
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                error: result.error || 'Failed to send test email'
+            });
+        }
+    } catch (error) {
+        console.error('Error sending test email:', error);
         next(error);
     }
 });

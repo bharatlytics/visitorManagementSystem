@@ -12,6 +12,7 @@ import Devices from './pages/Devices'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import SSOCallback from './pages/SSOCallback'
+import VisitApproval from './pages/VisitApproval'
 import { useAuthStore } from './store/authStore'
 
 function App() {
@@ -41,6 +42,8 @@ function App() {
       <Routes>
         {/* SSO callback must be first and always accessible */}
         <Route path="/sso-callback" element={<SSOCallback />} />
+        {/* Public approval route - no authentication required */}
+        <Route path="/approval/:token" element={<VisitApproval />} />
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route
           path="/*"

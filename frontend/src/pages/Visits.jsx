@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash, Users, Package, Car } from 'lucide-react'
+import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash, Users, Package, Car, Copy } from 'lucide-react'
 import api from '../api/client'
 
 // Enterprise Modal Component - 80% viewport
@@ -645,6 +645,41 @@ export default function Visits() {
                                     <div className={`p-4 rounded-xl ${selectedVisit.approvalStatus === 'approved' ? 'bg-green-50' : selectedVisit.approvalStatus === 'rejected' ? 'bg-red-50' : 'bg-yellow-50'}`}>
                                         <h5 className="text-xs font-semibold uppercase mb-2">Approval Status</h5>
                                         <p className="text-sm font-medium">{selectedVisit.approvalStatus?.toUpperCase()}</p>
+                                    </div>
+                                )}
+
+                                {/* Approval Link Display */}
+                                {selectedVisit.status === 'pending_approval' && selectedVisit.approvalUrl && (
+                                    <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
+                                        <h5 className="text-xs font-semibold text-purple-800 uppercase mb-2 flex items-center gap-2">
+                                            <Mail className="w-3.5 h-3.5" /> Approval Link
+                                        </h5>
+                                        <div className="space-y-2">
+                                            <div className="p-2 bg-white rounded-lg border border-purple-200 break-all">
+                                                <a
+                                                    href={selectedVisit.approvalUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-purple-600 hover:text-purple-800 underline"
+                                                >
+                                                    {selectedVisit.approvalUrl}
+                                                </a>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(selectedVisit.approvalUrl);
+                                                    alert('Approval link copied to clipboard!');
+                                                }}
+                                                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-purple-700 bg-purple-100 rounded-lg hover:bg-purple-200 transition-colors"
+                                            >
+                                                <Copy className="w-3.5 h-3.5" /> Copy Approval Link
+                                            </button>
+                                            {selectedVisit.approvalTokenExpiresAt && (
+                                                <p className="text-xs text-purple-600">
+                                                    Expires: {formatDate(selectedVisit.approvalTokenExpiresAt)}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>

@@ -136,6 +136,7 @@ const analyticsRoutes = require('../server/routes/analytics');
 const settingsRoutes = require('../server/routes/settings');
 const reportsRoutes = require('../server/routes/reports');
 const approvalsRoutes = require('../server/routes/approvals');
+const approvalTokensRoutes = require('../server/routes/approval_tokens');
 const preregistrationRoutes = require('../server/routes/preregistration');
 const mobileRoutes = require('../server/routes/mobile');
 const webhooksRoutes = require('../server/routes/webhooks');
@@ -214,6 +215,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/approvals', approvalsRoutes);
+app.use('/api/approval-tokens', approvalTokensRoutes);  // Public endpoint - no auth
 app.use('/api/preregistration', preregistrationRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/webhooks', webhooksRoutes);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings as SettingsIcon, Building, Bell, Shield, Clock, Save, Check } from 'lucide-react'
+import { Settings as SettingsIcon, Building, Bell, Shield, Clock, Save, Check, Mail } from 'lucide-react'
 import api from '../api/client'
 
 function SettingCard({ title, description, children }) {
@@ -35,11 +35,21 @@ export default function Settings() {
         badgeExpiry: 24,
         requireIdVerification: false,
         enableWatchlistCheck: true,
-        enableFaceRecognition: true
+        enableFaceRecognition: true,
+        smtp: {
+            host: '',
+            port: 587,
+            secure: false,
+            user: '',
+            password: '',
+            fromEmail: ''
+        }
     })
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [saved, setSaved] = useState(false)
+    const [testingEmail, setTestingEmail] = useState(false)
+    const [testEmailSent, setTestEmailSent] = useState(false)
 
     useEffect(() => {
         fetchSettings()
@@ -74,6 +84,33 @@ export default function Settings() {
 
     const updateSetting = (key, value) => {
         setSettings(prev => ({ ...prev, [key]: value }))
+    }
+
+    const updateSmtpSetting = (key, value) => {
+        setSettings(prev => ({
+            ...prev,
+            smtp: { ...prev.smtp, [key]: value }
+        }))
+    }
+
+    const handleTestEmail = async () => {
+        const testEmail = prompt('Enter email address to send test email to:');
+        if (!testEmail) return;
+
+        setTestingEmail(true);
+        try {
+            await api.post('/settings/test-email', {
+                companyId: localStorage.getItem('companyId'),
+                toEmail: testEmail
+            });
+            setTestEmailSent(true);
+            setTimeout(() => setTestEmailSent(false), 3000);
+            alert('Test email sent successfully! Check your inbox.');
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to send test email. Please check your SMTP settings.');
+        } finally {
+            setTestingEmail(false);
+        }
     }
 
     if (loading) {
@@ -171,6 +208,97 @@ export default function Settings() {
                         checked={settings.enableFaceRecognition}
                         onChange={(v) => updateSetting('enableFaceRecognition', v)}
                     />
+                </div>
+            </SettingCard>
+
+            {/* SMTP Settings */}
+            <SettingCard title="Email Configuration (SMTP)" description="Configure SMTP server for sending approval emails">
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Server Host</label>
+                        <input
+                            type="text"
+                            value={settings.smtp?.host || ''}
+                            onChange={(e) => updateSmtpSetting('host', e.target.value)}
+                            placeholder="smtp.gmail.com"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                            <input
+                                type="number"
+                                value={settings.smtp?.port || 587}
+                                onChange={(e) => updateSmtpSetting('port', parseInt(e.target.value))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                        </div>
+                        <div className="flex items-end">
+                            <Toggle
+                                label="Secure Connection (TLS/SSL)"
+                                checked={settings.smtp?.secure || false}
+                                onChange={(v) => updateSmtpSetting('secure', v)}
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                        <input
+                            type="text"
+                            value={settings.smtp?.user || ''}
+                            onChange={(e) => updateSmtpSetting('user', e.target.value)}
+                            placeholder="your-email@example.com"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input
+                            type="password"
+                            value={settings.smtp?.password || ''}
+                            onChange={(e) => updateSmtpSetting('password', e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">From Email Address</label>
+                        <input
+                            type="email"
+                            value={settings.smtp?.fromEmail || ''}
+                            onChange={(e) => updateSmtpSetting('fromEmail', e.target.value)}
+                            placeholder="noreply@yourcompany.com"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-200">
+                        <button
+                            onClick={handleTestEmail}
+                            disabled={testingEmail || !settings.smtp?.host}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${testEmailSent
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                            {testingEmail ? (
+                                <Clock className="w-4 h-4 animate-spin" />
+                            ) : testEmailSent ? (
+                                <Check className="w-4 h-4" />
+                            ) : (
+                                <Mail className="w-4 h-4" />
+                            )}
+                            {testingEmail ? 'Sending...' : testEmailSent ? 'Test Email Sent!' : 'Send Test Email'}
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">
+                            Test the SMTP configuration by sending a test email to any address.
+                        </p>
+                    </div>
                 </div>
             </SettingCard>
         </div>

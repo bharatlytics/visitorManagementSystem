@@ -116,6 +116,8 @@ const collections = {
     attendance: () => getCollection('attendance'),
     syncAuditLogs: () => getCollection('sync_audit_logs'),
     embeddingJobs: () => getCollection('embedding_jobs'),
+    approvals: () => getCollection('approvals'),
+    approvalTokens: () => getCollection('approval_tokens'),
 };
 
 /**
