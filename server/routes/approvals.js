@@ -30,7 +30,8 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         if (status === 'pending') {
             visitStatusQuery = 'pending_approval';
         } else if (status === 'approved') {
-            visitStatusQuery = 'scheduled'; // Approved visits go back to scheduled
+            // Approved visits may have moved to scheduled, checked_in, checked_out, or completed
+            visitStatusQuery = { $in: ['scheduled', 'checked_in', 'checked_out', 'completed'] };
         } else if (status === 'rejected') {
             visitStatusQuery = 'rejected';
         } else {
@@ -40,7 +41,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         let query = { status: visitStatusQuery };
 
         if (isValidObjectId(companyId)) {
-            query.companyId = new ObjectId(companyId);
+            query.$or = [{ companyId: new ObjectId(companyId) }, { companyId: companyId }];
         } else {
             query.companyId = companyId;
         }
@@ -67,7 +68,8 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
             visitType: visit.visitType || 'guest',
             expectedArrival: visit.expectedArrival,
             expectedDeparture: visit.expectedDeparture,
-            status: visit.status === 'pending_approval' ? 'pending' : visit.status,
+            status: visit.status === 'pending_approval' ? 'pending' :
+                ['scheduled', 'checked_in', 'checked_out', 'completed'].includes(visit.status) ? 'approved' : visit.status,
             approvalToken: visit.approvalToken,
             approvalUrl: visit.approvalUrl,
             approvalTokenExpiresAt: visit.approvalTokenExpiresAt,
@@ -106,7 +108,7 @@ router.get('/history', requireCompanyAccess, async (req, res, next) => {
         };
 
         if (isValidObjectId(companyId)) {
-            query.companyId = new ObjectId(companyId);
+            query.$or = [{ companyId: new ObjectId(companyId) }, { companyId: companyId }];
         } else {
             query.companyId = companyId;
         }
