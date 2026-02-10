@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const { ObjectId } = require('mongodb');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 const { collections, getDb } = require('../db');
 const { convertObjectIds, isValidObjectId } = require('../utils/helpers');
@@ -279,7 +279,7 @@ router.post('/:token/reject', async (req, res, next) => {
  */
 async function createApprovalToken(visitId, hostEmployeeId, companyId) {
     try {
-        const token = uuidv4();
+        const token = crypto.randomUUID();
         const expiresAt = new Date();
         expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiration
 
