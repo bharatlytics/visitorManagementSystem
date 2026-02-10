@@ -127,7 +127,7 @@ function createApprovalEmailHTML(visitData, approvalUrl) {
 /**
  * Send approval email to host employee
  */
-async function sendApprovalEmail(companyId, hostEmail, visitData, approvalToken) {
+async function sendApprovalEmail(companyId, hostEmail, visitData, approvalToken, req = null) {
     try {
         // Get SMTP configuration
         const smtpConfig = await getSMTPConfig(companyId);
@@ -149,8 +149,35 @@ async function sendApprovalEmail(companyId, hostEmail, visitData, approvalToken)
         });
         const fromEmail = settings?.smtp?.fromEmail || smtpConfig.auth.user;
 
+        // Auto-detect frontend URL from request headers or use environment variable as fallback
+        let frontendUrl = process.env.FRONTEND_URL;
+
+        if (!frontendUrl && req) {
+            // Try to detect from Origin header (most reliable for CORS requests)
+            if (req.headers.origin) {
+                frontendUrl = req.headers.origin;
+            }
+            // Fallback to Referer header
+            else if (req.headers.referer) {
+                const refererUrl = new URL(req.headers.referer);
+                frontendUrl = `${refererUrl.protocol}//${refererUrl.host}`;
+            }
+            // Fallback to building from host header
+            else if (req.headers.host || req.headers['x-forwarded-host']) {
+                const host = req.headers['x-forwarded-host'] || req.headers.host;
+                const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+                frontendUrl = `${protocol}://${host}`;
+            }
+        }
+
+        // Final fallback
+        if (!frontendUrl) {
+            frontendUrl = 'http://localhost:3000';
+            console.warn('[EmailService] Could not auto-detect frontend URL, using fallback:', frontendUrl);
+        }
+
         // Generate approval URL (will be handled by frontend route)
-        const approvalUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/approval/${approvalToken}`;
+        const approvalUrl = `${frontendUrl}/approval/${approvalToken}`;
 
         // Create email HTML
         const htmlContent = createApprovalEmailHTML(visitData, approvalUrl);

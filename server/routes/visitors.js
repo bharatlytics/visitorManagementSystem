@@ -1389,7 +1389,8 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
                             data.companyId,
                             hostEmail,
                             emailData,
-                            tokenResult.token
+                            tokenResult.token,
+                            req  // Pass request for URL auto-detection
                         );
 
                         approvalData = {
