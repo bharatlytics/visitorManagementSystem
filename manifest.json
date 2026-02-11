@@ -610,6 +610,22 @@
           "type": "employee_calendar",
           "use": "Show host availability for scheduling"
         }
+      ],
+      "fromApps": [
+        {
+          "sourceApp": "people_tracking_app_v1",
+          "type": "attendance_record",
+          "fields": [
+            "actorId",
+            "name",
+            "actorType",
+            "attendanceTime",
+            "attendanceType",
+            "cameraName",
+            "confidence"
+          ],
+          "use": "Receive face-recognition-based attendance records from People Tracking"
+        }
       ]
     }
   },
@@ -666,7 +682,15 @@
     "queryEndpoints": {
       "visitor": "/api/query/visitors",
       "employee": "/api/query/employees",
-      "visit": "/api/query/visits"
+      "visit": "/api/query/visits",
+      "attendance": "/api/query/attendance"
+    },
+    "writeEndpoints": {
+      "attendance": {
+        "method": "POST",
+        "path": "/api/query/attendance",
+        "description": "Receive attendance records from federated apps (e.g. People Tracking)"
+      }
     },
     "imageExchange": {
       "supported": true,
@@ -835,12 +859,14 @@
     "platform.maintenance_scheduled",
     "platform.config_changed"
   ],
-  "id": "vms-app-v1",
-  "name": "Visitor Management System",
-  "version": "2.0.0",
-  "appType": "web_application",
-  "description": "Enterprise-grade Visitor Management with facial recognition, digital badges, host notifications, and compliance reporting.",
-  "longDescription": "Complete VMS with pre-registration, check-in kiosks, host notifications, emergency evacuation lists, compliance audit trails, and integration with access control systems.",
+  "app": {
+    "id": "vms_app_v1",
+    "name": "Visitor Management System",
+    "version": "2.0.0",
+    "appType": "web_application",
+    "description": "Enterprise-grade Visitor Management with facial recognition, digital badges, host notifications, and compliance reporting.",
+    "longDescription": "Complete VMS with pre-registration, check-in kiosks, host notifications, emergency evacuation lists, compliance audit trails, and integration with access control systems."
+  },
   "capabilities": {
     "provides": {},
     "consumes": {}

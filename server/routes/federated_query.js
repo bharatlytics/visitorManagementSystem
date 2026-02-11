@@ -466,4 +466,138 @@ router.get('/federation/actors', async (req, res, next) => {
     }
 });
 
+/**
+ * POST /api/query/attendance
+ * Federated attendance endpoint — receives attendance records from Platform.
+ * 
+ * Called by Platform when forwarding attendance data from PeopleTracking.
+ * Uses relaxed auth check (same as /federation/actors).
+ * 
+ * Body:
+ * {
+ *   "companyId": "...",
+ *   "sourceApp": "people_tracking_app_v1",
+ *   "records": [
+ *     { "actorId", "name", "actorType", "attendanceTime", "attendanceType", "cameraName", "confidence" }
+ *   ]
+ * }
+ */
+router.post('/attendance', async (req, res, next) => {
+    // Relaxed auth check for inter-app calls (same as /federation/actors)
+    const authHeader = req.headers['authorization'] || '';
+    if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+
+    try {
+        const { companyId, sourceApp, records } = req.body;
+
+        if (!companyId) {
+            return res.status(400).json({ error: 'companyId is required' });
+        }
+
+        if (!Array.isArray(records) || records.length === 0) {
+            return res.status(400).json({ error: 'records array is required' });
+        }
+
+        const db = getDb();
+        const attendanceCollection = db.collection('attendance');
+        const now = new Date();
+
+        // Build company ID query helper
+        const companyQuery = isValidObjectId(companyId)
+            ? new ObjectId(companyId)
+            : companyId;
+
+        const insertedRecords = [];
+
+        for (const record of records) {
+            const {
+                actorId,
+                name,
+                actorType,
+                attendanceTime,
+                attendanceType,
+                cameraName,
+                confidence
+            } = record;
+
+            if (!actorId || !attendanceTime) {
+                console.warn(`[federated-attendance] Skipping record: missing actorId or attendanceTime`);
+                continue;
+            }
+
+            // Look up local employee/visitor by actorId 
+            // (actorId may be a Platform actor ID or a VMS-local _id)
+            let employeeId = null;
+            let employeeName = name || 'Unknown';
+
+            if (actorType === 'employee') {
+                // Try to find employee in VMS
+                let employee = null;
+                if (isValidObjectId(actorId)) {
+                    employee = await db.collection('employees').findOne({
+                        $or: [
+                            { _id: new ObjectId(actorId) },
+                            { platformActorId: actorId }
+                        ],
+                        companyId: companyQuery
+                    });
+                }
+                if (!employee) {
+                    // Fallback: search by name
+                    employee = await db.collection('employees').findOne({
+                        employeeName: name,
+                        companyId: companyQuery
+                    });
+                }
+                if (employee) {
+                    employeeId = employee._id;
+                    employeeName = employee.employeeName || name;
+                }
+            }
+
+            const attendanceRecord = {
+                companyId: companyQuery,
+                employeeId: employeeId || actorId,
+                employeeName: employeeName,
+                actorType: actorType || 'employee',
+                platformActorId: actorId,
+                date: new Date(attendanceTime),
+                type: attendanceType || 'IN',
+                source: 'face_recognition',
+                sourceApp: sourceApp || 'people_tracking_app_v1',
+                cameraName: cameraName || null,
+                confidence: confidence || null,
+                status: 'present',
+                createdAt: now,
+                updatedAt: now
+            };
+
+            insertedRecords.push(attendanceRecord);
+        }
+
+        if (insertedRecords.length > 0) {
+            const result = await attendanceCollection.insertMany(insertedRecords);
+            console.log(`[federated-attendance] Inserted ${result.insertedCount} record(s) for company ${companyId}`);
+
+            res.status(201).json({
+                success: true,
+                inserted: result.insertedCount,
+                message: `${result.insertedCount} attendance record(s) saved`
+            });
+        } else {
+            res.status(200).json({
+                success: true,
+                inserted: 0,
+                message: 'No valid records to insert'
+            });
+        }
+
+    } catch (error) {
+        console.error(`[federated-attendance] Error: ${error.message}`);
+        next(error);
+    }
+});
+
 module.exports = router;
