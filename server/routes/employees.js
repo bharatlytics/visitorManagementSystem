@@ -385,7 +385,16 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
         let query = {};
 
         if (companyId) {
-            query.companyId = isValidObjectId(companyId) ? new ObjectId(companyId) : companyId;
+            // Match both ObjectId and string versions of companyId
+            const companyOid = isValidObjectId(companyId) ? new ObjectId(companyId) : null;
+            if (companyOid) {
+                query.$or = [
+                    { companyId: companyOid },
+                    { companyId: companyId }
+                ];
+            } else {
+                query.companyId = companyId;
+            }
         }
 
         if (employeeId) {
@@ -398,18 +407,72 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
             if (startDate) timeQuery.$gte = new Date(startDate);
             if (endDate) timeQuery.$lte = new Date(endDate);
 
-            query.$or = [
+            // Combine with existing $or if present
+            const dateOr = [
                 { date: timeQuery },
                 { attendanceTime: timeQuery }
             ];
+            if (query.$or) {
+                // Already have companyId $or, need $and to combine
+                const companyOr = query.$or;
+                delete query.$or;
+                query.$and = [
+                    { $or: companyOr },
+                    { $or: dateOr }
+                ];
+            } else {
+                query.$or = dateOr;
+            }
         }
 
         const records = await collections.attendance().find(query).sort({ attendanceTime: -1, date: -1 }).toArray();
 
+        // Normalize records to canonical schema (handles old-format face-rec records)
+        const normalizedRecords = records.map(record => {
+            const r = { ...record };
+
+            // Map old field names → canonical
+            if (!r.personType && r.actorType) {
+                r.personType = r.actorType.toUpperCase();
+            }
+            if (!r.attendanceType && r.type) {
+                r.attendanceType = r.type;
+            }
+            if (!r.attendanceTime && r.date) {
+                r.attendanceTime = r.date;
+            }
+
+            // Ensure all canonical fields exist
+            r.personType = r.personType || 'EMPLOYEE';
+            r.attendanceType = r.attendanceType || 'IN';
+            r.attendanceTime = r.attendanceTime || r.date;
+            r.shiftId = r.shiftId !== undefined ? r.shiftId : null;
+            r.checkIn = r.checkIn !== undefined ? r.checkIn : (r.attendanceType === 'IN' ? r.date : null);
+            r.checkOut = r.checkOut !== undefined ? r.checkOut : (r.attendanceType === 'OUT' ? r.date : null);
+            r.status = r.status || 'present';
+            r.location = r.location || { latitude: null, longitude: null, accuracy: null, address: '' };
+            r.recognition = r.recognition || {
+                confidenceScore: r.confidence || null,
+                algorithm: 'face_recognition_v2',
+                processingTime: null
+            };
+            r.device = r.device || {
+                deviceId: r.cameraName || 'CCTV',
+                platform: 'cctv',
+                appVersion: '1.0.0',
+                ipAddress: ''
+            };
+            r.syncStatus = r.syncStatus !== undefined ? r.syncStatus : 1;
+            r.transactionFrom = r.transactionFrom || r.source || 'face_recognition';
+            r.remarks = r.remarks !== undefined ? r.remarks : '';
+
+            return r;
+        });
+
         // Enrich with employee details (employeeId string and employeeName)
-        if (records.length > 0 && companyId) {
+        if (normalizedRecords.length > 0 && companyId) {
             // Get unique employee MongoDB IDs - handle both ObjectId and string types
-            const employeeMongoIds = [...new Set(records.map(r => {
+            const employeeMongoIds = [...new Set(normalizedRecords.map(r => {
                 if (r.employeeId) {
                     return typeof r.employeeId === 'object' ? r.employeeId.toString() : r.employeeId;
                 }
@@ -448,7 +511,7 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
             console.log('[Attendance] Employee map keys:', Object.keys(employeeMap).length);
 
             // Enrich attendance records
-            for (const record of records) {
+            for (const record of normalizedRecords) {
                 const empMongoId = typeof record.employeeId === 'object'
                     ? record.employeeId.toString()
                     : record.employeeId;
@@ -468,7 +531,7 @@ router.get('/attendance', requireCompanyAccess, async (req, res, next) => {
 
 
 
-        res.json({ status: 'success', attendance: convertObjectIds(records) });
+        res.json({ status: 'success', attendance: convertObjectIds(normalizedRecords) });
     } catch (error) {
         console.error('Error fetching attendance:', error);
         next(error);
