@@ -12,6 +12,51 @@ const { requireCompanyAccess } = require('../middleware/auth');
 const { convertObjectIds, isValidObjectId } = require('../utils/helpers');
 
 /**
+ * Normalize an attendance record to the canonical schema.
+ * Handles old face-recognition records that used different field names.
+ */
+function normalizeAttendanceRecord(record) {
+    const r = { ...record };
+
+    // Map old field names → canonical
+    if (!r.personType && r.actorType) {
+        r.personType = r.actorType.toUpperCase();
+    }
+    if (!r.attendanceType && r.type) {
+        r.attendanceType = r.type;
+    }
+    if (!r.attendanceTime && r.date) {
+        r.attendanceTime = r.date;
+    }
+
+    // Ensure all canonical fields exist with defaults
+    r.personType = r.personType || 'EMPLOYEE';
+    r.attendanceType = r.attendanceType || 'IN';
+    r.attendanceTime = r.attendanceTime || r.date;
+    r.shiftId = r.shiftId !== undefined ? r.shiftId : null;
+    r.checkIn = r.checkIn !== undefined ? r.checkIn : (r.attendanceType === 'IN' ? r.date : null);
+    r.checkOut = r.checkOut !== undefined ? r.checkOut : (r.attendanceType === 'OUT' ? r.date : null);
+    r.status = r.status || 'present';
+    r.location = r.location || { latitude: null, longitude: null, accuracy: null, address: '' };
+    r.recognition = r.recognition || {
+        confidenceScore: r.confidence || null,
+        algorithm: 'face_recognition_v2',
+        processingTime: null
+    };
+    r.device = r.device || {
+        deviceId: r.cameraName || 'CCTV',
+        platform: 'cctv',
+        appVersion: '1.0.0',
+        ipAddress: ''
+    };
+    r.syncStatus = r.syncStatus !== undefined ? r.syncStatus : 1;
+    r.transactionFrom = r.transactionFrom || r.source || 'face_recognition';
+    r.remarks = r.remarks !== undefined ? r.remarks : '';
+
+    return r;
+}
+
+/**
  * GET /api/attendance
  * List attendance records
  */
@@ -56,7 +101,8 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
         const total = await collections.attendance().countDocuments(query);
 
         res.json({
-            attendance: convertObjectIds(attendance),
+            status: 'success',
+            attendance: convertObjectIds(attendance.map(normalizeAttendanceRecord)),
             total,
             limit,
             skip
@@ -262,18 +308,20 @@ router.get('/today', requireCompanyAccess, async (req, res, next) => {
             collections.employees().countDocuments({ ...companyMatch, status: 'active' })
         ]);
 
-        const checkedIn = todayRecords.filter(r => r.checkIn && !r.checkOut).length;
-        const checkedOut = todayRecords.filter(r => r.checkOut).length;
-        const absent = totalEmployees - todayRecords.length;
+        const normalized = todayRecords.map(normalizeAttendanceRecord);
+
+        const checkedIn = normalized.filter(r => r.checkIn && !r.checkOut).length;
+        const checkedOut = normalized.filter(r => r.checkOut).length;
+        const absent = totalEmployees - normalized.length;
 
         res.json({
             date: today.toISOString().split('T')[0],
             totalEmployees,
-            present: todayRecords.length,
+            present: normalized.length,
             checkedIn,
             checkedOut,
             absent,
-            records: convertObjectIds(todayRecords)
+            records: convertObjectIds(normalized)
         });
     } catch (error) {
         console.error('Error getting today attendance:', error);
