@@ -571,25 +571,40 @@ router.post('/attendance', async (req, res, next) => {
                 personType: (actorType || 'employee').toUpperCase(),  // "EMPLOYEE" / "VISITOR"
                 attendanceTime: recordDate,               // Exact detection timestamp
                 attendanceType: attendanceType || 'IN',   // "IN" / "OUT"
+                shiftId: null,
                 date: recordDate,
                 checkIn: (attendanceType || 'IN') === 'IN' ? recordDate : null,
                 checkOut: (attendanceType || 'IN') === 'OUT' ? recordDate : null,
-                shiftId: null,
                 status: 'present',
-                // Face recognition metadata
+                // Canonical fields expected by Android app / VMS frontend
+                location: {
+                    latitude: null,
+                    longitude: null,
+                    accuracy: null,
+                    address: ''
+                },
+                recognition: {
+                    confidenceScore: confidence || null,
+                    algorithm: 'face_recognition_v2',
+                    processingTime: null,
+                    // Extra face-rec metadata
+                    cameraName: cameraName || null,
+                },
+                device: {
+                    deviceId: cameraName || 'CCTV',
+                    platform: 'cctv',
+                    appVersion: '1.0.0',
+                    ipAddress: ''
+                },
+                syncStatus: 1,
+                transactionFrom: 'face_recognition',
+                remarks: '',
+                // Face recognition extras (not in Android schema, but safe to add)
                 platformActorId: actorId,
                 source: 'face_recognition',
                 sourceApp: sourceApp || 'people_tracking_app_v1',
-                transactionFrom: 'face_recognition',
                 cameraName: cameraName || null,
                 confidence: confidence || null,
-                recognition: {
-                    method: 'face_recognition',
-                    confidence: confidence || null,
-                    cameraName: cameraName || null,
-                },
-                syncStatus: 1,
-                remarks: '',
                 createdAt: now,
                 updatedAt: now
             };
