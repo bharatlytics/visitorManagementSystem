@@ -1002,6 +1002,36 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                         if (biometricsResponse.status === 200) {
                             console.log(`[register_employee] Biometrics uploaded:`, biometricsResponse.data);
                             biometricUploaded = true;
+
+                            // Queue buffalo_l embedding generation on Platform
+                            // (Since we intentionally omit photo from actor creation to avoid
+                            //  Platform re-processing mobile_facenet_v1, buffalo_l never gets queued.
+                            //  We must explicitly queue it here after biometrics are uploaded.)
+                            try {
+                                const updateUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}`;
+                                const updateResponse = await fetch(updateUrl, {
+                                    method: 'PATCH',
+                                    headers: {
+                                        'Authorization': `Bearer ${platformToken}`,
+                                        'Content-Type': 'application/json',
+                                        'X-App-Id': 'vms_app_v1'
+                                    },
+                                    body: JSON.stringify({
+                                        attributes: {
+                                            ...attributes,
+                                            photo: Object.values(imageData)[0] ? `data:image/jpeg;base64,${Object.values(imageData)[0]}` : undefined
+                                        }
+                                    })
+                                });
+                                if (updateResponse.ok) {
+                                    const updateResult = await updateResponse.json();
+                                    console.log(`[register_employee] buffalo_l queued: embeddingRequeued=${updateResult.embeddingRequeued}`);
+                                } else {
+                                    console.error(`[register_employee] Failed to queue buffalo_l: ${updateResponse.status}`);
+                                }
+                            } catch (queueError) {
+                                console.error(`[register_employee] Error queuing buffalo_l: ${queueError.message}`);
+                            }
                         }
                     } catch (bioError) {
                         console.error(`[register_employee] Error uploading biometrics: ${bioError.message}`);
