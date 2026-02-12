@@ -527,6 +527,8 @@ router.post('/attendance', async (req, res, next) => {
                 continue;
             }
 
+            const recordDate = new Date(attendanceTime);
+
             // Look up local employee/visitor by actorId 
             // (actorId may be a Platform actor ID or a VMS-local _id)
             let employeeId = null;
@@ -552,24 +554,42 @@ router.post('/attendance', async (req, res, next) => {
                     });
                 }
                 if (employee) {
-                    employeeId = employee._id;
+                    employeeId = employee._id;  // Always ObjectId
                     employeeName = employee.employeeName || name;
                 }
             }
 
+            // If employeeId not found, try to convert actorId to ObjectId
+            if (!employeeId) {
+                employeeId = isValidObjectId(actorId) ? new ObjectId(actorId) : new ObjectId();
+            }
+
             const attendanceRecord = {
                 companyId: companyQuery,
-                employeeId: employeeId || actorId,
-                employeeName: employeeName,
-                actorType: actorType || 'employee',
+                employeeId,                              // ObjectId (matches canonical schema)
+                employeeName,
+                personType: (actorType || 'employee').toUpperCase(),  // "EMPLOYEE" / "VISITOR"
+                attendanceTime: recordDate,               // Exact detection timestamp
+                attendanceType: attendanceType || 'IN',   // "IN" / "OUT"
+                date: recordDate,
+                checkIn: (attendanceType || 'IN') === 'IN' ? recordDate : null,
+                checkOut: (attendanceType || 'IN') === 'OUT' ? recordDate : null,
+                shiftId: null,
+                status: 'present',
+                // Face recognition metadata
                 platformActorId: actorId,
-                date: new Date(attendanceTime),
-                type: attendanceType || 'IN',
                 source: 'face_recognition',
                 sourceApp: sourceApp || 'people_tracking_app_v1',
+                transactionFrom: 'face_recognition',
                 cameraName: cameraName || null,
                 confidence: confidence || null,
-                status: 'present',
+                recognition: {
+                    method: 'face_recognition',
+                    confidence: confidence || null,
+                    cameraName: cameraName || null,
+                },
+                syncStatus: 1,
+                remarks: '',
                 createdAt: now,
                 updatedAt: now
             };
