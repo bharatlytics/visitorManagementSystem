@@ -467,6 +467,133 @@ router.get('/federation/actors', async (req, res, next) => {
 });
 
 /**
+ * GET /api/query/attendance
+ * Federated attendance query — returns attendance records for a company.
+ * Called by PT via Platform federation forward (GET).
+ *
+ * Query params:
+ *   companyId (required), startDate, endDate, employeeId, limit, skip
+ *
+ * Returns:
+ *   { attendance: [...], summary: [...], total, dateRange }
+ */
+router.get('/attendance', async (req, res, next) => {
+    // Relaxed auth (same as /federation/actors)
+    const authHeader = req.headers['authorization'] || '';
+    if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+
+    try {
+        const companyId = req.query.companyId;
+        if (!companyId) {
+            return res.status(400).json({ error: 'companyId is required' });
+        }
+
+        const db = getDb();
+        const startDate = req.query.startDate ? new Date(req.query.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
+        // Extend endDate to end of day
+        endDate.setHours(23, 59, 59, 999);
+        const limit = Math.min(parseInt(req.query.limit) || 5000, 10000);
+        const skip = parseInt(req.query.skip) || 0;
+
+        // Build company query (handle ObjectId or string)
+        const companyMatch = isValidObjectId(companyId)
+            ? { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] }
+            : { companyId };
+
+        const query = {
+            ...companyMatch,
+            date: { $gte: startDate, $lte: endDate }
+        };
+
+        if (req.query.employeeId) {
+            const eid = req.query.employeeId;
+            query.employeeId = isValidObjectId(eid) ? new ObjectId(eid) : eid;
+        }
+
+        // Fetch raw records
+        const records = await db.collection('attendance')
+            .find(query)
+            .sort({ date: -1 })
+            .skip(skip)
+            .limit(limit)
+            .toArray();
+
+        const total = await db.collection('attendance').countDocuments(query);
+
+        // Build per-person daily summary using aggregation
+        const summaryPipeline = [
+            { $match: query },
+            {
+                $group: {
+                    _id: {
+                        employeeId: '$employeeId',
+                        day: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }
+                    },
+                    employeeName: { $first: '$employeeName' },
+                    personType: { $first: '$personType' },
+                    firstIn: { $min: '$date' },
+                    lastOut: { $max: '$date' },
+                    logCount: { $sum: 1 },
+                    logs: {
+                        $push: {
+                            attendanceType: '$attendanceType',
+                            time: '$date',
+                            cameraName: { $ifNull: ['$cameraName', { $ifNull: ['$recognition.cameraName', null] }] },
+                            confidence: { $ifNull: ['$confidence', { $ifNull: ['$recognition.confidenceScore', null] }] }
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    hoursLogged: {
+                        $divide: [{ $subtract: ['$lastOut', '$firstIn'] }, 3600000]
+                    }
+                }
+            },
+            { $sort: { '_id.day': -1, 'firstIn': -1 } }
+        ];
+
+        const summary = await db.collection('attendance')
+            .aggregate(summaryPipeline)
+            .toArray();
+
+        // Format summary
+        const formattedSummary = summary.map(s => ({
+            employeeId: s._id.employeeId ? String(s._id.employeeId) : null,
+            date: s._id.day,
+            employeeName: s.employeeName || 'Unknown',
+            personType: s.personType || 'EMPLOYEE',
+            firstIn: s.firstIn,
+            lastOut: s.lastOut,
+            hoursLogged: Math.round((s.hoursLogged || 0) * 100) / 100,
+            logCount: s.logCount,
+            logs: s.logs.sort((a, b) => new Date(a.time) - new Date(b.time))
+        }));
+
+        // Convert ObjectIds in raw records
+        const formattedRecords = records.map(r => convertObjectIds(r));
+
+        res.json({
+            attendance: formattedRecords,
+            summary: formattedSummary,
+            total,
+            dateRange: { startDate, endDate },
+            source: 'vms_app_v1'
+        });
+
+        console.log(`[federated-attendance] GET: returned ${records.length} records, ${formattedSummary.length} summaries for company ${companyId}`);
+
+    } catch (error) {
+        console.error(`[federated-attendance] GET error: ${error.message}`);
+        next(error);
+    }
+});
+
+/**
  * POST /api/query/attendance
  * Federated attendance endpoint — receives attendance records from Platform.
  * 

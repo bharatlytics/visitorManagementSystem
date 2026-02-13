@@ -683,7 +683,8 @@
       "visitor": "/api/query/visitors",
       "employee": "/api/query/employees",
       "visit": "/api/query/visits",
-      "attendance": "/api/query/attendance"
+      "attendance": "/api/query/attendance",
+      "attendance_list": "/api/attendance"
     },
     "writeEndpoints": {
       "attendance": {
