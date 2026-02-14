@@ -543,7 +543,9 @@ router.get('/attendance', async (req, res, next) => {
                             time: '$date',
                             cameraName: { $ifNull: ['$cameraName', { $ifNull: ['$recognition.cameraName', null] }] },
                             confidence: { $ifNull: ['$confidence', { $ifNull: ['$recognition.confidenceScore', null] }] },
-                            faceImage: { $ifNull: ['$faceImage', null] }
+                            faceImage: { $ifNull: ['$faceImage', null] },
+                            transactionFrom: { $ifNull: ['$transactionFrom', null] },
+                            devicePlatform: { $ifNull: ['$device.platform', null] }
                         }
                     }
                 }
