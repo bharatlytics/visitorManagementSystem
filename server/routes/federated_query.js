@@ -526,6 +526,26 @@ router.get('/attendance', async (req, res, next) => {
         // Build per-person daily summary using aggregation
         const summaryPipeline = [
             { $match: query },
+            // Resolve missing employeeName from employees collection
+            {
+                $lookup: {
+                    from: 'employees',
+                    localField: 'employeeId',
+                    foreignField: '_id',
+                    as: '_emp'
+                }
+            },
+            {
+                $addFields: {
+                    employeeName: {
+                        $ifNull: [
+                            '$employeeName',
+                            { $arrayElemAt: ['$_emp.employeeName', 0] }
+                        ]
+                    }
+                }
+            },
+            { $project: { _emp: 0 } },
             {
                 $group: {
                     _id: {
@@ -563,6 +583,23 @@ router.get('/attendance', async (req, res, next) => {
         const summary = await db.collection('attendance')
             .aggregate(summaryPipeline)
             .toArray();
+
+        // Post-aggregation: resolve any still-unknown names via employeeInfo or actors
+        const unknownSummaries = summary.filter(s => !s.employeeName);
+        if (unknownSummaries.length > 0) {
+            const unknownIds = unknownSummaries.map(s => s._id.employeeId).filter(Boolean);
+            // Try employeeInfo collection (legacy)
+            const empInfos = await db.collection('employeeInfo')
+                .find({ _id: { $in: unknownIds } })
+                .project({ employeeName: 1 })
+                .toArray();
+            const infoMap = {};
+            for (const e of empInfos) infoMap[String(e._id)] = e.employeeName;
+            for (const s of unknownSummaries) {
+                const eid = String(s._id.employeeId);
+                if (infoMap[eid]) s.employeeName = infoMap[eid];
+            }
+        }
 
         // Format summary
         const formattedSummary = summary.map(s => ({
