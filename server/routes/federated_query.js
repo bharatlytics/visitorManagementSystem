@@ -542,7 +542,8 @@ router.get('/attendance', async (req, res, next) => {
                             attendanceType: '$attendanceType',
                             time: '$date',
                             cameraName: { $ifNull: ['$cameraName', { $ifNull: ['$recognition.cameraName', null] }] },
-                            confidence: { $ifNull: ['$confidence', { $ifNull: ['$recognition.confidenceScore', null] }] }
+                            confidence: { $ifNull: ['$confidence', { $ifNull: ['$recognition.confidenceScore', null] }] },
+                            faceImage: { $ifNull: ['$faceImage', null] }
                         }
                     }
                 }
@@ -646,7 +647,8 @@ router.post('/attendance', async (req, res, next) => {
                 attendanceTime,
                 attendanceType,
                 cameraName,
-                confidence
+                confidence,
+                faceImage
             } = record;
 
             if (!actorId || !attendanceTime) {
@@ -732,6 +734,7 @@ router.post('/attendance', async (req, res, next) => {
                 sourceApp: sourceApp || 'people_tracking_app_v1',
                 cameraName: cameraName || null,
                 confidence: confidence || null,
+                faceImage: faceImage || null,
                 createdAt: now,
                 updatedAt: now
             };
