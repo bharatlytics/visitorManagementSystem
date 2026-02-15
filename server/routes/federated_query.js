@@ -554,6 +554,7 @@ router.get('/attendance', async (req, res, next) => {
                     },
                     employeeName: { $first: '$employeeName' },
                     personType: { $first: '$personType' },
+                    actorType: { $first: { $toLower: { $ifNull: ['$personType', 'employee'] } } },
                     firstIn: { $min: '$date' },
                     lastOut: { $max: '$date' },
                     logCount: { $sum: 1 },
