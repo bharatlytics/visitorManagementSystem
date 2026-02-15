@@ -635,6 +635,134 @@ router.get('/attendance', async (req, res, next) => {
 });
 
 /**
+ * GET /api/query/visits
+ * Federated visits endpoint — returns scheduled visit records.
+ * 
+ * Query params:
+ *   companyId (required), startDate, endDate, status, limit, skip
+ *
+ * Returns visits with visitor name, host name, purpose, check-in/out, duration, status.
+ */
+router.get('/visits', async (req, res, next) => {
+    try {
+        const companyId = req.query.companyId || req.body?.companyId;
+        if (!companyId) {
+            return res.status(400).json({ error: 'companyId is required' });
+        }
+
+        const db = getDb();
+        const startDate = req.query.startDate ? new Date(req.query.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const endDate = req.query.endDate ? new Date(req.query.endDate) : new Date();
+        endDate.setHours(23, 59, 59, 999);
+        const limit = Math.min(parseInt(req.query.limit) || 500, 2000);
+        const skip = parseInt(req.query.skip) || 0;
+
+        const companyMatch = isValidObjectId(companyId)
+            ? { $or: [{ companyId: new ObjectId(companyId) }, { companyId }] }
+            : { companyId };
+
+        const query = {
+            ...companyMatch,
+            $or: [
+                { scheduledDate: { $gte: startDate, $lte: endDate } },
+                { checkInTime: { $gte: startDate, $lte: endDate } },
+                { createdAt: { $gte: startDate, $lte: endDate } }
+            ]
+        };
+
+        // Optional status filter
+        if (req.query.status) {
+            query.status = req.query.status;
+        }
+
+        // Aggregate visits with visitor and host lookups
+        const pipeline = [
+            { $match: query },
+            // Lookup visitor details
+            {
+                $lookup: {
+                    from: 'visitors',
+                    localField: 'visitorId',
+                    foreignField: '_id',
+                    as: '_visitor'
+                }
+            },
+            // Lookup host (employee) details
+            {
+                $lookup: {
+                    from: 'employees',
+                    localField: 'hostEmployeeId',
+                    foreignField: '_id',
+                    as: '_host'
+                }
+            },
+            {
+                $addFields: {
+                    visitorName: {
+                        $ifNull: [
+                            { $arrayElemAt: ['$_visitor.name', 0] },
+                            '$visitorName'
+                        ]
+                    },
+                    hostName: {
+                        $ifNull: [
+                            { $arrayElemAt: ['$_host.employeeName', 0] },
+                            '$hostName'
+                        ]
+                    }
+                }
+            },
+            { $project: { _visitor: 0, _host: 0 } },
+            { $sort: { checkInTime: -1, scheduledDate: -1, createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit }
+        ];
+
+        const visits = await db.collection('visits').aggregate(pipeline).toArray();
+        const total = await db.collection('visits').countDocuments(query);
+
+        // Compute stats
+        const statusCounts = {};
+        for (const v of visits) {
+            const st = v.status || 'unknown';
+            statusCounts[st] = (statusCounts[st] || 0) + 1;
+        }
+
+        console.log(`[federated-visits] Returning ${visits.length} of ${total} visits for company ${companyId}`);
+
+        res.json({
+            success: true,
+            visits: visits.map(v => ({
+                _id: v._id,
+                visitorId: v.visitorId,
+                visitorName: v.visitorName || 'Unknown Visitor',
+                hostEmployeeId: v.hostEmployeeId,
+                hostName: v.hostName || 'Unknown Host',
+                purpose: v.purpose || '',
+                scheduledDate: v.scheduledDate,
+                checkInTime: v.checkInTime,
+                checkOutTime: v.checkOutTime,
+                status: v.status || 'unknown',
+                duration: v.checkInTime && v.checkOutTime
+                    ? Math.round((new Date(v.checkOutTime) - new Date(v.checkInTime)) / 60000)
+                    : null,
+                location: v.location || '',
+                vehicleNumber: v.vehicleNumber || '',
+                numberOfPersons: v.numberOfPersons || 1,
+                badgeNumber: v.badgeNumber || '',
+                createdAt: v.createdAt
+            })),
+            total,
+            statusCounts
+        });
+
+    } catch (error) {
+        console.error(`[federated-visits] GET error: ${error.message}`);
+        next(error);
+    }
+});
+
+/**
  * POST /api/query/attendance
  * Federated attendance endpoint — receives attendance records from Platform.
  * 
