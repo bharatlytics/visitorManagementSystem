@@ -675,51 +675,56 @@ router.get('/visits', async (req, res, next) => {
             query.status = req.query.status;
         }
 
-        // Aggregate visits with visitor and host lookups
-        const pipeline = [
-            { $match: query },
-            // Lookup visitor details
-            {
-                $lookup: {
-                    from: 'visitors',
-                    localField: 'visitorId',
-                    foreignField: '_id',
-                    as: '_visitor'
-                }
-            },
-            // Lookup host (employee) details
-            {
-                $lookup: {
-                    from: 'employees',
-                    localField: 'hostEmployeeId',
-                    foreignField: '_id',
-                    as: '_host'
-                }
-            },
-            {
-                $addFields: {
-                    visitorName: {
-                        $ifNull: [
-                            { $arrayElemAt: ['$_visitor.name', 0] },
-                            '$visitorName'
-                        ]
-                    },
-                    hostName: {
-                        $ifNull: [
-                            { $arrayElemAt: ['$_host.employeeName', 0] },
-                            '$hostName'
-                        ]
-                    }
-                }
-            },
-            { $project: { _visitor: 0, _host: 0 } },
-            { $sort: { checkInTime: -1, scheduledDate: -1, createdAt: -1 } },
-            { $skip: skip },
-            { $limit: limit }
-        ];
-
-        const visits = await db.collection('visits').aggregate(pipeline).toArray();
+        // Simple query — no $lookup (avoids ObjectId/string mismatch)
+        const visits = await db.collection('visits')
+            .find(query)
+            .sort({ checkInTime: -1, scheduledDate: -1, createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .toArray();
         const total = await db.collection('visits').countDocuments(query);
+
+        // Batch-resolve hostEmployeeIds and visitorIds
+        const hostIds = new Set();
+        const visitorIds = new Set();
+        for (const v of visits) {
+            if (v.hostEmployeeId) hostIds.add(String(v.hostEmployeeId));
+            if (v.visitorId) visitorIds.add(String(v.visitorId));
+        }
+
+        // Fetch employees for host lookup (handle both ObjectId and string)
+        const hostMap = {};
+        if (hostIds.size > 0) {
+            const hostObjIds = [];
+            const hostStrIds = [];
+            for (const id of hostIds) {
+                if (isValidObjectId(id)) hostObjIds.push(new ObjectId(id));
+                hostStrIds.push(id);
+            }
+            const hostQuery = hostObjIds.length > 0
+                ? { $or: [{ _id: { $in: hostObjIds } }, { employeeId: { $in: hostStrIds } }] }
+                : { employeeId: { $in: hostStrIds } };
+            const hosts = await db.collection('employees').find(hostQuery, { projection: { _id: 1, employeeName: 1, employeeId: 1 } }).toArray();
+            for (const h of hosts) {
+                hostMap[String(h._id)] = h.employeeName || 'Unnamed Employee';
+                if (h.employeeId) hostMap[String(h.employeeId)] = h.employeeName || 'Unnamed Employee';
+            }
+        }
+
+        // Fetch visitors for name lookup
+        const visitorMap = {};
+        if (visitorIds.size > 0) {
+            const visObjIds = [];
+            for (const id of visitorIds) {
+                if (isValidObjectId(id)) visObjIds.push(new ObjectId(id));
+            }
+            if (visObjIds.length > 0) {
+                const vDocs = await db.collection('visitors').find({ _id: { $in: visObjIds } }, { projection: { _id: 1, name: 1 } }).toArray();
+                for (const vd of vDocs) {
+                    visitorMap[String(vd._id)] = vd.name || 'Unnamed Visitor';
+                }
+            }
+        }
 
         // Compute stats
         const statusCounts = {};
@@ -728,30 +733,34 @@ router.get('/visits', async (req, res, next) => {
             statusCounts[st] = (statusCounts[st] || 0) + 1;
         }
 
-        console.log(`[federated-visits] Returning ${visits.length} of ${total} visits for company ${companyId}`);
+        console.log(`[federated-visits] Returning ${visits.length} of ${total} visits for company ${companyId} (hosts resolved: ${Object.keys(hostMap).length}, visitors: ${Object.keys(visitorMap).length})`);
 
         res.json({
             success: true,
-            visits: visits.map(v => ({
-                _id: v._id,
-                visitorId: v.visitorId,
-                visitorName: v.visitorName || 'Unknown Visitor',
-                hostEmployeeId: v.hostEmployeeId,
-                hostName: v.hostName || 'Unknown Host',
-                purpose: v.purpose || '',
-                scheduledDate: v.scheduledDate,
-                checkInTime: v.checkInTime,
-                checkOutTime: v.checkOutTime,
-                status: v.status || 'unknown',
-                duration: v.checkInTime && v.checkOutTime
-                    ? Math.round((new Date(v.checkOutTime) - new Date(v.checkInTime)) / 60000)
-                    : null,
-                location: v.location || '',
-                vehicleNumber: v.vehicleNumber || '',
-                numberOfPersons: v.numberOfPersons || 1,
-                badgeNumber: v.badgeNumber || '',
-                createdAt: v.createdAt
-            })),
+            visits: visits.map(v => {
+                const resolvedHost = v.hostEmployeeId ? hostMap[String(v.hostEmployeeId)] : null;
+                const resolvedVisitor = v.visitorId ? visitorMap[String(v.visitorId)] : null;
+                return {
+                    _id: v._id,
+                    visitorId: v.visitorId,
+                    visitorName: resolvedVisitor || v.visitorName || 'Unknown Visitor',
+                    hostEmployeeId: v.hostEmployeeId,
+                    hostName: resolvedHost || v.hostEmployeeName || v.hostName || 'Unknown Host',
+                    purpose: v.purpose || '',
+                    scheduledDate: v.scheduledDate,
+                    checkInTime: v.checkInTime,
+                    checkOutTime: v.checkOutTime,
+                    status: v.status || 'unknown',
+                    duration: v.checkInTime && v.checkOutTime
+                        ? Math.round((new Date(v.checkOutTime) - new Date(v.checkInTime)) / 60000)
+                        : null,
+                    location: v.location || '',
+                    vehicleNumber: v.vehicleNumber || '',
+                    numberOfPersons: v.numberOfPersons || 1,
+                    badgeNumber: v.badgeNumber || '',
+                    createdAt: v.createdAt
+                };
+            }),
             total,
             statusCounts
         });
