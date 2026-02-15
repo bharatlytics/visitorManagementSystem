@@ -664,8 +664,8 @@ router.get('/visits', async (req, res, next) => {
         const query = {
             ...companyMatch,
             $or: [
-                { scheduledDate: { $gte: startDate, $lte: endDate } },
-                { checkInTime: { $gte: startDate, $lte: endDate } },
+                { expectedArrival: { $gte: startDate, $lte: endDate } },
+                { actualArrival: { $gte: startDate, $lte: endDate } },
                 { createdAt: { $gte: startDate, $lte: endDate } }
             ]
         };
@@ -678,11 +678,17 @@ router.get('/visits', async (req, res, next) => {
         // Simple query — no $lookup (avoids ObjectId/string mismatch)
         const visits = await db.collection('visits')
             .find(query)
-            .sort({ checkInTime: -1, scheduledDate: -1, createdAt: -1 })
+            .sort({ actualArrival: -1, expectedArrival: -1, createdAt: -1 })
             .skip(skip)
             .limit(limit)
             .toArray();
         const total = await db.collection('visits').countDocuments(query);
+
+        // Count currently on-site (status = checked_in)
+        const onSiteNow = await db.collection('visits').countDocuments({
+            ...companyMatch,
+            status: 'checked_in'
+        });
 
         // Batch-resolve hostEmployeeIds and visitorIds
         const hostIds = new Set();
@@ -711,7 +717,7 @@ router.get('/visits', async (req, res, next) => {
             }
         }
 
-        // Fetch visitors for name lookup
+        // Fetch visitors for name lookup (VMS stores visitorName, not name)
         const visitorMap = {};
         if (visitorIds.size > 0) {
             const visObjIds = [];
@@ -719,9 +725,12 @@ router.get('/visits', async (req, res, next) => {
                 if (isValidObjectId(id)) visObjIds.push(new ObjectId(id));
             }
             if (visObjIds.length > 0) {
-                const vDocs = await db.collection('visitors').find({ _id: { $in: visObjIds } }, { projection: { _id: 1, name: 1 } }).toArray();
+                const vDocs = await db.collection('visitors').find(
+                    { _id: { $in: visObjIds } },
+                    { projection: { _id: 1, visitorName: 1, name: 1 } }
+                ).toArray();
                 for (const vd of vDocs) {
-                    visitorMap[String(vd._id)] = vd.name || 'Unnamed Visitor';
+                    visitorMap[String(vd._id)] = vd.visitorName || vd.name || 'Unnamed Visitor';
                 }
             }
         }
@@ -733,35 +742,41 @@ router.get('/visits', async (req, res, next) => {
             statusCounts[st] = (statusCounts[st] || 0) + 1;
         }
 
-        console.log(`[federated-visits] Returning ${visits.length} of ${total} visits for company ${companyId} (hosts resolved: ${Object.keys(hostMap).length}, visitors: ${Object.keys(visitorMap).length})`);
+        console.log(`[federated-visits] Returning ${visits.length} of ${total} visits for company ${companyId} (hosts resolved: ${Object.keys(hostMap).length}, visitors: ${Object.keys(visitorMap).length}, onSite: ${onSiteNow})`);
 
         res.json({
             success: true,
             visits: visits.map(v => {
                 const resolvedHost = v.hostEmployeeId ? hostMap[String(v.hostEmployeeId)] : null;
                 const resolvedVisitor = v.visitorId ? visitorMap[String(v.visitorId)] : null;
+                const checkIn = v.actualArrival || null;
+                const checkOut = v.actualDeparture || null;
                 return {
                     _id: v._id,
                     visitorId: v.visitorId,
                     visitorName: resolvedVisitor || v.visitorName || 'Unknown Visitor',
                     hostEmployeeId: v.hostEmployeeId,
-                    hostName: resolvedHost || v.hostEmployeeName || v.hostName || 'Unknown Host',
+                    hostName: resolvedHost || v.hostEmployeeName || 'Unknown Host',
                     purpose: v.purpose || '',
-                    scheduledDate: v.scheduledDate,
-                    checkInTime: v.checkInTime,
-                    checkOutTime: v.checkOutTime,
+                    scheduledDate: v.expectedArrival || v.createdAt,
+                    expectedArrival: v.expectedArrival,
+                    expectedDeparture: v.expectedDeparture,
+                    checkInTime: checkIn,
+                    checkOutTime: checkOut,
                     status: v.status || 'unknown',
-                    duration: v.checkInTime && v.checkOutTime
-                        ? Math.round((new Date(v.checkOutTime) - new Date(v.checkInTime)) / 60000)
+                    duration: checkIn && checkOut
+                        ? Math.round((new Date(checkOut) - new Date(checkIn)) / 60000)
                         : null,
                     location: v.location || '',
                     vehicleNumber: v.vehicleNumber || '',
                     numberOfPersons: v.numberOfPersons || 1,
                     badgeNumber: v.badgeNumber || '',
+                    visitType: v.visitType || '',
                     createdAt: v.createdAt
                 };
             }),
             total,
+            onSiteNow,
             statusCounts
         });
 
