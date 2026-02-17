@@ -1933,6 +1933,26 @@ router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
         const results = [];
         const errors = [];
 
+        // Helper: strip timezone offset to preserve wall-clock time
+        // "2026-02-17T12:35:04.862+0530" → "2026-02-17T12:35:04.862Z"
+        function stripTimezone(dateStr) {
+            if (!dateStr) return null;
+            let s = String(dateStr);
+            // Remove positive offset (+0530, +05:30, +00:00, etc.)
+            if (s.includes('+')) {
+                s = s.split('+')[0];
+            } else if (s.match(/-\d{2}:?\d{2}$/)) {
+                // Remove negative offset (-05:00) but don't split YYYY-MM-DD
+                const lastMinus = s.lastIndexOf('-');
+                if (lastMinus > 10) {
+                    s = s.substring(0, lastMinus);
+                }
+            }
+            // Force UTC so JS doesn't apply local offset
+            if (!s.endsWith('Z')) s += 'Z';
+            return new Date(s);
+        }
+
         for (const record of records) {
             try {
                 // Validate required fields
@@ -1941,8 +1961,9 @@ router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
                     continue;
                 }
 
-                // Parse attendance time
-                const attendanceTime = record.attendanceTime ? new Date(record.attendanceTime) : new Date();
+                // Parse attendance time — STRIP TIMEZONE to preserve wall-clock time
+                const attendanceTime = record.attendanceTime ? stripTimezone(record.attendanceTime) : new Date();
+                console.log(`[employees/attendance] Wall-clock preserved: ${record.attendanceTime} -> ${attendanceTime.toISOString()}`);
                 const attendanceType = record.attendanceType || 'check_in';
 
                 // Build query IDs
@@ -1990,8 +2011,8 @@ router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
 
                     // Legacy fields (for backwards compatibility)
                     date: attendanceTime,
-                    checkIn: attendanceType === 'check_in' || attendanceType === 'IN' ? attendanceTime : (record.checkIn ? new Date(record.checkIn) : null),
-                    checkOut: attendanceType === 'check_out' || attendanceType === 'OUT' ? attendanceTime : (record.checkOut ? new Date(record.checkOut) : null),
+                    checkIn: attendanceType === 'check_in' || attendanceType === 'IN' ? attendanceTime : (record.checkIn ? stripTimezone(record.checkIn) : null),
+                    checkOut: attendanceType === 'check_out' || attendanceType === 'OUT' ? attendanceTime : (record.checkOut ? stripTimezone(record.checkOut) : null),
                     status: record.status || 'present',
 
 
@@ -2023,9 +2044,9 @@ router.post('/attendance', requireCompanyAccess, async (req, res, next) => {
                     transactionFrom: record.transactionFrom || 'api',
                     remarks: record.remarks || '',
 
-                    // Timestamps
-                    createdAt: record.createdAt ? new Date(record.createdAt) : new Date(),
-                    updatedAt: record.updatedAt ? new Date(record.updatedAt) : new Date()
+                    // Timestamps — also strip timezone to preserve wall-clock
+                    createdAt: record.createdAt ? stripTimezone(record.createdAt) : new Date(),
+                    updatedAt: record.updatedAt ? stripTimezone(record.updatedAt) : new Date()
                 };
 
                 await collections.attendance().insertOne(doc);
