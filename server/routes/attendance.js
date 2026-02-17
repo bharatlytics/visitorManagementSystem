@@ -145,12 +145,16 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
             });
         }
 
+        // Use provided timestamp or default to now
+        const providedDate = data.date || data.attendanceTime || data.timestamp || data.checkInTime;
+        const recordDate = providedDate ? new Date(providedDate) : new Date();
+
         const attendanceDoc = {
             _id: new ObjectId(),
             companyId,
             employeeId,
-            date: new Date(),
-            checkIn: new Date(),
+            date: recordDate,
+            checkIn: recordDate,
             checkOut: null,
             checkInMethod: data.checkInMethod || 'manual',
             checkInDeviceId: data.deviceId || null,
@@ -197,7 +201,9 @@ router.post('/:attendance_id/checkout', requireCompanyAccess, async (req, res, n
             return res.status(400).json({ error: 'Already checked out' });
         }
 
-        const checkOutTime = new Date();
+        const checkOutTime = data.date || data.checkOutTime
+            ? new Date(data.date || data.checkOutTime)
+            : new Date();
         const duration = checkOutTime - attendance.checkIn;
         const hoursWorked = duration / (1000 * 60 * 60);
 
