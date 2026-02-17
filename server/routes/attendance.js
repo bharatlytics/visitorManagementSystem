@@ -147,7 +147,32 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
 
         // Use provided timestamp or default to now
         const providedDate = data.date || data.attendanceTime || data.timestamp || data.checkInTime;
-        const recordDate = providedDate ? new Date(providedDate) : new Date();
+        let recordDate = new Date();
+
+        if (providedDate) {
+            // STRIP TIMEZONE OFFSET to preserve wall-clock time (treat Local as UTC)
+            // Mobile sends "12:35+0530", we want stored as "12:35Z" (UTC)
+            let dateStr = String(providedDate);
+
+            // Remove +0530 or similar
+            if (dateStr.includes('+')) {
+                dateStr = dateStr.split('+')[0];
+            } else if (dateStr.match(/-\d{2}:?\d{2}$/)) {
+                // Handle negative offset (e.g. -05:00) - careful not to split YYYY-MM-DD
+                const lastMinus = dateStr.lastIndexOf('-');
+                if (lastMinus > 10) {
+                    dateStr = dateStr.substring(0, lastMinus);
+                }
+            }
+
+            // Force UTC interpretation
+            if (!dateStr.endsWith('Z')) {
+                dateStr += 'Z';
+            }
+
+            recordDate = new Date(dateStr);
+            console.log(`[Attendance] Converted ${providedDate} -> ${recordDate.toISOString()} (Wall-Clock Preserved)`);
+        }
 
         const attendanceDoc = {
             _id: new ObjectId(),
@@ -201,9 +226,22 @@ router.post('/:attendance_id/checkout', requireCompanyAccess, async (req, res, n
             return res.status(400).json({ error: 'Already checked out' });
         }
 
-        const checkOutTime = data.date || data.checkOutTime
-            ? new Date(data.date || data.checkOutTime)
-            : new Date();
+        let checkOutTime = new Date();
+        const providedCheckOut = data.date || data.checkOutTime;
+
+        if (providedCheckOut) {
+            // STRIP TIMEZONE OFFSET
+            let dateStr = String(providedCheckOut);
+            if (dateStr.includes('+')) {
+                dateStr = dateStr.split('+')[0];
+            } else if (dateStr.match(/-\d{2}:?\d{2}$/)) {
+                const lastMinus = dateStr.lastIndexOf('-');
+                if (lastMinus > 10) dateStr = dateStr.substring(0, lastMinus);
+            }
+            if (!dateStr.endsWith('Z')) dateStr += 'Z';
+            checkOutTime = new Date(dateStr);
+            console.log(`[Attendance] Converted CheckOut ${providedCheckOut} -> ${checkOutTime.toISOString()} (Wall-Clock Preserved)`);
+        }
         const duration = checkOutTime - attendance.checkIn;
         const hoursWorked = duration / (1000 * 60 * 60);
 
