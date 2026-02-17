@@ -848,7 +848,18 @@ router.post('/attendance', async (req, res, next) => {
                 continue;
             }
 
-            const recordDate = new Date(attendanceTime);
+            // Start with new Date(attendanceTime) but strip timezone if present to preserve wall-clock
+            let dateStr = String(attendanceTime);
+            if (dateStr.includes('+')) {
+                dateStr = dateStr.split('+')[0];
+            } else if (dateStr.match(/-\d{2}:?\d{2}$/)) {
+                const lastMinus = dateStr.lastIndexOf('-');
+                if (lastMinus > 10) dateStr = dateStr.substring(0, lastMinus);
+            }
+            if (!dateStr.endsWith('Z')) dateStr += 'Z';
+
+            const recordDate = new Date(dateStr);
+            console.log(`[federated-attendance] Converted ${attendanceTime} -> ${recordDate.toISOString()} (Wall-Clock Preserved)`);
 
             // Look up local employee/visitor by actorId 
             // (actorId may be a Platform actor ID or a VMS-local _id)
