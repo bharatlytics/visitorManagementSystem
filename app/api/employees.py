@@ -187,15 +187,24 @@ def employee_attendance():
             if not company_id:
                 continue  # Skip records without companyId
             
-            # Parse attendance time - handle multiple formats
+            # Parse attendance time - "Store what comes" (Ignore Timezone)
+            # Mobile sends "12:35+0530", we want stored as "12:35" (naive) which Mongo treats as UTC
             attendance_time = now
             if record.get('attendanceTime'):
                 try:
                     time_str = record['attendanceTime']
-                    # Handle format like "2026-01-14T11:07:28.660+0000"
+                    # Clean up format if needed
                     if '+0000' in time_str:
                         time_str = time_str.replace('+0000', '+00:00')
-                    attendance_time = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                    
+                    # Parse as provided
+                    dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                    
+                    # FORCE NAIVE: Remove timezone info to preserve the wall-clock time
+                    # e.g. 12:35+05:30 -> 12:35 (naive)
+                    attendance_time = dt.replace(tzinfo=None)
+                    
+                    print(f"[attendance] Preserved wall-clock: {time_str} -> {attendance_time}")
                 except Exception as e:
                     print(f"[attendance] Error parsing time: {e}")
                     attendance_time = now
