@@ -610,13 +610,18 @@ GET /api/visitors/images/{image_id}
 
 ## 2. Visits
 
-**Base Path:** `/api/visits` and `/api/visitors`
+**Base Path:** `/api/visitors` (primary) and `/api/visits` (alias)
+
+> [!IMPORTANT]
+> The visitor router (`server/routes/visitors.js`) handles both visitor and visit endpoints. It is mounted at both `/api/visitors` and `/api/visits` in `api/index.js`. When using the `/api/visits` prefix, the router's sub-routes are still relative to its own paths (e.g., `/api/visits/visits` to list visits).
 
 ### 2.1 List Visits
 
 ```http
-GET /api/visits?companyId={companyId}&status={status}
+GET /api/visitors/visits?companyId={companyId}&status={status}
 ```
+
+**Alias:** `GET /api/visits/visits?companyId={companyId}` (via the `/api/visits` mount)
 
 **Query Parameters:**
 
@@ -627,50 +632,55 @@ GET /api/visits?companyId={companyId}&status={status}
 
 **Response:**
 ```json
-[
-  {
-    "_id": "visit_abc123",
-    "visitorId": "507f1f77bcf86cd799439012",
-    "visitorName": "John Doe",
-    "hostEmployeeId": "emp_12345",
-    "hostEmployeeName": "Jane Smith",
-    "visitType": "guest",
-    "purpose": "Business Meeting",
-    "status": "scheduled",
-    "expectedArrival": "2024-12-13T10:00:00Z",
-    "expectedDeparture": "2024-12-13T12:00:00Z",
-    "assets": {
-      "laptop": true,
-      "bag": false
-    },
-    "facilities": {
-      "wifiAccess": true,
-      "parkingRequired": false
+{
+  "status": "success",
+  "visits": [
+    {
+      "_id": "visit_abc123",
+      "visitorId": "507f1f77bcf86cd799439012",
+      "visitorName": "John Doe",
+      "hostEmployeeId": "emp_12345",
+      "hostEmployeeName": "Jane Smith",
+      "visitType": "guest",
+      "purpose": "Business Meeting",
+      "status": "scheduled",
+      "expectedArrival": "2024-12-13T10:00:00Z",
+      "expectedDeparture": "2024-12-13T12:00:00Z",
+      "assets": {
+        "laptop": true,
+        "bag": false
+      },
+      "facilities": {
+        "wifiAccess": true,
+        "parkingRequired": false
+      }
     }
-  }
-]
+  ]
+}
 ```
 
 ---
 
 ### 2.2 Get Single Visit
 
+> [!WARNING]
+> There is no dedicated `GET /api/visits/{visit_id}` endpoint. When using `GET /api/visits/{id}`, the router treats the ID as a **visitor ID** (since the `GET /:visitor_id` handler matches first on the visitors router). To retrieve a specific visit, query the visits listing with appropriate filters or use the visit data returned from schedule/check-in/check-out endpoints.
+
+To get a visitor (which includes their visit references):
+
 ```http
-GET /api/visits/{visit_id}
+GET /api/visitors/{visitor_id}
 ```
 
 **Response:**
 ```json
 {
-  "_id": "visit_abc123",
-  "visitorId": "507f1f77bcf86cd799439012",
-  "visitorName": "John Doe",
-  "hostEmployeeId": "emp_12345",
-  "hostEmployeeName": "Jane Smith",
-  "visitType": "guest",
-  "status": "checked_in",
-  "actualArrival": "2024-12-13T10:05:00Z",
-  "checkInMethod": "face"
+  "status": "success",
+  "visitor": {
+    "_id": "507f1f77bcf86cd799439012",
+    "visitorName": "John Doe",
+    "visits": ["visit_abc123", "visit_def456"]
+  }
 }
 ```
 
@@ -679,15 +689,23 @@ GET /api/visits/{visit_id}
 ### 2.3 Schedule Visit
 
 ```http
-POST /api/visits
+POST /api/visitors/{visitorId}/schedule-visit
 Content-Type: application/json
 ```
+
+> [!WARNING]
+> `POST /api/visits` does **not** exist as a standalone endpoint. Visits are always scheduled via a specific visitor using the path above.
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `visitorId` | string | Yes | Visitor ObjectId |
 
 **Request Body:**
 ```json
 {
   "companyId": "507f1f77bcf86cd799439011",
-  "visitorId": "507f1f77bcf86cd799439012",
   "hostEmployeeId": "emp_12345",
   "visitType": "guest",
   "purpose": "Business Meeting",
@@ -720,44 +738,39 @@ Content-Type: application/json
 }
 ```
 
-**Response:**
+**Response (201 Created):**
 ```json
 {
-  "id": "visit_abc123",
-  "message": "Visit scheduled"
-}
-```
-
----
-
-### 2.4 Schedule Visit (Alternative - via Visitor)
-
-```http
-POST /api/visitors/{visitorId}/schedule-visit
-Content-Type: application/json
-```
-
-Same request body as above. Returns additional QR code URL:
-
-```json
-{
+  "status": "success",
   "message": "Visit scheduled successfully",
   "visit": {
     "_id": "visit_abc123",
+    "visitorId": "507f1f77bcf86cd799439012",
+    "status": "scheduled",
     "qrCode": "visit_abc123",
     "qrCodeUrl": "/api/visitors/visits/qr/visit_abc123"
+  },
+  "approval": {
+    "emailSent": true,
+    "token": "approval_token_abc",
+    "approvalUrl": "https://your-vms.app/approval/approval_token_abc"
   }
 }
 ```
+
+> [!NOTE]
+> The `approval` field is only present when `requiresApproval` is `true`. The approval URL can be shared with the host for one-click approve/reject.
 
 ---
 
 ### 2.5 Update Visit
 
 ```http
-PATCH /api/visits/{visit_id}
+PATCH /api/visitors/visits/{visit_id}
 Content-Type: application/json
 ```
+
+**Alias:** `PATCH /api/visits/{visit_id}` (via the `/api/visits` mount)
 
 **Path Parameters:**
 
@@ -831,9 +844,11 @@ Content-Type: application/json
 ### 2.6 Delete/Cancel Visit
 
 ```http
-DELETE /api/visits/{visit_id}
+DELETE /api/visitors/visits/{visit_id}
 Content-Type: application/json
 ```
+
+**Alias:** `DELETE /api/visits/{visit_id}` (via the `/api/visits` mount)
 
 **Path Parameters:**
 
@@ -873,9 +888,14 @@ Content-Type: application/json
 ### 2.7 Check In
 
 ```http
-POST /api/visits/{visit_id}/check-in
+POST /api/visitors/visits/{visit_id}/check-in
 Content-Type: application/json
 ```
+
+**Aliases:**
+- `POST /api/visits/{visit_id}/check-in` (via `/api/visits` mount + direct route)
+- `POST /api/visitors/visits/{visit_id}/checkin` (hyphen-free alias)
+- `POST /api/visits/{visit_id}/checkin` (hyphen-free alias)
 
 **Request Body:**
 ```json
@@ -913,9 +933,14 @@ Content-Type: application/json
 ### 2.8 Check Out
 
 ```http
-POST /api/visits/{visit_id}/check-out
+POST /api/visitors/visits/{visit_id}/check-out
 Content-Type: application/json
 ```
+
+**Aliases:**
+- `POST /api/visits/{visit_id}/check-out` (via `/api/visits` mount + direct route)
+- `POST /api/visitors/visits/{visit_id}/checkout` (hyphen-free alias)
+- `POST /api/visits/{visit_id}/checkout` (hyphen-free alias)
 
 **Request Body:**
 ```json
@@ -948,9 +973,10 @@ Content-Type: application/json
 ### 2.9 Get Visit QR Code
 
 ```http
-GET /api/visits/{visit_id}/qr
 GET /api/visitors/visits/qr/{visit_id}
 ```
+
+**Alias:** `GET /api/visits/visits/qr/{visit_id}` (via `/api/visits` mount)
 
 **Response:** Binary PNG image (`image/png`)
 
@@ -1837,11 +1863,41 @@ GET /api/dashboard/stats?companyId={companyId}
 
 ---
 
-### 5.2 Get Trends
+### 5.2 Get Recent Visits
 
 ```http
-GET /api/dashboard/trends?companyId={companyId}
+GET /api/dashboard/recent-visits?companyId={companyId}
 ```
+
+**Response:**
+```json
+{
+  "recentVisits": [
+    {
+      "_id": "visit_abc123",
+      "visitorName": "John Doe",
+      "hostEmployeeName": "Jane Smith",
+      "status": "checked_in",
+      "actualArrival": "2024-12-13T10:05:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 5.3 Get Visit Trends
+
+```http
+GET /api/dashboard/visit-trends?companyId={companyId}&period={days}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|---------|
+| `companyId` | string | Yes | Company ObjectId |
+| `period` | number | No | Number of days for trend data (default: 7) |
 
 **Response:**
 ```json
@@ -1860,11 +1916,32 @@ GET /api/dashboard/trends?companyId={companyId}
 
 ---
 
-### 5.3 Security Dashboard
+### 5.4 Get Active Visitors
 
 ```http
-GET /api/dashboard/security?companyId={companyId}
+GET /api/dashboard/active-visitors?companyId={companyId}
 ```
+
+Returns visitors currently checked in (on-site).
+
+**Response:**
+```json
+{
+  "activeVisitors": [
+    {
+      "_id": "visit_abc123",
+      "visitorName": "John Doe",
+      "hostEmployeeName": "Jane Smith",
+      "actualArrival": "2024-12-13T10:05:00Z",
+      "hoursInside": 2.5
+    }
+  ],
+  "count": 1
+}
+```
+
+> [!NOTE]
+> The Security Dashboard (`/api/dashboard/security`), Reports (`/api/dashboard/reports/*`), and Approvals (`/api/dashboard/approvals/*`) endpoints shown in earlier versions of this doc have been moved to dedicated routers: `/api/reports`, `/api/approvals`.
 
 **Response:**
 ```json
@@ -2023,35 +2100,92 @@ Content-Type: application/json
 
 **Base Path:** `/api/analytics`
 
-### 5.1 Dashboard Analytics
+### 5.1 Analytics Summary
 
 ```http
-GET /api/analytics/dashboard?companyId={companyId}
+GET /api/analytics/summary?companyId={companyId}
 ```
 
 **Response:**
 ```json
 {
   "totalVisitors": 1500,
+  "thisMonth": 250,
   "activeVisits": 12,
-  "visitsToday": 25,
-  "topZones": [
-    { "zoneName": "Main Lobby", "count": 450 },
-    { "zoneName": "Meeting Room A", "count": 320 },
-    { "zoneName": "Cafeteria", "count": 280 }
-  ]
+  "avgDuration": 145
 }
 ```
 
 ---
 
-### 5.2 Visitor Trends
+### 5.2 Visits by Day
 
 ```http
-GET /api/analytics/trends?companyId={companyId}
+GET /api/analytics/visits-by-day?companyId={companyId}&startDate={date}&endDate={date}
 ```
 
-Same response format as `/api/dashboard/trends`.
+**Response:**
+```json
+[
+  { "date": "2024-12-07", "count": 15 },
+  { "date": "2024-12-08", "count": 22 },
+  { "date": "2024-12-09", "count": 18 }
+]
+```
+
+---
+
+### 5.3 Visits by Purpose
+
+```http
+GET /api/analytics/visits-by-purpose?companyId={companyId}
+```
+
+**Response:**
+```json
+[
+  { "purpose": "Business Meeting", "count": 120 },
+  { "purpose": "Interview", "count": 80 },
+  { "purpose": "Delivery", "count": 50 }
+]
+```
+
+---
+
+### 5.4 Top Hosts
+
+```http
+GET /api/analytics/top-hosts?companyId={companyId}
+```
+
+**Response:**
+```json
+[
+  { "hostName": "Jane Smith", "count": 45 },
+  { "hostName": "Bob Johnson", "count": 38 },
+  { "hostName": "Alice Brown", "count": 32 }
+]
+```
+
+---
+
+### 5.5 Visitor Types Breakdown
+
+```http
+GET /api/analytics/visitor-types?companyId={companyId}
+```
+
+**Response:**
+```json
+[
+  { "type": "guest", "count": 120 },
+  { "type": "vendor", "count": 80 },
+  { "type": "interview", "count": 50 }
+]
+```
+
+> [!TIP]
+> Analytics endpoints support CSV export by appending `&format=csv` to the request URL (where applicable).
 
 ---
 
@@ -2126,16 +2260,19 @@ Content-Type: application/json
 
 ### 6.3 Devices
 
+> [!NOTE]
+> Devices have their own dedicated router mounted at `/api/devices`. The paths below are the correct endpoints.
+
 #### List Devices
 
 ```http
-GET /api/settings/devices?companyId={companyId}
+GET /api/devices?companyId={companyId}
 ```
 
 #### Create Device
 
 ```http
-POST /api/settings/devices
+POST /api/devices
 Content-Type: application/json
 ```
 
@@ -2167,13 +2304,13 @@ Content-Type: application/json
 #### Update Device
 
 ```http
-PUT /api/settings/devices/{device_id}
+PUT /api/devices/{device_id}
 ```
 
 #### Delete Device
 
 ```http
-DELETE /api/settings/devices/{device_id}
+DELETE /api/devices/{device_id}
 ```
 
 ---
@@ -2227,12 +2364,15 @@ Content-Type: application/json
 
 ## 7. Security
 
-**Base Path:** `/api/security`
+**Base Path:** `/api/watchlist`
+
+> [!NOTE]
+> The watchlist/security endpoints are served by a dedicated watchlist router mounted at `/api/watchlist` (not `/api/security`).
 
 ### 7.1 Get Watchlist
 
 ```http
-GET /api/security/watchlist?companyId={companyId}
+GET /api/watchlist?companyId={companyId}
 ```
 
 **Response:**
@@ -2253,7 +2393,7 @@ GET /api/security/watchlist?companyId={companyId}
 ### 7.2 Add to Watchlist
 
 ```http
-POST /api/security/watchlist/{visitor_id}
+POST /api/watchlist
 Content-Type: application/json
 ```
 
@@ -2275,16 +2415,27 @@ Content-Type: application/json
 ### 7.3 Remove from Watchlist
 
 ```http
-DELETE /api/security/watchlist/{visitor_id}
+DELETE /api/watchlist/{entry_id}
 ```
 
 ---
 
-### 7.4 Check Security Status
+### 7.4 Check Watchlist Status
 
 ```http
-GET /api/security/check/{visitor_id}
+GET /api/watchlist/check?phone={phone}&email={email}&name={name}
 ```
+
+> [!NOTE]
+> This endpoint checks if a person matches any watchlist entries by phone, email, or name.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `phone` | string | No | Phone number to check |
+| `email` | string | No | Email address to check |
+| `name` | string | No | Name to check |
 
 **Response:**
 ```json
