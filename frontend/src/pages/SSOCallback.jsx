@@ -17,9 +17,21 @@ export default function SSOCallback() {
         const companyName = searchParams.get('companyName')
         const companyLogo = searchParams.get('companyLogo')
 
+        // Parse permissions JSON from URL params (set by Platform SSO)
+        let permissions = null
+        const permissionsStr = searchParams.get('permissions')
+        if (permissionsStr) {
+            try {
+                permissions = JSON.parse(permissionsStr)
+                console.log('[SSO] Permissions received:', permissions)
+            } catch (e) {
+                console.warn('[SSO] Failed to parse permissions:', e)
+            }
+        }
+
         if (token && companyId) {
-            // Store the auth data
-            ssoLogin(token, companyId, companyName, companyLogo)
+            // Store the auth data with permissions
+            ssoLogin(token, companyId, companyName, companyLogo, permissions)
             // Redirect to dashboard
             navigate('/', { replace: true })
         } else {

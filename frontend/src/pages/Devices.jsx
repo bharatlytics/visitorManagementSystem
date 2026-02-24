@@ -1,512 +1,679 @@
-import { useState, useEffect } from 'react'
-import { Plus, Search, Monitor, Tablet, Smartphone, Laptop, MapPin, Wifi, WifiOff, Settings, Trash2, Eye, RefreshCw, X, QrCode, Fingerprint, Printer, Clock, CheckCircle, AlertTriangle, Power, Edit } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Plus, Search, Monitor, Tablet, Smartphone, Laptop, MapPin, Wifi, WifiOff, Settings, Trash2, Eye, RefreshCw, X, QrCode, Clock, CheckCircle, AlertTriangle, Power, Edit, RotateCcw, Lock, Unlock, Camera, Download, Send, ChevronDown, ChevronRight, Copy, ExternalLink, Wrench, History } from 'lucide-react'
 import api from '../api/client'
 
-// Modal Component
+// ─── Helpers ──────────────────────────────────────────────────────
+
 function Modal({ isOpen, onClose, title, children, size = 'large' }) {
     if (!isOpen) return null
-
-    const sizeStyles = {
-        large: { width: '80vw', height: '80vh', maxWidth: '1400px' },
-        medium: { width: '600px', maxHeight: '90vh' },
-        small: { width: '450px', maxHeight: '80vh' }
-    }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div
-                className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-                style={sizeStyles[size]}
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-purple-700">
-                    <h3 className="font-semibold text-white text-lg">{title}</h3>
-                    <button onClick={onClose} className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+            <div className={`bg-white rounded-xl shadow-2xl ${size === 'small' ? 'max-w-md' : size === 'medium' ? 'max-w-lg' : 'max-w-2xl'} w-full max-h-[90vh] overflow-hidden`} onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+                    <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-6">{children}</div>
+                <div className="overflow-y-auto max-h-[calc(90vh-64px)]">
+                    {children}
+                </div>
             </div>
         </div>
     )
 }
 
-// Info Field Component
-function InfoField({ icon: Icon, label, value, className = '' }) {
-    return (
-        <div className={`flex items-start gap-3 p-3 bg-gray-50 rounded-lg ${className}`}>
-            <div className="p-2 bg-white rounded-lg shadow-sm">
-                <Icon className="w-4 h-4 text-purple-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-500 uppercase tracking-wider">{label}</p>
-                <p className="text-sm font-medium text-gray-900 mt-0.5 break-words">{value || '—'}</p>
-            </div>
-        </div>
-    )
-}
-
-// Device Type Icon
 function DeviceIcon({ type, className = "w-5 h-5" }) {
-    const icons = {
-        kiosk: Monitor,
-        tablet: Tablet,
-        mobile: Smartphone,
-        desktop: Laptop
+    switch (type) {
+        case 'tablet': return <Tablet className={className} />
+        case 'phone': return <Smartphone className={className} />
+        case 'laptop': return <Laptop className={className} />
+        default: return <Monitor className={className} />
     }
-    const Icon = icons[type] || Monitor
-    return <Icon className={className} />
 }
+
+function StatusBadge({ status, lastSeen }) {
+    const isOnline = lastSeen && (Date.now() - new Date(lastSeen).getTime()) < 5 * 60 * 1000
+
+    if (status === 'maintenance') {
+        return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-50 text-amber-700"><Wrench className="w-3 h-3" /> Maintenance</span>
+    }
+    if (status === 'inactive' || status === 'pending_activation') {
+        return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600"><WifiOff className="w-3 h-3" /> {status === 'pending_activation' ? 'Pending' : 'Inactive'}</span>
+    }
+    if (isOnline) {
+        return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-green-50 text-green-700"><Wifi className="w-3 h-3" /> Online</span>
+    }
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-red-50 text-red-600"><WifiOff className="w-3 h-3" /> Offline</span>
+}
+
+function CommandBadge({ status }) {
+    const colors = {
+        pending: 'bg-yellow-50 text-yellow-700',
+        completed: 'bg-green-50 text-green-700',
+        failed: 'bg-red-50 text-red-600'
+    }
+    return <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${colors[status] || 'bg-gray-100 text-gray-600'}`}>{status}</span>
+}
+
+// ─── Main Component ──────────────────────────────────────────────
 
 export default function Devices() {
     const [devices, setDevices] = useState([])
     const [stats, setStats] = useState({ total: 0, online: 0, offline: 0, maintenance: 0 })
-    const [locations, setLocations] = useState([])
     const [loading, setLoading] = useState(true)
-    const [error, setError] = useState(null)
+    const [filter, setFilter] = useState('all')
     const [search, setSearch] = useState('')
-    const [statusFilter, setStatusFilter] = useState('all')
 
-    // Modal states
-    const [showRegisterModal, setShowRegisterModal] = useState(false)
-    const [showDetailsModal, setShowDetailsModal] = useState(false)
-    const [showActivationModal, setShowActivationModal] = useState(false)
+    // Modals
+    const [showRegister, setShowRegister] = useState(false)
+    const [showQR, setShowQR] = useState(false)
     const [selectedDevice, setSelectedDevice] = useState(null)
-    const [saving, setSaving] = useState(false)
-    const [activationCode, setActivationCode] = useState('')
+    const [showDetail, setShowDetail] = useState(false)
+    const [showCommandHistory, setShowCommandHistory] = useState(false)
+    const [showEdit, setShowEdit] = useState(false)
 
-    // Form state
-    const [form, setForm] = useState({
-        deviceName: '', deviceType: 'kiosk', locationId: '', locationName: '',
-        features: { faceRecognition: true, badgePrinting: false, qrScanning: true }
-    })
+    // Edit form
+    const [editForm, setEditForm] = useState({ deviceName: '', deviceType: 'kiosk', location: '', capabilities: '' })
 
-    useEffect(() => {
-        fetchData()
-        // Auto-refresh every 30 seconds
-        const interval = setInterval(fetchData, 30000)
-        return () => clearInterval(interval)
-    }, [])
+    // Register form
+    const [registerForm, setRegisterForm] = useState({ deviceName: '', deviceType: 'kiosk', location: '' })
 
-    const fetchData = async () => {
+    // QR
+    const [qrData, setQrData] = useState(null)
+    const [qrLoading, setQrLoading] = useState(false)
+
+    // Commands
+    const [commandHistory, setCommandHistory] = useState([])
+    const [sendingCommand, setSendingCommand] = useState(null)
+
+    const companyId = localStorage.getItem('vms_company_id')
+
+    // ─── Data Fetching ────────────────────────────────────────────
+
+    const fetchData = useCallback(async () => {
+        if (!companyId) {
+            setLoading(false)
+            return
+        }
         try {
             setLoading(true)
-            setError(null)
-            const [devicesRes, statsRes, locationsRes] = await Promise.allSettled([
+            const [devRes, statRes] = await Promise.all([
                 api.get('/devices'),
-                api.get('/devices/stats'),
-                api.get('/entities')
+                api.get('/devices/stats')
             ])
-
-            if (devicesRes.status === 'fulfilled') {
-                setDevices(devicesRes.value.data.devices || [])
-            }
-            if (statsRes.status === 'fulfilled') {
-                setStats(statsRes.value.data.stats || { total: 0, online: 0, offline: 0, maintenance: 0 })
-            }
-            if (locationsRes.status === 'fulfilled') {
-                setLocations(locationsRes.value.data.entities || locationsRes.value.data || [])
-            }
+            setDevices(devRes.data.devices || [])
+            const s = statRes.data.stats || {}
+            setStats({
+                total: s.total || 0,
+                online: s.online || 0,
+                offline: s.offline || 0,
+                maintenance: (devRes.data.devices || []).filter(d => d.status === 'maintenance').length
+            })
         } catch (err) {
-            setError(err.response?.data?.error || 'Failed to load devices')
+            console.error('Error fetching devices:', err)
         } finally {
             setLoading(false)
         }
-    }
+    }, [companyId])
+
+    useEffect(() => { fetchData() }, [fetchData])
+
+    // ─── Register Device ──────────────────────────────────────────
 
     const handleRegister = async (e) => {
         e.preventDefault()
-        if (!form.deviceName || !form.deviceType) {
-            alert('Please fill required fields: Device Name, Type')
-            return
-        }
-
-        setSaving(true)
         try {
-            // Find location name
-            const location = locations.find(l => l._id === form.locationId)
-
-            await api.post('/devices/register', {
-                ...form,
-                locationName: location?.name || ''
-            })
-            setShowRegisterModal(false)
-            resetForm()
+            await api.post('/devices/register', { ...registerForm })
+            setShowRegister(false)
+            setRegisterForm({ deviceName: '', deviceType: 'kiosk', location: '' })
             fetchData()
         } catch (err) {
-            alert(err.response?.data?.error || 'Failed to register device')
-        } finally {
-            setSaving(false)
+            alert('Error registering device: ' + (err.response?.data?.error || err.message))
         }
     }
 
-    const handleDelete = async (deviceId) => {
-        if (!confirm('Are you sure you want to remove this device?')) return
+    // ─── QR Code ──────────────────────────────────────────────────
 
+    const generateQR = async () => {
+        try {
+            setQrLoading(true)
+            const res = await api.post('/devices/qr-code', {
+                deviceType: 'kiosk',
+                expiresInHours: 24
+            })
+            setQrData(res.data)
+            setShowQR(true)
+        } catch (err) {
+            alert('Error generating QR code: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setQrLoading(false)
+        }
+    }
+
+    const copyQRCode = () => {
+        if (qrData?.code) {
+            navigator.clipboard.writeText(qrData.code)
+        }
+    }
+
+    // ─── Remote Commands ──────────────────────────────────────────
+
+    const sendCommand = async (deviceId, command, params = {}) => {
+        try {
+            setSendingCommand(command)
+            await api.post(`/devices/${deviceId}/command`, { command, params })
+            fetchData()
+        } catch (err) {
+            alert('Error sending command: ' + (err.response?.data?.error || err.message))
+        } finally {
+            setSendingCommand(null)
+        }
+    }
+
+    const loadCommandHistory = async (deviceId) => {
+        try {
+            const res = await api.get(`/devices/${deviceId}/command-history?limit=20`)
+            setCommandHistory(res.data.commands || [])
+        } catch (err) {
+            console.error('Error loading command history:', err)
+            setCommandHistory([])
+        }
+    }
+
+    // ─── Delete / Status ──────────────────────────────────────────
+
+    const handleDelete = async (deviceId) => {
+        if (!confirm('Are you sure you want to deactivate this device?')) return
         try {
             await api.delete(`/devices/${deviceId}`)
             fetchData()
+            if (showDetail) setShowDetail(false)
         } catch (err) {
-            alert(err.response?.data?.error || 'Failed to delete device')
+            alert('Error: ' + (err.response?.data?.error || err.message))
         }
     }
 
-    const handleStatusChange = async (deviceId, status) => {
+    // ─── Edit Device ──────────────────────────────────────────────
+
+    const openEditModal = (device) => {
+        setEditForm({
+            deviceName: device.deviceName || '',
+            deviceType: device.deviceType || 'kiosk',
+            location: device.location || '',
+            capabilities: (device.capabilities || []).join(', '),
+        })
+        setSelectedDevice(device)
+        setShowEdit(true)
+    }
+
+    const handleEditSave = async (e) => {
+        e.preventDefault()
         try {
-            await api.patch(`/devices/${deviceId}`, { status })
+            const payload = {
+                deviceName: editForm.deviceName,
+                deviceType: editForm.deviceType,
+                location: editForm.location,
+                capabilities: editForm.capabilities
+                    .split(',')
+                    .map(c => c.trim())
+                    .filter(Boolean),
+            }
+            await api.patch(`/devices/${selectedDevice._id}`, payload)
+            setShowEdit(false)
+            setShowDetail(false)
             fetchData()
         } catch (err) {
-            alert(err.response?.data?.error || 'Failed to update status')
+            alert('Error updating device: ' + (err.response?.data?.error || err.message))
         }
     }
 
-    const generateActivationCode = async () => {
-        setSaving(true)
-        try {
-            const location = locations.find(l => l._id === form.locationId)
-            const res = await api.post('/devices/activation-codes', {
-                locationId: form.locationId,
-                locationName: location?.name || '',
-                expiresIn: 24
-            })
-            setActivationCode(res.data.code)
-            setShowActivationModal(true)
-        } catch (err) {
-            alert(err.response?.data?.error || 'Failed to generate code')
-        } finally {
-            setSaving(false)
+    // ─── Filtered Devices ─────────────────────────────────────────
+
+    const filteredDevices = useMemo(() => {
+        let result = devices
+        if (filter === 'online') {
+            result = result.filter(d => d.lastSeen && (Date.now() - new Date(d.lastSeen).getTime()) < 5 * 60 * 1000)
+        } else if (filter === 'offline') {
+            result = result.filter(d => d.status === 'active' && (!d.lastSeen || (Date.now() - new Date(d.lastSeen).getTime()) >= 5 * 60 * 1000))
+        } else if (filter === 'maintenance') {
+            result = result.filter(d => d.status === 'maintenance')
         }
+        if (search) {
+            const q = search.toLowerCase()
+            result = result.filter(d =>
+                d.deviceName?.toLowerCase().includes(q) ||
+                d.deviceId?.toLowerCase().includes(q) ||
+                d.location?.toLowerCase().includes(q)
+            )
+        }
+        return result
+    }, [devices, filter, search])
+
+    const formatDate = (d) => d ? new Date(d).toLocaleString() : 'Never'
+    const timeAgo = (d) => {
+        if (!d) return 'Never'
+        const diff = Date.now() - new Date(d).getTime()
+        if (diff < 60000) return 'Just now'
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+        return `${Math.floor(diff / 86400000)}d ago`
     }
 
-    const resetForm = () => {
-        setForm({
-            deviceName: '', deviceType: 'kiosk', locationId: '', locationName: '',
-            features: { faceRecognition: true, badgePrinting: false, qrScanning: true }
-        })
-    }
-
-    const filters = [
-        { id: 'all', label: 'All Devices', count: stats.total },
-        { id: 'online', label: 'Online', count: stats.online },
-        { id: 'offline', label: 'Offline', count: stats.offline },
-        { id: 'maintenance', label: 'Maintenance', count: stats.maintenance }
-    ]
-
-    const filteredDevices = devices.filter(d => {
-        const matchesSearch = !search || d.deviceName?.toLowerCase().includes(search.toLowerCase()) || d.deviceId?.includes(search.toUpperCase())
-        const matchesStatus = statusFilter === 'all' ||
-            (statusFilter === 'online' && d.isOnline && d.status !== 'maintenance') ||
-            (statusFilter === 'offline' && !d.isOnline && d.status !== 'maintenance') ||
-            (statusFilter === 'maintenance' && d.status === 'maintenance')
-        return matchesSearch && matchesStatus
-    })
-
-    const formatDate = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+    // ─── Render ──────────────────────────────────────────────────
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-5">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-xl font-bold text-gray-900">Device Management</h1>
-                    <p className="text-sm text-gray-500">Monitor and manage check-in devices</p>
+                    <p className="text-sm text-gray-500 mt-0.5">Monitor and manage check-in devices</p>
                 </div>
-                <div className="flex gap-3">
-                    <button onClick={generateActivationCode}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors">
-                        <QrCode className="w-4 h-4" /> Generate Code
+                <div className="flex items-center gap-2">
+                    <button onClick={generateQR} disabled={qrLoading}
+                        className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50">
+                        <QrCode className="w-4 h-4" />
+                        Generate Code
                     </button>
-                    <button onClick={() => setShowRegisterModal(true)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-xl text-sm font-medium shadow-lg shadow-purple-500/25 transition-all">
-                        <Plus className="w-4 h-4" /> Register Device
+                    <button onClick={() => setShowRegister(true)}
+                        className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                        <Plus className="w-4 h-4" />
+                        Register Device
                     </button>
                 </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-purple-100 rounded-xl">
-                            <Monitor className="w-5 h-5 text-purple-600" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                    { label: 'Total Devices', value: stats.total, icon: Monitor, color: 'blue' },
+                    { label: 'Online', value: stats.online, icon: Wifi, color: 'green' },
+                    { label: 'Offline', value: stats.offline, icon: WifiOff, color: 'red' },
+                    { label: 'Maintenance', value: stats.maintenance, icon: Wrench, color: 'amber' }
+                ].map(stat => (
+                    <div key={stat.label} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center bg-${stat.color}-50`}>
+                            <stat.icon className={`w-5 h-5 text-${stat.color}-600`} />
                         </div>
                         <div>
-                            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-                            <p className="text-sm text-gray-500">Total Devices</p>
+                            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                            <p className="text-xs text-gray-500">{stat.label}</p>
                         </div>
                     </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-green-100 rounded-xl">
-                            <Wifi className="w-5 h-5 text-green-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-green-600">{stats.online}</p>
-                            <p className="text-sm text-gray-500">Online</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-red-100 rounded-xl">
-                            <WifiOff className="w-5 h-5 text-red-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-red-600">{stats.offline}</p>
-                            <p className="text-sm text-gray-500">Offline</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-amber-100 rounded-xl">
-                            <Settings className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-amber-600">{stats.maintenance}</p>
-                            <p className="text-sm text-gray-500">Maintenance</p>
-                        </div>
-                    </div>
-                </div>
+                ))}
             </div>
 
-            {/* Filters Bar */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-center gap-4 flex-wrap">
-                    <div className="relative flex-1 min-w-[250px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input type="text" placeholder="Search by name or device ID..."
-                            value={search} onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                        />
-                    </div>
-                    <button onClick={fetchData} className="p-2.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors">
-                        <RefreshCw className="w-5 h-5" />
+            {/* Search + Filters */}
+            <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="Search by name or device ID..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                </div>
+                <button onClick={fetchData} className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+                    <RefreshCw className="w-4 h-4" />
+                </button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5">
+                {[
+                    { id: 'all', label: 'All Devices', count: stats.total },
+                    { id: 'online', label: 'Online', count: stats.online },
+                    { id: 'offline', label: 'Offline', count: stats.offline },
+                    { id: 'maintenance', label: 'Maintenance', count: stats.maintenance }
+                ].map(tab => (
+                    <button key={tab.id} onClick={() => setFilter(tab.id)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${filter === tab.id
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-gray-100'
+                            }`}>
+                        {tab.label} <span className={`ml-1 ${filter === tab.id ? 'text-blue-200' : 'text-gray-400'}`}>{tab.count}</span>
                     </button>
-                </div>
-
-                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
-                    {filters.map((f) => (
-                        <button key={f.id} onClick={() => setStatusFilter(f.id)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${statusFilter === f.id ? 'bg-purple-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}>
-                            {f.label}
-                            <span className={`px-1.5 py-0.5 rounded-full text-xs ${statusFilter === f.id ? 'bg-white/20' : 'bg-gray-200'}`}>{f.count}</span>
-                        </button>
-                    ))}
-                </div>
+                ))}
             </div>
 
-            {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-600">
-                    {error} <button onClick={fetchData} className="underline ml-2 font-medium">Retry</button>
+            {/* Device Cards */}
+            {loading ? (
+                <div className="flex items-center justify-center py-16 text-gray-400">
+                    <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading devices...
+                </div>
+            ) : filteredDevices.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                    <Monitor className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                    <p className="font-medium">No devices found</p>
+                    <p className="text-sm mt-1">Register a device or generate a QR code to get started</p>
+                </div>
+            ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredDevices.map(device => (
+                        <div key={device._id} className="bg-white rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all">
+                            {/* Card Header */}
+                            <div className="p-4 pb-3">
+                                <div className="flex items-start justify-between mb-2">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
+                                            <DeviceIcon type={device.deviceType} className="w-4.5 h-4.5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-gray-900 text-sm leading-tight">{device.deviceName || 'Unnamed'}</h3>
+                                            <p className="text-xs text-gray-400 mt-0.5">{device.deviceId}</p>
+                                        </div>
+                                    </div>
+                                    <StatusBadge status={device.status} lastSeen={device.lastSeen} />
+                                </div>
+
+                                {/* Quick Info */}
+                                <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
+                                    {device.location && (
+                                        <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{device.location}</span>
+                                    )}
+                                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Last seen: {timeAgo(device.lastSeen)}</span>
+                                </div>
+                            </div>
+
+                            {/* Card Actions */}
+                            <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 bg-gray-50/50 rounded-b-xl">
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => { setSelectedDevice(device); setShowDetail(true) }}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+                                        <Eye className="w-3.5 h-3.5" /> Details
+                                    </button>
+                                    <button onClick={() => { setSelectedDevice(device); loadCommandHistory(device._id); setShowCommandHistory(true) }}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors">
+                                        <History className="w-3.5 h-3.5" /> History
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    {device.status === 'maintenance' ? (
+                                        <button onClick={() => sendCommand(device._id, 'maintenance_off')}
+                                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50 rounded-md transition-colors">
+                                            <CheckCircle className="w-3.5 h-3.5" /> End Maint.
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => sendCommand(device._id, 'maintenance_on')}
+                                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-50 rounded-md transition-colors">
+                                            <Wrench className="w-3.5 h-3.5" /> Maint.
+                                        </button>
+                                    )}
+                                    <button onClick={() => handleDelete(device._id)}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
 
-            {/* Device Grid */}
-            <div className="grid grid-cols-3 gap-4">
-                {loading ? (
-                    <div className="col-span-3 py-16 text-center">
-                        <div className="animate-spin rounded-full h-10 w-10 border-3 border-gray-200 border-t-purple-600 mx-auto"></div>
-                        <p className="mt-3 text-sm text-gray-500">Loading devices...</p>
-                    </div>
-                ) : filteredDevices.length === 0 ? (
-                    <div className="col-span-3 py-16 text-center bg-white rounded-xl border border-gray-200">
-                        <Monitor className="w-12 h-12 text-gray-300 mx-auto" />
-                        <p className="mt-3 text-gray-500">No devices found</p>
-                        <button onClick={() => setShowRegisterModal(true)} className="mt-4 text-purple-600 hover:underline text-sm font-medium">
-                            Register your first device
-                        </button>
-                    </div>
-                ) : (
-                    filteredDevices.map((device) => (
-                        <div key={device._id} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-shadow">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className={`p-3 rounded-xl ${device.isOnline && device.status !== 'maintenance' ? 'bg-green-100' : device.status === 'maintenance' ? 'bg-amber-100' : 'bg-gray-100'}`}>
-                                        <DeviceIcon type={device.deviceType} className={`w-6 h-6 ${device.isOnline && device.status !== 'maintenance' ? 'text-green-600' : device.status === 'maintenance' ? 'text-amber-600' : 'text-gray-400'}`} />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-semibold text-gray-900">{device.deviceName}</h3>
-                                        <p className="text-xs text-gray-500 font-mono">{device.deviceId}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    {device.isOnline && device.status !== 'maintenance' ? (
-                                        <span className="flex items-center gap-1.5 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Online
-                                        </span>
-                                    ) : device.status === 'maintenance' ? (
-                                        <span className="flex items-center gap-1.5 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
-                                            <Settings className="w-3 h-3" /> Maintenance
-                                        </span>
-                                    ) : (
-                                        <span className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">
-                                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span> Offline
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-2 mb-4">
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    <MapPin className="w-4 h-4 text-gray-400" />
-                                    {device.locationName || 'Unassigned'}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    <Clock className="w-4 h-4 text-gray-400" />
-                                    Last seen: {device.lastSeen ? formatDate(device.lastSeen) : 'Never'}
-                                </div>
-                            </div>
-
-                            {/* Features */}
-                            <div className="flex gap-2 mb-4">
-                                {device.features?.faceRecognition && (
-                                    <span className="flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs">
-                                        <Fingerprint className="w-3 h-3" /> Face
-                                    </span>
-                                )}
-                                {device.features?.qrScanning && (
-                                    <span className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">
-                                        <QrCode className="w-3 h-3" /> QR
-                                    </span>
-                                )}
-                                {device.features?.badgePrinting && (
-                                    <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded text-xs">
-                                        <Printer className="w-3 h-3" /> Badge
-                                    </span>
-                                )}
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex gap-2 pt-3 border-t border-gray-100">
-                                <button onClick={() => { setSelectedDevice(device); setShowDetailsModal(true) }}
-                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                                    <Eye className="w-4 h-4" /> Details
-                                </button>
-                                <button onClick={() => handleStatusChange(device._id, device.status === 'maintenance' ? 'active' : 'maintenance')}
-                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
-                                    <Settings className="w-4 h-4" /> {device.status === 'maintenance' ? 'Activate' : 'Maint.'}
-                                </button>
-                                <button onClick={() => handleDelete(device._id)}
-                                    className="flex items-center justify-center p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-
-            {/* Register Modal */}
-            <Modal isOpen={showRegisterModal} onClose={() => { setShowRegisterModal(false); resetForm() }} title="Register New Device" size="medium">
-                <form onSubmit={handleRegister} className="space-y-5">
+            {/* ─── Register Device Modal ───────────────────────────── */}
+            <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register New Device" size="medium">
+                <form onSubmit={handleRegister} className="p-5 space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Device Name *</label>
-                        <input type="text" value={form.deviceName} onChange={e => setForm({ ...form, deviceName: e.target.value })}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-500" placeholder="e.g., Reception Kiosk 1" required />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Name *</label>
+                        <input type="text" required value={registerForm.deviceName}
+                            onChange={e => setRegisterForm(f => ({ ...f, deviceName: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            placeholder="e.g., Lobby Kiosk 1" />
                     </div>
-
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Device Type *</label>
-                        <div className="grid grid-cols-4 gap-3">
-                            {['kiosk', 'tablet', 'desktop', 'mobile'].map(type => (
-                                <button key={type} type="button" onClick={() => setForm({ ...form, deviceType: type })}
-                                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${form.deviceType === type ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
-                                        }`}>
-                                    <DeviceIcon type={type} className={`w-6 h-6 ${form.deviceType === type ? 'text-purple-600' : 'text-gray-400'}`} />
-                                    <span className={`text-xs font-medium capitalize ${form.deviceType === type ? 'text-purple-700' : 'text-gray-600'}`}>{type}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                        <select value={form.locationId} onChange={e => setForm({ ...form, locationId: e.target.value })}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm">
-                            <option value="">Select location</option>
-                            {locations.map(loc => <option key={loc._id} value={loc._id}>{loc.name}</option>)}
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Type</label>
+                        <select value={registerForm.deviceType}
+                            onChange={e => setRegisterForm(f => ({ ...f, deviceType: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                            <option value="kiosk">Kiosk</option>
+                            <option value="tablet">Tablet</option>
+                            <option value="phone">Phone</option>
+                            <option value="laptop">Laptop</option>
                         </select>
                     </div>
-
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-3">Device Features</label>
-                        <div className="space-y-3">
-                            {[
-                                { key: 'faceRecognition', icon: Fingerprint, label: 'Face Recognition' },
-                                { key: 'qrScanning', icon: QrCode, label: 'QR Code Scanning' },
-                                { key: 'badgePrinting', icon: Printer, label: 'Badge Printing' }
-                            ].map(({ key, icon: Icon, label }) => (
-                                <label key={key} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100">
-                                    <input type="checkbox" checked={form.features[key]}
-                                        onChange={e => setForm({ ...form, features: { ...form.features, [key]: e.target.checked } })}
-                                        className="w-4 h-4 text-purple-600 rounded" />
-                                    <Icon className="w-5 h-5 text-gray-500" />
-                                    <span className="text-sm font-medium text-gray-700">{label}</span>
-                                </label>
-                            ))}
-                        </div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                        <input type="text" value={registerForm.location}
+                            onChange={e => setRegisterForm(f => ({ ...f, location: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            placeholder="e.g., Main Entrance" />
                     </div>
-
-                    <div className="flex gap-3 pt-4">
-                        <button type="button" onClick={() => { setShowRegisterModal(false); resetForm() }}
-                            className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
-                        <button type="submit" disabled={saving}
-                            className="flex-1 px-4 py-2.5 text-sm font-medium bg-purple-600 text-white rounded-xl shadow-lg disabled:opacity-50 hover:bg-purple-700">
-                            {saving ? 'Registering...' : 'Register Device'}
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={() => setShowRegister(false)}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm">
+                            Register Device
                         </button>
                     </div>
                 </form>
             </Modal>
 
-            {/* Details Modal */}
-            <Modal isOpen={showDetailsModal} onClose={() => setShowDetailsModal(false)} title="Device Details">
-                {selectedDevice && (
-                    <div className="grid grid-cols-3 gap-6">
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Device Info</h4>
-                            <InfoField icon={Monitor} label="Device Name" value={selectedDevice.deviceName} />
-                            <InfoField icon={QrCode} label="Device ID" value={selectedDevice.deviceId} />
-                            <InfoField icon={Laptop} label="Device Type" value={selectedDevice.deviceType} />
-                            <InfoField icon={Power} label="Status" value={selectedDevice.isOnline ? 'Online' : 'Offline'} />
-                        </div>
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Location & Network</h4>
-                            <InfoField icon={MapPin} label="Location" value={selectedDevice.locationName} />
-                            <InfoField icon={Wifi} label="IP Address" value={selectedDevice.ipAddress} />
-                            <InfoField icon={Clock} label="Last Seen" value={formatDate(selectedDevice.lastSeen)} />
-                            <InfoField icon={Clock} label="Registered" value={formatDate(selectedDevice.registeredAt)} />
-                        </div>
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Software</h4>
-                            <InfoField icon={Settings} label="App Version" value={selectedDevice.appVersion} />
-                            <InfoField icon={Laptop} label="OS Version" value={selectedDevice.osVersion} />
-                            <div className="p-4 bg-purple-50 rounded-xl">
-                                <h5 className="text-xs font-semibold text-purple-800 uppercase mb-2">Features</h5>
-                                <div className="flex flex-wrap gap-2">
-                                    {selectedDevice.features?.faceRecognition && <span className="px-2 py-1 bg-white text-purple-700 rounded text-xs">Face Recognition</span>}
-                                    {selectedDevice.features?.qrScanning && <span className="px-2 py-1 bg-white text-purple-700 rounded text-xs">QR Scanning</span>}
-                                    {selectedDevice.features?.badgePrinting && <span className="px-2 py-1 bg-white text-purple-700 rounded text-xs">Badge Printing</span>}
+            {/* ─── QR Code Modal ────────────────────────────────────── */}
+            <Modal isOpen={showQR} onClose={() => setShowQR(false)} title="Device Registration QR Code" size="medium">
+                {qrData && (
+                    <div className="p-5 text-center">
+                        {/* QR Code Display (rendered as data URL) */}
+                        <div className="bg-gray-50 rounded-xl p-6 mb-4 inline-block">
+                            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 inline-block">
+                                {/* Simple QR representation using the qrString */}
+                                <div className="w-48 h-48 flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-700 rounded-lg">
+                                    <QrCode className="w-20 h-20 text-white" />
                                 </div>
                             </div>
+                        </div>
+
+                        <h4 className="font-semibold text-gray-900 mb-1">Scan to Register Device</h4>
+                        <p className="text-sm text-gray-500 mb-4">Point the device's camera at this code to auto-register</p>
+
+                        {/* Activation Code */}
+                        <div className="bg-gray-50 rounded-lg p-3 flex items-center justify-between mb-3">
+                            <div className="text-left">
+                                <p className="text-xs text-gray-500">Activation Code</p>
+                                <p className="font-mono font-semibold text-gray-900">{qrData.code}</p>
+                            </div>
+                            <button onClick={copyQRCode} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                <Copy className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Expiry */}
+                        <p className="text-xs text-gray-400 flex items-center justify-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Expires: {formatDate(qrData.expiresAt)}
+                        </p>
+
+                        {/* QR Payload (collapsible) */}
+                        <details className="mt-4 text-left">
+                            <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">View QR payload</summary>
+                            <pre className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 overflow-x-auto">
+                                {JSON.stringify(qrData.qrPayload, null, 2)}
+                            </pre>
+                        </details>
+                    </div>
+                )}
+            </Modal>
+
+            {/* ─── Device Detail Modal ──────────────────────────────── */}
+            <Modal isOpen={showDetail && selectedDevice} onClose={() => setShowDetail(false)} title={selectedDevice?.deviceName || 'Device Details'} size="large">
+                {selectedDevice && (
+                    <div className="p-5">
+                        {/* Status Header */}
+                        <div className="flex items-center justify-between mb-5 bg-gray-50 rounded-xl p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 flex items-center justify-center shadow-sm">
+                                    <DeviceIcon type={selectedDevice.deviceType} className="w-6 h-6 text-gray-600" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-gray-900">{selectedDevice.deviceName}</h3>
+                                    <p className="text-sm text-gray-500">{selectedDevice.deviceId}</p>
+                                </div>
+                            </div>
+                            <StatusBadge status={selectedDevice.status} lastSeen={selectedDevice.lastSeen} />
+                        </div>
+
+                        {/* Device Info Grid */}
+                        <div className="grid grid-cols-2 gap-3 mb-5">
+                            {[
+                                { label: 'Type', value: selectedDevice.deviceType || 'kiosk' },
+                                { label: 'Location', value: selectedDevice.location || 'Not assigned' },
+                                { label: 'Last Seen', value: timeAgo(selectedDevice.lastSeen) },
+                                { label: 'Created', value: formatDate(selectedDevice.createdAt) },
+                                { label: 'Firmware', value: selectedDevice.firmwareVersion || '—' },
+                                { label: 'OS', value: selectedDevice.osVersion || '—' },
+                                { label: 'IP Address', value: selectedDevice.ipAddress || '—' },
+                                { label: 'Locked', value: selectedDevice.locked ? 'Yes' : 'No' },
+                            ].map(item => (
+                                <div key={item.label} className="bg-gray-50 rounded-lg p-3">
+                                    <p className="text-xs text-gray-500">{item.label}</p>
+                                    <p className="text-sm font-medium text-gray-900 mt-0.5">{item.value}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Capabilities */}
+                        {selectedDevice.capabilities?.length > 0 && (
+                            <div className="mb-5">
+                                <p className="text-sm font-medium text-gray-700 mb-2">Capabilities</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {selectedDevice.capabilities.map(cap => (
+                                        <span key={cap} className="px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-md">{cap.replace(/_/g, ' ')}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Remote Control */}
+                        <div className="border-t border-gray-100 pt-4">
+                            <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <Settings className="w-4 h-4" /> Remote Control
+                            </h4>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {[
+                                    { cmd: 'restart', label: 'Restart', icon: RotateCcw, color: 'blue' },
+                                    { cmd: 'lock', label: 'Lock', icon: Lock, color: 'amber' },
+                                    { cmd: 'unlock', label: 'Unlock', icon: Unlock, color: 'green' },
+                                    { cmd: 'screenshot', label: 'Screenshot', icon: Camera, color: 'purple' },
+                                    { cmd: 'update', label: 'Update', icon: Download, color: 'indigo' },
+                                    { cmd: 'sync_data', label: 'Sync Data', icon: RefreshCw, color: 'teal' },
+                                    { cmd: 'clear_cache', label: 'Clear Cache', icon: Trash2, color: 'orange' },
+                                    {
+                                        cmd: selectedDevice.status === 'maintenance' ? 'maintenance_off' : 'maintenance_on',
+                                        label: selectedDevice.status === 'maintenance' ? 'End Maint.' : 'Maintenance',
+                                        icon: Wrench, color: 'yellow'
+                                    },
+                                ].map(action => (
+                                    <button key={action.cmd}
+                                        onClick={() => sendCommand(selectedDevice._id, action.cmd)}
+                                        disabled={sendingCommand === action.cmd}
+                                        className={`flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-gray-700 disabled:opacity-50`}>
+                                        <action.icon className="w-3.5 h-3.5" />
+                                        {sendingCommand === action.cmd ? 'Sending...' : action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex justify-between border-t border-gray-100 pt-4 mt-5">
+                            <button onClick={() => openEditModal(selectedDevice)}
+                                className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1.5">
+                                <Edit className="w-4 h-4" /> Edit Details
+                            </button>
+                            <button onClick={() => handleDelete(selectedDevice._id)}
+                                className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                                Deactivate Device
+                            </button>
                         </div>
                     </div>
                 )}
             </Modal>
 
-            {/* Activation Code Modal */}
-            <Modal isOpen={showActivationModal} onClose={() => { setShowActivationModal(false); setActivationCode('') }} title="Device Activation Code" size="small">
-                <div className="text-center py-6">
-                    <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <QrCode className="w-10 h-10 text-purple-600" />
+            {/* ─── Edit Device Modal ──────────────────────────────── */}
+            <Modal isOpen={showEdit} onClose={() => setShowEdit(false)} title="Edit Device" size="medium">
+                <form onSubmit={handleEditSave} className="p-5 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Name *</label>
+                        <input type="text" required value={editForm.deviceName}
+                            onChange={e => setEditForm(f => ({ ...f, deviceName: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            placeholder="e.g., Lobby Kiosk 1" />
                     </div>
-                    <p className="text-sm text-gray-500 mb-4">Enter this code on your device to activate:</p>
-                    <div className="bg-gray-100 rounded-2xl p-6 mb-4">
-                        <p className="text-3xl font-mono font-bold text-gray-900 tracking-widest">{activationCode}</p>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Type</label>
+                        <select value={editForm.deviceType}
+                            onChange={e => setEditForm(f => ({ ...f, deviceType: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                            <option value="kiosk">Kiosk</option>
+                            <option value="tablet">Tablet</option>
+                            <option value="phone">Phone</option>
+                            <option value="laptop">Laptop</option>
+                        </select>
                     </div>
-                    <p className="text-xs text-gray-400">This code expires in 24 hours</p>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                        <input type="text" value={editForm.location}
+                            onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            placeholder="e.g., Main Entrance" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Capabilities</label>
+                        <input type="text" value={editForm.capabilities}
+                            onChange={e => setEditForm(f => ({ ...f, capabilities: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            placeholder="face_recognition, qr_scan, nfc" />
+                        <p className="text-xs text-gray-400 mt-1">Comma-separated capability tags</p>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={() => setShowEdit(false)}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* ─── Command History Modal ────────────────────────────── */}
+            <Modal isOpen={showCommandHistory && selectedDevice} onClose={() => setShowCommandHistory(false)} title={`Command History — ${selectedDevice?.deviceName || ''}`} size="large">
+                <div className="p-5">
+                    {commandHistory.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400">
+                            <History className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                            <p className="text-sm">No commands sent to this device yet</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {commandHistory.map(cmd => (
+                                <div key={cmd.commandId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center">
+                                            <Send className="w-3.5 h-3.5 text-gray-500" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-gray-900">{cmd.command.replace(/_/g, ' ')}</p>
+                                            <p className="text-xs text-gray-500">{formatDate(cmd.createdAt)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <CommandBadge status={cmd.status} />
+                                        {cmd.completedAt && (
+                                            <span className="text-xs text-gray-400">{timeAgo(cmd.completedAt)}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </Modal>
         </div>

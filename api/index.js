@@ -51,7 +51,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Id']
 }));
 
 // Rate limiting
@@ -127,6 +127,7 @@ const visitorRoutes = require('../server/routes/visitors');
 const employeeRoutes = require('../server/routes/employees');
 const entityRoutes = require('../server/routes/entities');
 const deviceRoutes = require('../server/routes/devices');
+const deviceApiRoutes = require('../server/routes/device-api');
 const dashboardRoutes = require('../server/routes/dashboard');
 const badgeRoutes = require('../server/routes/badge');
 
@@ -160,6 +161,10 @@ const accessControlRoutes = require('../server/routes/access_control');
 
 // Import error handlers
 const { errorHandler, notFoundHandler } = require('../server/middleware/errorHandler');
+
+// Import feature-level access control
+const { requireFeature, requireLevel } = require('../server/middleware/requireFeature');
+const { requireAuth } = require('../server/middleware/auth');
 
 // ===========================================
 // Health Check
@@ -198,22 +203,23 @@ app.get('/', (req, res) => {
 // Auth routes (no /api prefix - matches Flask)
 app.use('/auth', authRoutes);
 
-// Core API routes
+// Core API routes — visitors/visits are always accessible (core feature)
 app.use('/api/visitors', visitorRoutes);
 app.use('/api/visits', visitorRoutes); // Alias - reuses /visits/* routes from visitorRoutes
 app.use('/api/employees', employeeRoutes);
 app.use('/api/locations', entityRoutes);
 app.use('/api/entities', entityRoutes); // Alias
 app.use('/api/devices', deviceRoutes);
+app.use('/api/device-api', deviceApiRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/badge', badgeRoutes);
-app.use('/api/advanced-analytics', advancedAnalyticsRoutes);
 
-// Extended API routes
-app.use('/api/watchlist', watchlistRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/reports', reportsRoutes);
+// Feature-gated routes — require specific features from permission role
+app.use('/api/advanced-analytics', requireAuth, requireFeature('advanced_analytics'), advancedAnalyticsRoutes);
+app.use('/api/watchlist', requireAuth, requireFeature('watchlist'), watchlistRoutes);
+app.use('/api/analytics', requireAuth, requireFeature('analytics'), analyticsRoutes);
+app.use('/api/settings', requireAuth, requireLevel('manager'), settingsRoutes);
+app.use('/api/reports', requireAuth, requireFeature('reports'), reportsRoutes);
 app.use('/api/approvals', approvalsRoutes);
 app.use('/api/approval-tokens', approvalTokensRoutes);  // Public endpoint - no auth
 app.use('/api/preregistration', preregistrationRoutes);

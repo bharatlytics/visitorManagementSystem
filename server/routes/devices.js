@@ -39,35 +39,6 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
 });
 
 /**
- * GET /api/devices/:device_id
- * Get single device by ID
- */
-router.get('/:device_id', requireCompanyAccess, async (req, res, next) => {
-    try {
-        const { device_id } = req.params;
-
-        let device = null;
-
-        if (isValidObjectId(device_id)) {
-            device = await collections.devices().findOne({ _id: new ObjectId(device_id) });
-        }
-
-        if (!device) {
-            device = await collections.devices().findOne({ deviceId: device_id });
-        }
-
-        if (!device) {
-            return res.status(404).json({ error: 'Device not found' });
-        }
-
-        res.json({ device: convertObjectIds(device) });
-    } catch (error) {
-        console.error('Error getting device:', error);
-        next(error);
-    }
-});
-
-/**
  * POST /api/devices
  * Register a new device
  */
@@ -370,11 +341,7 @@ router.post('/activation-codes', requireCompanyAccess, async (req, res, next) =>
         }
 
         // Store activation codes
-        try {
-            await collections.activationCodes?.()?.insertMany(codes);
-        } catch (e) {
-            // Collection might not exist
-        }
+        await collections.activationCodes().insertMany(codes);
 
         res.json({
             message: `Generated ${codes.length} activation code(s)`,
@@ -437,5 +404,392 @@ router.patch('/:device_id', requireCompanyAccess, async (req, res, next) => {
     }
 });
 
-module.exports = router;
+// ─── QR Code & Activation ─────────────────────────────────────────
 
+/**
+ * POST /api/devices/qr-code
+ * Generate a QR registration code for device onboarding.
+ * Returns a JSON payload that encodes into a QR code:
+ *   { activationUrl, code, companyId, expiresAt }
+ * The device app scans this QR and calls /api/devices/activate.
+ */
+router.post('/qr-code', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { companyId, deviceName, deviceType, expiresInHours = 24 } = req.body;
+
+        if (!companyId) {
+            return res.status(400).json({ error: 'companyId is required' });
+        }
+
+        // Generate a cryptographically-style activation code
+        const code = `QR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+
+        const codeDoc = {
+            _id: new ObjectId(),
+            companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+            code,
+            type: 'qr_registration',
+            status: 'unused',
+            deviceName: deviceName || null,
+            deviceType: deviceType || 'kiosk',
+            createdAt: new Date(),
+            expiresAt
+        };
+
+        // Store in activationCodes collection
+        await collections.activationCodes().insertOne(codeDoc);
+
+        // Build the activation URL (frontend base + activation path)
+        const baseUrl = process.env.APP_URL || req.protocol + '://' + req.get('host');
+        const activationUrl = `${baseUrl}/api/devices/activate`;
+
+        const qrPayload = {
+            activationUrl,
+            code,
+            companyId,
+            deviceName: deviceName || null,
+            deviceType: deviceType || 'kiosk',
+            expiresAt: expiresAt.toISOString()
+        };
+
+        res.json({
+            message: 'QR registration code generated',
+            qrPayload,
+            qrString: JSON.stringify(qrPayload),
+            code,
+            expiresAt
+        });
+    } catch (error) {
+        console.error('Error generating QR code:', error);
+        next(error);
+    }
+});
+
+/**
+ * POST /api/devices/activate
+ * Activate/register a device using an activation code.
+ * Called by the device app after scanning the QR code.
+ * Creates the device record and marks the code as used.
+ */
+router.post('/activate', async (req, res, next) => {
+    try {
+        const { code, deviceInfo } = req.body;
+
+        if (!code) {
+            return res.status(400).json({ error: 'Activation code is required' });
+        }
+
+        // Find the activation code
+        let activationCode = null;
+        try {
+            activationCode = await collections.activationCodes().findOne({ code, status: 'unused' });
+        } catch (e) {
+            console.warn('Could not query activationCodes:', e.message);
+        }
+
+        if (!activationCode) {
+            return res.status(404).json({ error: 'Invalid or expired activation code' });
+        }
+
+        // Check expiry
+        if (new Date() > new Date(activationCode.expiresAt)) {
+            return res.status(410).json({ error: 'Activation code has expired' });
+        }
+
+        // Create the device
+        const deviceDoc = {
+            _id: new ObjectId(),
+            companyId: activationCode.companyId,
+            deviceId: `DEV-${Date.now()}`,
+            deviceName: activationCode.deviceName || deviceInfo?.deviceName || 'Unnamed Device',
+            deviceType: activationCode.deviceType || deviceInfo?.deviceType || 'kiosk',
+            location: deviceInfo?.location || null,
+            status: 'active',
+            activatedAt: new Date(),
+            activatedWith: code,
+            lastSeen: new Date(),
+            lastHeartbeat: new Date(),
+            capabilities: deviceInfo?.capabilities || ['face_recognition', 'qr_scan'],
+            firmwareVersion: deviceInfo?.firmwareVersion || null,
+            osVersion: deviceInfo?.osVersion || null,
+            ipAddress: req.ip || null,
+            config: deviceInfo?.config || {},
+            createdAt: new Date(),
+            lastUpdated: new Date()
+        };
+
+        await collections.devices().insertOne(deviceDoc);
+
+        // Mark code as used
+        try {
+            await collections.activationCodes().updateOne(
+                { _id: activationCode._id },
+                { $set: { status: 'used', usedAt: new Date(), usedByDeviceId: deviceDoc._id } }
+            );
+        } catch (e) { /* ignore */ }
+
+        res.status(201).json({
+            message: 'Device activated successfully',
+            device: convertObjectIds(deviceDoc)
+        });
+    } catch (error) {
+        console.error('Error activating device:', error);
+        next(error);
+    }
+});
+
+// ─── Parameterized Routes (must come AFTER all static routes above) ─────────
+
+/**
+ * GET /api/devices/:device_id
+ * Get single device by ID (supports both ObjectId and deviceId string)
+ */
+router.get('/:device_id', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { device_id } = req.params;
+
+        let device = null;
+
+        if (isValidObjectId(device_id)) {
+            device = await collections.devices().findOne({ _id: new ObjectId(device_id) });
+        }
+
+        if (!device) {
+            device = await collections.devices().findOne({ deviceId: device_id });
+        }
+
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        res.json({ device: convertObjectIds(device) });
+    } catch (error) {
+        console.error('Error getting device:', error);
+        next(error);
+    }
+});
+
+// ─── Remote Control Commands ───────────────────────────────────────
+
+/**
+ * POST /api/devices/:device_id/command
+ * Send a remote command to a device.
+ * Supported commands: restart, lock, unlock, update, screenshot,
+ *   set_config, maintenance_on, maintenance_off
+ */
+router.post('/:device_id/command', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { device_id } = req.params;
+        const { command, params } = req.body;
+
+        const validCommands = [
+            'restart', 'lock', 'unlock', 'update', 'screenshot',
+            'set_config', 'maintenance_on', 'maintenance_off',
+            'clear_cache', 'sync_data'
+        ];
+
+        if (!command || !validCommands.includes(command)) {
+            return res.status(400).json({
+                error: `Invalid command. Valid commands: ${validCommands.join(', ')}`
+            });
+        }
+
+        // Verify device exists
+        let device = null;
+        if (isValidObjectId(device_id)) {
+            device = await collections.devices().findOne({ _id: new ObjectId(device_id) });
+        }
+        if (!device) {
+            device = await collections.devices().findOne({ deviceId: device_id });
+        }
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        // Create command record
+        const commandDoc = {
+            _id: new ObjectId(),
+            deviceId: device._id,
+            command,
+            params: params || {},
+            status: 'pending',
+            sentBy: req.userId || 'system',
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 min TTL
+        };
+
+        await collections.deviceCommands().insertOne(commandDoc);
+
+        // If command affects device status, update immediately
+        if (command === 'maintenance_on') {
+            await collections.devices().updateOne(
+                { _id: device._id },
+                { $set: { status: 'maintenance', lastUpdated: new Date() } }
+            );
+        } else if (command === 'maintenance_off') {
+            await collections.devices().updateOne(
+                { _id: device._id },
+                { $set: { status: 'active', lastUpdated: new Date() } }
+            );
+        } else if (command === 'lock') {
+            await collections.devices().updateOne(
+                { _id: device._id },
+                { $set: { locked: true, lastUpdated: new Date() } }
+            );
+        } else if (command === 'unlock') {
+            await collections.devices().updateOne(
+                { _id: device._id },
+                { $set: { locked: false, lastUpdated: new Date() } }
+            );
+        }
+
+        res.json({
+            message: `Command '${command}' sent to device`,
+            commandId: commandDoc._id.toString(),
+            status: 'pending'
+        });
+    } catch (error) {
+        console.error('Error sending command:', error);
+        next(error);
+    }
+});
+
+/**
+ * GET /api/devices/:device_id/commands
+ * Get pending commands for a device (device polls this endpoint).
+ * Returns commands with status=pending that haven't expired.
+ */
+router.get('/:device_id/commands', async (req, res, next) => {
+    try {
+        const { device_id } = req.params;
+
+        // Find the device
+        let device = null;
+        if (isValidObjectId(device_id)) {
+            device = await collections.devices().findOne({ _id: new ObjectId(device_id) });
+        }
+        if (!device) {
+            device = await collections.devices().findOne({ deviceId: device_id });
+        }
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        // Get pending commands
+        let commands = [];
+        try {
+            commands = await collections.deviceCommands().find({
+                deviceId: device._id,
+                status: 'pending',
+                expiresAt: { $gt: new Date() }
+            }).sort({ createdAt: 1 }).toArray();
+        } catch (e) { /* ignore */ }
+
+        // Update device heartbeat since it's polling
+        await collections.devices().updateOne(
+            { _id: device._id },
+            { $set: { lastSeen: new Date(), lastHeartbeat: new Date() } }
+        );
+
+        res.json({
+            commands: commands.map(c => ({
+                commandId: c._id.toString(),
+                command: c.command,
+                params: c.params || {},
+                createdAt: c.createdAt,
+                expiresAt: c.expiresAt
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching commands:', error);
+        next(error);
+    }
+});
+
+/**
+ * POST /api/devices/:device_id/command/:command_id/ack
+ * Acknowledge a command execution. Device calls this after executing a command.
+ */
+router.post('/:device_id/command/:command_id/ack', async (req, res, next) => {
+    try {
+        const { device_id, command_id } = req.params;
+        const { success, result, error: execError } = req.body;
+
+        if (!isValidObjectId(command_id)) {
+            return res.status(400).json({ error: 'Invalid command ID' });
+        }
+
+        try {
+            const updateResult = await collections.deviceCommands().updateOne(
+                { _id: new ObjectId(command_id) },
+                {
+                    $set: {
+                        status: success ? 'completed' : 'failed',
+                        completedAt: new Date(),
+                        result: result || null,
+                        error: execError || null
+                    }
+                }
+            );
+
+            if (updateResult.matchedCount === 0) {
+                return res.status(404).json({ error: 'Command not found' });
+            }
+        } catch (e) { /* ignore */ }
+
+        res.json({ message: 'Command acknowledged' });
+    } catch (error) {
+        console.error('Error acknowledging command:', error);
+        next(error);
+    }
+});
+
+/**
+ * GET /api/devices/:device_id/command-history
+ * Get command history for a device (admin view).
+ */
+router.get('/:device_id/command-history', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { device_id } = req.params;
+        const limit = parseInt(req.query.limit) || 50;
+
+        let device = null;
+        if (isValidObjectId(device_id)) {
+            device = await collections.devices().findOne({ _id: new ObjectId(device_id) });
+        }
+        if (!device) {
+            device = await collections.devices().findOne({ deviceId: device_id });
+        }
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        let commands = [];
+        try {
+            commands = await collections.deviceCommands().find({ deviceId: device._id })
+                .sort({ createdAt: -1 })
+                .limit(limit)
+                .toArray();
+        } catch (e) { /* ignore */ }
+
+        res.json({
+            commands: commands.map(c => ({
+                commandId: c._id.toString(),
+                command: c.command,
+                params: c.params || {},
+                status: c.status,
+                sentBy: c.sentBy,
+                createdAt: c.createdAt,
+                completedAt: c.completedAt || null,
+                result: c.result || null,
+                error: c.error || null
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching command history:', error);
+        next(error);
+    }
+});
+
+module.exports = router;

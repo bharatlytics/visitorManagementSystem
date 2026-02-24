@@ -861,7 +861,7 @@
     "platform.config_changed"
   ],
   "app": {
-    "id": "vms_app_v1",
+    "id": "app_bharatlytics_vms_366865a4",
     "name": "Visitor Management System",
     "version": "2.0.0",
     "appType": "web_application",
@@ -871,5 +871,62 @@
   "capabilities": {
     "provides": {},
     "consumes": {}
+  },
+  "userPermissions": {
+    "levels": [
+      "viewer",
+      "operator",
+      "manager",
+      "admin"
+    ],
+    "features": [
+      {
+        "id": "visitors",
+        "name": "Visitor Management",
+        "description": "View and manage visitor records"
+      },
+      {
+        "id": "visits",
+        "name": "Visit Tracking",
+        "description": "Schedule, check-in, and check-out visits"
+      },
+      {
+        "id": "employees",
+        "name": "Employee Management",
+        "description": "View and manage host employees"
+      },
+      {
+        "id": "reports",
+        "name": "Reports & Analytics",
+        "description": "View dashboards, analytics, and reports"
+      },
+      {
+        "id": "approvals",
+        "name": "Approvals",
+        "description": "Approve or reject visitor requests"
+      },
+      {
+        "id": "watchlist",
+        "name": "Watchlist",
+        "description": "Manage blacklisted visitors"
+      },
+      {
+        "id": "analytics",
+        "name": "Analytics",
+        "description": "View dashboards and analytics"
+      },
+      {
+        "id": "devices",
+        "name": "Device Management",
+        "description": "Register and manage check-in devices"
+      },
+      {
+        "id": "settings",
+        "name": "Settings",
+        "description": "Configure app settings"
+      }
+    ],
+    "defaultLevel": "viewer",
+    "description": "Controls what users can do inside the Visitor Management System"
   }
 }

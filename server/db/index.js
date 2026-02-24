@@ -118,6 +118,8 @@ const collections = {
     embeddingJobs: () => getCollection('embedding_jobs'),
     approvals: () => getCollection('approvals'),
     approvalTokens: () => getCollection('approval_tokens'),
+    activationCodes: () => getCollection('activationCodes'),
+    deviceCommands: () => getCollection('deviceCommands'),
 };
 
 /**

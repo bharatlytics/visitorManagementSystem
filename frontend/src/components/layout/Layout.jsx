@@ -6,23 +6,34 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
+// Navigation items with optional feature gating
+// Items without 'feature' are always visible (core features)
+// Items with 'feature' are only shown when user has that feature in their permission role
+// Items with 'minLevel' require a minimum permission level
 const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Visitors', href: '/visitors', icon: Users },
     { name: 'Visits', href: '/visits', icon: Calendar },
     { name: 'Approvals', href: '/approvals', icon: ShieldCheck },
-    { name: 'Watchlist', href: '/watchlist', icon: AlertTriangle },
-    { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-    { name: 'Reports', href: '/reports', icon: FileText },
+    { name: 'Watchlist', href: '/watchlist', icon: AlertTriangle, feature: 'watchlist' },
+    { name: 'Analytics', href: '/analytics', icon: BarChart3, feature: 'analytics' },
+    { name: 'Reports', href: '/reports', icon: FileText, feature: 'reports' },
     { name: 'Devices', href: '/devices', icon: Monitor },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Settings', href: '/settings', icon: Settings, minLevel: 'manager' },
 ]
 
 export default function Layout({ children }) {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
     const location = useLocation()
-    const { user, logout, isPlatformConnected, company } = useAuthStore()
+    const { user, logout, isPlatformConnected, company, hasFeature, hasPermissionLevel, getPermissionRoleName } = useAuthStore()
+
+    // Filter navigation based on user permissions
+    const filteredNav = navigation.filter(item => {
+        if (item.feature && !hasFeature(item.feature)) return false
+        if (item.minLevel && !hasPermissionLevel(item.minLevel)) return false
+        return true
+    })
 
     return (
         <div className="min-h-screen bg-gray-50 flex">
@@ -41,19 +52,39 @@ export default function Layout({ children }) {
                 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
                 bg-white border-r border-gray-200 flex flex-col transition-all duration-200
             `}>
-                {/* Logo */}
+                {/* Logo / Company Branding */}
                 <div className={`h-14 flex items-center border-b border-gray-100 ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}>
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-sm">
-                        <Users className="w-4 h-4 text-white" />
-                    </div>
-                    {!sidebarCollapsed && (
-                        <span className="ml-2.5 font-semibold text-gray-900 text-sm">VMS Enterprise</span>
+                    {company?.logo ? (
+                        <>
+                            {!sidebarCollapsed ? (
+                                <img
+                                    src={company.logo}
+                                    alt={company?.name || 'Company'}
+                                    className="h-7 max-w-[130px] object-contain"
+                                />
+                            ) : (
+                                <img
+                                    src={company.logo}
+                                    alt={company?.name || 'Company'}
+                                    className="h-6 w-8 object-contain"
+                                />
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-sm">
+                                <Users className="w-4 h-4 text-white" />
+                            </div>
+                            {!sidebarCollapsed && (
+                                <span className="ml-2.5 font-semibold text-gray-900 text-sm">{company?.name || 'VMS Enterprise'}</span>
+                            )}
+                        </>
                     )}
                 </div>
 
                 {/* Navigation */}
                 <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-                    {navigation.map((item) => {
+                    {filteredNav.map((item) => {
                         const isActive = location.pathname === item.href
                         return (
                             <Link
@@ -133,24 +164,26 @@ export default function Layout({ children }) {
                             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                         </button>
 
-                        {/* Company logo and name */}
+                        {/* Company logo or name */}
                         <div className="flex items-center gap-2 pl-2 border-l border-gray-200 ml-1">
                             {company?.logo ? (
                                 <img
                                     src={company.logo}
                                     alt={company?.name}
-                                    className="h-7 max-w-[100px] object-contain"
+                                    className="h-7 max-w-[120px] object-contain"
                                 />
                             ) : (
-                                <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center">
-                                    <span className="text-blue-700 text-xs font-semibold">
-                                        {company?.name?.charAt(0) || user?.name?.charAt(0) || 'U'}
+                                <>
+                                    <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center">
+                                        <span className="text-blue-700 text-xs font-semibold">
+                                            {company?.name?.charAt(0) || user?.name?.charAt(0) || 'U'}
+                                        </span>
+                                    </div>
+                                    <span className="hidden sm:block text-sm font-medium text-gray-700">
+                                        {company?.name || user?.name || 'User'}
                                     </span>
-                                </div>
+                                </>
                             )}
-                            <span className="hidden sm:block text-sm font-medium text-gray-700">
-                                {company?.name || user?.name || 'User'}
-                            </span>
                         </div>
                     </div>
                 </header>

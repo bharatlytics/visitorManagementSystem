@@ -8,7 +8,8 @@ const STORAGE_KEYS = {
     companyId: 'vms_company_id',
     company: 'vms_company',
     isPlatformConnected: 'vms_platform_connected',
-    platformUrl: 'vms_platform_url'
+    platformUrl: 'vms_platform_url',
+    permissions: 'vms_permissions'
 }
 
 // Helper to get stored data
@@ -20,10 +21,11 @@ const getStoredAuth = () => {
             companyId: localStorage.getItem(STORAGE_KEYS.companyId),
             company: JSON.parse(localStorage.getItem(STORAGE_KEYS.company) || 'null'),
             isPlatformConnected: localStorage.getItem(STORAGE_KEYS.isPlatformConnected) === 'true',
-            platformUrl: localStorage.getItem(STORAGE_KEYS.platformUrl)
+            platformUrl: localStorage.getItem(STORAGE_KEYS.platformUrl),
+            permissions: JSON.parse(localStorage.getItem(STORAGE_KEYS.permissions) || 'null')
         }
     } catch {
-        return { token: null, user: null, companyId: null, company: null, isPlatformConnected: false, platformUrl: null }
+        return { token: null, user: null, companyId: null, company: null, isPlatformConnected: false, platformUrl: null, permissions: null }
     }
 }
 
@@ -35,6 +37,7 @@ const saveAuthToStorage = (data) => {
     if (data.company) localStorage.setItem(STORAGE_KEYS.company, JSON.stringify(data.company))
     localStorage.setItem(STORAGE_KEYS.isPlatformConnected, String(data.isPlatformConnected || false))
     if (data.platformUrl) localStorage.setItem(STORAGE_KEYS.platformUrl, data.platformUrl)
+    if (data.permissions) localStorage.setItem(STORAGE_KEYS.permissions, JSON.stringify(data.permissions))
 }
 
 const clearAuthStorage = () => {
@@ -49,6 +52,7 @@ export const useAuthStore = create((set, get) => ({
     isAuthenticated: false,
     isPlatformConnected: false,
     platformUrl: null,
+    permissions: null, // { level, features, roleName, platformPermissions }
 
     checkAuth: async () => {
         // First, try to restore from localStorage for instant hydration
@@ -174,7 +178,7 @@ export const useAuthStore = create((set, get) => ({
     },
 
     // SSO login - called from SSO callback page
-    ssoLogin: (token, companyId, companyName, companyLogo) => {
+    ssoLogin: (token, companyId, companyName, companyLogo, permissions = null) => {
         const authData = {
             token,
             user: { id: 'sso-user', name: companyName || 'User' },
@@ -182,7 +186,8 @@ export const useAuthStore = create((set, get) => ({
             company: { id: companyId, name: companyName, logo: companyLogo },
             isAuthenticated: true,
             isPlatformConnected: true,
-            platformUrl: null
+            platformUrl: null,
+            permissions
         }
 
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`
@@ -190,6 +195,36 @@ export const useAuthStore = create((set, get) => ({
         saveAuthToStorage(authData)
 
         return { success: true }
+    },
+
+    // Permission helper: check if user has a specific feature
+    hasFeature: (featureId) => {
+        const permissions = get().permissions
+        if (!permissions) return true // No permissions = legacy user, allow all
+        const features = permissions.features || []
+        if (features.length === 0) return true // Empty = all features (admin)
+        return features.includes(featureId)
+    },
+
+    // Permission helper: check if user has minimum permission level
+    hasPermissionLevel: (minimumLevel) => {
+        const levelHierarchy = { viewer: 1, operator: 2, manager: 3, admin: 4 }
+        const permissions = get().permissions
+        if (!permissions) return true // No permissions = legacy user, allow all
+        const userLevel = permissions.level || 'viewer'
+        return (levelHierarchy[userLevel] || 0) >= (levelHierarchy[minimumLevel] || 0)
+    },
+
+    // Get permission level string
+    getPermissionLevel: () => {
+        const permissions = get().permissions
+        return permissions?.level || null
+    },
+
+    // Get role name from permissions
+    getPermissionRoleName: () => {
+        const permissions = get().permissions
+        return permissions?.roleName || null
     },
 
     logout: async () => {

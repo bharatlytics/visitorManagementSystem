@@ -9,7 +9,7 @@ const { collections } = require('../db');
 /**
  * Create JWT token with role
  */
-function createToken(userId, companyId, role = 'employee', expiresHours = 24) {
+function createToken(userId, companyId, role = 'employee', expiresHours = 24, permissions = null) {
     const payload = {
         userId,
         companyId,
@@ -17,6 +17,10 @@ function createToken(userId, companyId, role = 'employee', expiresHours = 24) {
         exp: Math.floor(Date.now() / 1000) + (expiresHours * 60 * 60),
         iat: Math.floor(Date.now() / 1000),
     };
+    // Embed granular RBAC permissions from Platform SSO
+    if (permissions) {
+        payload.permissions = permissions;
+    }
     return jwt.sign(payload, Config.JWT_SECRET, { algorithm: Config.JWT_ALGORITHM });
 }
 
@@ -86,11 +90,14 @@ function requireAuth(req, res, next) {
         if (platformPayload) {
             // It's a valid platform service token
             req.userId = 'platform-service';
-            req.companyId = platformPayload.company_id;
-            req.userRole = 'admin'; // Service tokens have high privilege
+            req.companyId = platformPayload.company_id || platformPayload.companyId;
+            req.userRole = platformPayload.role || 'admin'; // Service tokens have high privilege
             req.tokenPayload = platformPayload;
             req.isFederated = true;
             req.sourceAppId = platformPayload.sub;
+            // Extract permissions from SSO token (granular RBAC)
+            req.permissions = platformPayload.permissions || null;
+            req.userRoles = platformPayload.roles || [];
             return next();
         }
 
@@ -98,11 +105,15 @@ function requireAuth(req, res, next) {
         return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
-    // Attach user info to request
     req.userId = payload.userId;
     req.companyId = payload.companyId;
     req.userRole = payload.role || 'employee';
     req.tokenPayload = payload;
+    // Extract granular RBAC permissions from token
+    req.permissions = payload.permissions || null;
+    req.userRoles = payload.roles || [];
+    req.permissionLevel = payload.permissions?.level || null;
+    req.permissionFeatures = payload.permissions?.features || [];
 
     next();
 }
@@ -219,6 +230,59 @@ function optionalAuth(req, res, next) {
     next();
 }
 
+/**
+ * Device authentication middleware
+ * Devices authenticate via X-Device-Id header (their MongoDB _id or deviceId string).
+ * Validates the device exists and is active, then attaches req.device with companyId.
+ * This is used for device-facing API endpoints (kiosk/tablet operations).
+ */
+async function requireDeviceAuth(req, res, next) {
+    const deviceId = req.headers['x-device-id'];
+
+    if (!deviceId) {
+        return res.status(401).json({ error: 'Device authentication required. Provide X-Device-Id header.' });
+    }
+
+    try {
+        const { ObjectId } = require('mongodb');
+        const { isValidObjectId } = require('../utils/helpers');
+
+        let device = null;
+
+        // Try as ObjectId first, then as deviceId string
+        if (isValidObjectId(deviceId)) {
+            device = await collections.devices().findOne({ _id: new ObjectId(deviceId) });
+        }
+        if (!device) {
+            device = await collections.devices().findOne({ deviceId: deviceId });
+        }
+
+        if (!device) {
+            return res.status(401).json({ error: 'Device not found or not registered.' });
+        }
+
+        if (device.status === 'inactive') {
+            return res.status(403).json({ error: 'Device has been deactivated.' });
+        }
+
+        // Update lastSeen on every authenticated request
+        collections.devices().updateOne(
+            { _id: device._id },
+            { $set: { lastSeen: new Date() } }
+        ).catch(() => { }); // fire-and-forget
+
+        // Attach device info to request
+        req.device = device;
+        req.companyId = device.companyId;
+        req.deviceId = device._id;
+
+        next();
+    } catch (error) {
+        console.error('Device auth error:', error);
+        return res.status(500).json({ error: 'Device authentication failed.' });
+    }
+}
+
 module.exports = {
     createToken,
     decodeToken,
@@ -226,5 +290,6 @@ module.exports = {
     requireAuth,
     requireCompanyAccess,
     optionalAuth,
+    requireDeviceAuth,
     Config,
 };

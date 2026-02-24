@@ -257,15 +257,24 @@ sharedPreferences.edit()
 5. [Dashboard](#5-dashboard)
 6. [Analytics](#6-analytics)
 7. [Settings](#7-settings)
-8. [Security](#8-security)
-9. [Data Residency & CRUD Operations](#8-data-residency--crud-operations)
-   - Residency Modes Overview
-   - Federated Queries (Visitors/Employees)
-   - Sync Operations (Visitors/Employees)
-   - Actor Type Mapping
-10. [Webhooks](#9-webhooks)
-11. [Error Codes](#10-error-codes)
-12. [Data Models](#11-data-models)
+8. [Devices](#8-devices)
+   - CRUD: List, Get, Register, Update, Delete
+   - QR Code Registration, Device Activation
+   - Remote Commands, Command History
+   - Heartbeat, Stats
+9. [Device-Facing API](#9-device-facing-api)
+   - Auth: X-Device-Id header
+   - Config, Today's Visits, Check-in/Check-out
+   - Walk-in Registration, Visitor/Employee Search, Heartbeat
+10. [Security](#10-security)
+10. [Data Residency & CRUD Operations](#10-data-residency--crud-operations)
+    - Residency Modes Overview
+    - Federated Queries (Visitors/Employees)
+    - Sync Operations (Visitors/Employees)
+    - Actor Type Mapping
+11. [Webhooks](#11-webhooks)
+12. [Error Codes](#12-error-codes)
+13. [Data Models](#13-data-models)
 
 ---
 
@@ -4455,5 +4464,636 @@ When connected to Bharatlytics Platform, VMS integrates as follows:
 
 ---
 
-*End of API Reference - Enterprise Edition v4.0*
+*End of API Reference - Enterprise Edition v5.0*
+
+---
+
+## 8. Devices
+
+**Base Path:** `/api/devices`
+
+### 8.1 List Devices
+
+```http
+GET /api/devices?companyId={companyId}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+
+**Response:**
+```json
+{
+  "devices": [
+    {
+      "_id": "device_abc123",
+      "deviceId": "DEV-1708012800000",
+      "deviceName": "Lobby Kiosk 1",
+      "deviceType": "kiosk",
+      "status": "active",
+      "location": "Main Entrance",
+      "lastSeen": "2026-02-21T05:00:00Z",
+      "capabilities": ["face_recognition", "qr_scan"],
+      "createdAt": "2026-02-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 8.2 Get Device
+
+```http
+GET /api/devices/{device_id}
+```
+
+**Supports:** Both MongoDB ObjectId and custom `deviceId` string.
+
+---
+
+### 8.3 Register Device (Manual)
+
+```http
+POST /api/devices/register
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_abc123",
+  "deviceName": "Lobby Kiosk 1",
+  "deviceType": "kiosk",
+  "location": "Main Entrance",
+  "capabilities": ["face_recognition", "qr_scan"]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+| `deviceName` | string | Yes | Device display name |
+| `deviceType` | string | No | `kiosk`, `tablet`, `phone`, `laptop` (default: `kiosk`) |
+| `location` | string | No | Physical location |
+| `capabilities` | array | No | Feature flags (default: `["face_recognition", "qr_scan"]`) |
+
+**Response (201):**
+```json
+{
+  "message": "Device registered successfully",
+  "_id": "device_abc123",
+  "deviceId": "DEV-1708012800000"
+}
+```
+
+---
+
+### 8.4 Generate QR Registration Code
+
+```http
+POST /api/devices/qr-code
+Content-Type: application/json
+```
+
+Generates a QR code payload that a device app can scan to self-register.
+
+**Request Body:**
+```json
+{
+  "companyId": "company_abc123",
+  "deviceName": "Meeting Room Kiosk",
+  "deviceType": "tablet",
+  "expiresInHours": 24
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `companyId` | string | Yes | Company ObjectId |
+| `deviceName` | string | No | Pre-fill device name |
+| `deviceType` | string | No | Pre-fill device type |
+| `expiresInHours` | number | No | Code validity (default: 24) |
+
+**Response:**
+```json
+{
+  "message": "QR registration code generated",
+  "code": "QR-M4I2FKHP-A3BC7D",
+  "expiresAt": "2026-02-22T05:00:00Z",
+  "qrPayload": {
+    "activationUrl": "http://localhost:5001/api/devices/activate",
+    "code": "QR-M4I2FKHP-A3BC7D",
+    "companyId": "company_abc123",
+    "deviceName": "Meeting Room Kiosk",
+    "deviceType": "tablet",
+    "expiresAt": "2026-02-22T05:00:00.000Z"
+  },
+  "qrString": "{...json...}"
+}
+```
+
+> [!TIP]
+> The `qrString` field contains the full JSON payload stringified — encode this into a QR code image for the device to scan.
+
+---
+
+### 8.5 Activate Device (via QR/Code)
+
+```http
+POST /api/devices/activate
+Content-Type: application/json
+```
+
+Called by a device app after scanning the QR code. **No authentication required** — the activation code itself serves as the credential.
+
+**Request Body:**
+```json
+{
+  "code": "QR-M4I2FKHP-A3BC7D",
+  "deviceInfo": {
+    "deviceName": "Front Desk Tablet",
+    "deviceType": "tablet",
+    "location": "Reception",
+    "capabilities": ["face_recognition", "qr_scan"],
+    "firmwareVersion": "1.2.0",
+    "osVersion": "Android 14"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | Yes | Activation code from QR |
+| `deviceInfo` | object | No | Device details (can override QR defaults) |
+
+**Response (201):**
+```json
+{
+  "message": "Device activated successfully",
+  "device": {
+    "_id": "device_xyz789",
+    "deviceId": "DEV-1708012800000",
+    "deviceName": "Front Desk Tablet",
+    "status": "active",
+    "activatedAt": "2026-02-21T06:00:00Z"
+  }
+}
+```
+
+**Errors:**
+
+| Code | Error | Description |
+|------|-------|-------------|
+| 404 | Invalid or expired activation code | Code not found or already used |
+| 410 | Activation code has expired | Code past `expiresAt` |
+
+---
+
+### 8.6 Generate Activation Codes (Batch)
+
+```http
+POST /api/devices/activation-codes
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "companyId": "company_abc123",
+  "count": 5,
+  "expiresInHours": 48
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Generated 5 activation code(s)",
+  "codes": [
+    { "code": "ACT-1708012800000-A3BC7D", "expiresAt": "2026-02-23T06:00:00Z" },
+    { "code": "ACT-1708012800001-X9YZ2K", "expiresAt": "2026-02-23T06:00:00Z" }
+  ]
+}
+```
+
+---
+
+### 8.7 Update Device
+
+```http
+PUT /api/devices/{device_id}
+Content-Type: application/json
+```
+
+**Also supported:** `PATCH /api/devices/{device_id}`
+
+**Allowed Fields:** `deviceName`, `deviceType`, `location`, `locationId`, `status`, `capabilities`, `config`
+
+---
+
+### 8.8 Send Remote Command
+
+```http
+POST /api/devices/{device_id}/command
+Content-Type: application/json
+```
+
+Send a remote control command to a device. Creates a pending command that the device picks up via polling.
+
+**Request Body:**
+```json
+{
+  "command": "restart",
+  "params": {}
+}
+```
+
+**Valid Commands:**
+
+| Command | Description | Side Effect |
+|---------|-------------|-------------|
+| `restart` | Restart the device | — |
+| `lock` | Lock the device screen | Sets `device.locked = true` |
+| `unlock` | Unlock the device screen | Sets `device.locked = false` |
+| `update` | Trigger firmware/software update | — |
+| `screenshot` | Capture device screenshot | — |
+| `set_config` | Push new config (pass in `params`) | — |
+| `maintenance_on` | Enter maintenance mode | Sets `device.status = 'maintenance'` |
+| `maintenance_off` | Exit maintenance mode | Sets `device.status = 'active'` |
+| `clear_cache` | Clear device data cache | — |
+| `sync_data` | Force data synchronization | — |
+
+**Response:**
+```json
+{
+  "message": "Command 'restart' sent to device",
+  "commandId": "cmd_abc123",
+  "status": "pending"
+}
+```
+
+---
+
+### 8.9 Poll Pending Commands (Device)
+
+```http
+GET /api/devices/{device_id}/commands
+```
+
+Device-facing endpoint — no auth required. Returns pending commands and also serves as an implicit heartbeat (updates `lastSeen`).
+
+**Response:**
+```json
+{
+  "commands": [
+    {
+      "commandId": "cmd_abc123",
+      "command": "restart",
+      "params": {},
+      "createdAt": "2026-02-21T06:00:00Z",
+      "expiresAt": "2026-02-21T06:30:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 8.10 Acknowledge Command (Device)
+
+```http
+POST /api/devices/{device_id}/command/{command_id}/ack
+Content-Type: application/json
+```
+
+Device reports back after executing a command.
+
+**Request Body:**
+```json
+{
+  "success": true,
+  "result": { "screenshotUrl": "..." }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Whether the command succeeded |
+| `result` | object | Optional result data |
+| `error` | string | Error message if `success=false` |
+
+---
+
+### 8.11 Command History
+
+```http
+GET /api/devices/{device_id}/command-history?limit=50
+```
+
+**Response:**
+```json
+{
+  "commands": [
+    {
+      "commandId": "cmd_abc123",
+      "command": "restart",
+      "status": "completed",
+      "sentBy": "user_admin_id",
+      "createdAt": "2026-02-21T06:00:00Z",
+      "completedAt": "2026-02-21T06:00:05Z",
+      "result": null,
+      "error": null
+    }
+  ]
+}
+```
+
+---
+
+### 8.12 Device Heartbeat
+
+```http
+POST /api/devices/{device_id}/heartbeat
+Content-Type: application/json
+```
+
+**Request Body (optional):**
+```json
+{
+  "status": "active",
+  "metrics": {
+    "cpuUsage": 45,
+    "memoryUsage": 60,
+    "batteryLevel": 85
+  }
+}
+```
+
+---
+
+### 8.13 Device Stats
+
+```http
+GET /api/devices/stats?companyId={companyId}
+```
+
+**Response:**
+```json
+{
+  "stats": {
+    "total": 12,
+    "active": 10,
+    "inactive": 2,
+    "online": 8,
+    "offline": 4,
+    "byType": {
+      "kiosk": 6,
+      "tablet": 4,
+      "laptop": 2
+    }
+  }
+}
+```
+
+---
+
+### 8.14 Deactivate Device
+
+```http
+DELETE /api/devices/{device_id}
+```
+
+Soft-deactivates the device (sets `status = 'inactive'`).
+
+---
+
+### Device Registration Flow (QR)
+
+```
+┌──────────────┐
+│ Admin Portal │
+└──────┬───────┘
+       │
+       │ 1. POST /api/devices/qr-code
+       │    {companyId, deviceName}
+       ▼
+┌──────────────┐
+│ QR Payload   │ ← Display as QR code in UI
+│ {code, url}  │
+└──────┬───────┘
+       │
+       │ 2. Device scans QR
+       ▼
+┌──────────────────┐
+│ Device App       │
+│ Parses QR JSON   │
+└──────┬───────────┘
+       │
+       │ 3. POST /api/devices/activate
+       │    {code, deviceInfo}
+       ▼
+┌──────────────────┐
+│ VMS Server       │
+│ Creates device   │
+│ Marks code used  │
+└──────┬───────────┘
+       │
+       │ 4. Returns device record
+       ▼
+┌──────────────────┐
+│ Device App       │
+│ Stores deviceId  │
+│ Starts heartbeat │
+│ Polls /commands  │
+└──────────────────┘
+```
+
+---
+
+## 9. Device-Facing API
+
+**Base Path:** `/api/device-api`  
+**Auth:** `X-Device-Id` header (MongoDB ObjectId or deviceId string)
+
+These endpoints are designed for kiosk/tablet device apps. No user JWT required — the device authenticates via its registered ID.
+
+### 9.1 Get Device Config
+
+```http
+GET /api/device-api/config
+X-Device-Id: DEV-1708012800000
+```
+
+**Response:**
+```json
+{
+  "device": {
+    "_id": "...",
+    "deviceId": "DEV-1708012800000",
+    "deviceName": "Lobby Kiosk 1",
+    "deviceType": "kiosk",
+    "location": "Main Entrance",
+    "capabilities": ["face_recognition", "qr_scan"],
+    "config": {},
+    "locked": false
+  },
+  "company": { "_id": "...", "name": "Acme Inc", "logo": null },
+  "settings": {
+    "visitorTypes": ["general", "contractor"],
+    "idTypes": ["aadhar", "passport"],
+    "requirePhoto": true,
+    "requireApproval": false
+  },
+  "serverTime": "2026-02-21T06:00:00Z"
+}
+```
+
+---
+
+### 9.2 Today's Visits
+
+```http
+GET /api/device-api/visits/today?status=all
+X-Device-Id: DEV-1708012800000
+```
+
+| Parameter | Values | Default |
+|-----------|--------|---------|
+| `status` | `scheduled`, `checked_in`, `all` | `all` |
+
+**Response:**
+```json
+{
+  "visits": [
+    {
+      "_id": "...",
+      "visitorName": "John Smith",
+      "visitorPhone": "+91...",
+      "purpose": "Meeting",
+      "status": "scheduled",
+      "expectedArrival": "2026-02-21T09:00:00Z"
+    }
+  ],
+  "total": 5,
+  "date": "2026-02-21"
+}
+```
+
+---
+
+### 9.3 Kiosk Check-in
+
+```http
+POST /api/device-api/visits/{visitId}/check-in
+X-Device-Id: DEV-1708012800000
+```
+
+Records which device performed the check-in (`checkInDeviceId`, `checkInDeviceName`).
+
+---
+
+### 9.4 Kiosk Check-out
+
+```http
+POST /api/device-api/visits/{visitId}/check-out
+X-Device-Id: DEV-1708012800000
+```
+
+Calculates visit duration and records the checkout device.
+
+---
+
+### 9.5 Walk-in Visitor Registration
+
+```http
+POST /api/device-api/visitors/register
+X-Device-Id: DEV-1708012800000
+Content-Type: multipart/form-data
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `visitorName` | string | Yes | Full name |
+| `phone` | string | Yes | Phone number |
+| `email` | string | No | Email |
+| `organization` | string | No | Company |
+| `purpose` | string | No | Visit purpose |
+| `visitorType` | string | No | `general`, `contractor`, etc. |
+| `hostEmployeeId` | string | No | Host employee ObjectId |
+| `autoCheckIn` | boolean | No | Auto-create visit and check in |
+| `center` | file | No | Face photo (center) |
+| `left` | file | No | Face photo (left) |
+| `right` | file | No | Face photo (right) |
+
+**Response (201):**
+```json
+{
+  "message": "Visitor registered successfully",
+  "_id": "visitor_id",
+  "visitorName": "John Smith",
+  "visitId": "visit_id_if_auto_checkin",
+  "deviceName": "Lobby Kiosk 1"
+}
+```
+
+---
+
+### 9.6 Search Visitors
+
+```http
+GET /api/device-api/visitors/search?q=john
+X-Device-Id: DEV-1708012800000
+```
+
+Searches by name, phone, or email. Min 2 characters. Returns up to 20 results.
+
+---
+
+### 9.7 Search Employees (Host)
+
+```http
+GET /api/device-api/employees/search?q=smith
+X-Device-Id: DEV-1708012800000
+```
+
+Searches by name, employee ID, or email. For host selection at kiosk.
+
+---
+
+### 9.8 Device Heartbeat
+
+```http
+POST /api/device-api/heartbeat
+X-Device-Id: DEV-1708012800000
+Content-Type: application/json
+```
+
+**Request Body (optional):**
+```json
+{
+  "firmwareVersion": "1.3.0",
+  "osVersion": "Android 14",
+  "ipAddress": "192.168.1.50",
+  "batteryLevel": 85,
+  "metrics": { "cpuUsage": 45, "memoryUsage": 60 }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Heartbeat recorded",
+  "timestamp": "2026-02-21T06:00:00Z",
+  "pendingCommands": [
+    { "commandId": "...", "command": "restart", "params": {} }
+  ]
+}
+```
+
+> [!TIP]
+> The heartbeat response includes pending commands, so devices can process commands without a separate polling call.
 

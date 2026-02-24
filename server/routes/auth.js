@@ -298,27 +298,46 @@ router.all('/platform-sso', async (req, res, next) => {
 
         // If GET request (redirect from platform), redirect to frontend with token
         if (req.method === 'GET') {
-            // Create VMS JWT for frontend
-            const vmsToken = createToken(userId, companyId, 'employee', 24);
+            // Extract permissions from Platform SSO JWT
+            const permissions = payload.permissions || null;
+            const roles = payload.roles || [];
+
+            // Determine the best role for VMS token
+            const adminRoles = ['platform_admin', 'company_super_admin', 'super_admin', 'admin'];
+            const isAdmin = roles.some(r => adminRoles.includes(r));
+            const vmsRole = isAdmin ? 'admin' : (payload.permissions?.level || 'employee');
+
+            // Create VMS JWT with permissions embedded
+            const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions);
 
             // Build redirect URL with token for frontend auto-login
             const frontendUrl = Config.NODE_ENV === 'development'
                 ? 'http://localhost:5173'
                 : Config.FRONTEND_URL;
 
-            // Encode params for URL
+            // Encode params for URL — include permissions for frontend to store
             const params = new URLSearchParams({
                 token: vmsToken,
                 companyId: companyId || '',
                 companyName: companyName || '',
-                companyLogo: companyLogo || ''
+                companyLogo: companyLogo || '',
             });
+
+            // Pass permissions as JSON string for frontend to parse
+            if (permissions) {
+                params.set('permissions', JSON.stringify(permissions));
+            }
 
             return res.redirect(`${frontendUrl}/sso-callback?${params.toString()}`);
         }
 
         // For POST requests (mobile/API), return JSON with VMS JWT token
-        const vmsToken = createToken(userId, companyId, 'employee', 24);
+        const permissions = payload.permissions || null;
+        const roles = payload.roles || [];
+        const adminRoles = ['platform_admin', 'company_super_admin', 'super_admin', 'admin'];
+        const isAdmin = roles.some(r => adminRoles.includes(r));
+        const vmsRole = isAdmin ? 'admin' : (permissions?.level || 'employee');
+        const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions);
 
         res.json({
             message: 'Platform SSO successful',
@@ -334,7 +353,8 @@ router.all('/platform-sso', async (req, res, next) => {
                 id: userId,
                 email: userEmail,
                 name: userName
-            }
+            },
+            permissions
         });
     } catch (error) {
         next(error);
@@ -351,8 +371,12 @@ router.get('/me', requireAuth, (req, res) => {
 
     const response = {
         user_id: req.userId,
+        user_email: req.tokenPayload?.email || '',
+        user_name: req.tokenPayload?.name || '',
+        user_role: req.userRole,
         company_id: companyId,
-        connected: isConnected
+        connected: isConnected,
+        permissions: req.permissions || null
     };
 
     // If connected to platform, include company details and return URL
