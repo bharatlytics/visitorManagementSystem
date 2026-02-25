@@ -4529,26 +4529,71 @@ Content-Type: application/json
   "deviceName": "Lobby Kiosk 1",
   "deviceType": "kiosk",
   "location": "Main Entrance",
-  "capabilities": ["face_recognition", "qr_scan"]
+  "capabilities": ["face_recognition", "qr_scan"],
+  "ipAddress": "192.168.1.50",
+  "firmwareVersion": "1.2.0",
+  "osVersion": "Android 14",
+  "zone": "lobby",
+  "notes": "Front desk tablet",
+  "accessControl": {
+    "allowedZones": ["lobby", "wing-a"],
+    "allowedVisitorTypes": ["general", "contractor"],
+    "maxConcurrentVisitors": 50,
+    "operatingHours": { "start": "08:00", "end": "20:00" },
+    "requireApproval": false,
+    "allowWalkIns": true
+  }
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `companyId` | string | Yes | Company ObjectId |
-| `deviceName` | string | Yes | Device display name |
+| `deviceName` | string | Yes | Device display name (must be unique within company) |
 | `deviceType` | string | No | `kiosk`, `tablet`, `phone`, `laptop` (default: `kiosk`) |
 | `location` | string | No | Physical location |
 | `capabilities` | array | No | Feature flags (default: `["face_recognition", "qr_scan"]`) |
+| `ipAddress` | string | No | Device IP address (validated format: `x.x.x.x`) |
+| `firmwareVersion` | string | No | Device firmware version |
+| `osVersion` | string | No | Operating system version |
+| `zone` | string | No | Logical zone assignment |
+| `notes` | string | No | Admin notes |
+| `accessControl` | object | No | Access control rules (see schema below) |
+
+**Access Control Schema:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `allowedZones` | array | `[]` | Which zones this device can serve |
+| `allowedVisitorTypes` | array | `[]` | Which visitor types are allowed (empty = all) |
+| `maxConcurrentVisitors` | number | `50` | Max concurrent active visitors |
+| `operatingHours` | object | `null` | `{ start: "08:00", end: "20:00" }` — null = 24/7 |
+| `requireApproval` | boolean | `false` | Whether walk-ins need approval |
+| `allowWalkIns` | boolean | `true` | Whether walk-in registration is enabled |
 
 **Response (201):**
 ```json
 {
   "message": "Device registered successfully",
-  "_id": "device_abc123",
-  "deviceId": "DEV-1708012800000"
+  "device": {
+    "_id": "device_abc123",
+    "deviceId": "DEV-1708012800000",
+    "deviceName": "Lobby Kiosk 1",
+    "deviceType": "kiosk",
+    "status": "active",
+    "accessControl": { ... },
+    "capabilities": ["face_recognition", "qr_scan"],
+    "createdAt": "2026-02-25T07:00:00Z"
+  }
 }
 ```
+
+**Errors:**
+
+| Code | Error | Description |
+|------|-------|-------------|
+| 409 | Duplicate device name | A device with the same name already exists in this company |
+| 400 | Invalid IP address | IP format validation failed |
 
 ---
 
@@ -4691,7 +4736,7 @@ Content-Type: application/json
 
 **Also supported:** `PATCH /api/devices/{device_id}`
 
-**Allowed Fields:** `deviceName`, `deviceType`, `location`, `locationId`, `status`, `capabilities`, `config`
+**Allowed Fields:** `deviceName`, `deviceType`, `location`, `locationId`, `status`, `capabilities`, `config`, `accessControl`, `ipAddress`, `firmwareVersion`, `osVersion`, `zone`, `notes`, `locked`
 
 ---
 
@@ -4871,45 +4916,163 @@ Soft-deactivates the device (sets `status = 'inactive'`).
 
 ---
 
-### Device Registration Flow (QR)
+### Device Onboarding Flow (QR → Activate → FCM → Heartbeat)
 
 ```
 ┌──────────────┐
 │ Admin Portal │
 └──────┬───────┘
        │
-       │ 1. POST /api/devices/qr-code
-       │    {companyId, deviceName}
+       │ 1. Register device in admin panel
+       │    POST /api/devices  {companyId, deviceName}
+       │    → Server creates device record with deviceId
+       │
+       │ 2. QR Code auto-generated in device detail
+       │    Payload: { action: "device_activate", deviceId, apiBase, companyId }
        ▼
 ┌──────────────┐
-│ QR Payload   │ ← Display as QR code in UI
-│ {code, url}  │
+│ QR Code      │ ← Display in admin UI (can enlarge/print/download)
+│ {deviceId}   │
 └──────┬───────┘
        │
-       │ 2. Device scans QR
+       │ 3. Device scans QR → parses JSON → extracts deviceId + apiBase
        ▼
 ┌──────────────────┐
 │ Device App       │
-│ Parses QR JSON   │
+│ Collects:        │
+│  - OS version    │
+│  - Firmware      │
+│  - IP address    │
+│  - FCM token     │
+│  - Model info    │
 └──────┬───────────┘
        │
-       │ 3. POST /api/devices/activate
-       │    {code, deviceInfo}
+       │ 4. POST /api/device-api/activate
+       │    { deviceId, osVersion, firmwareVersion, ipAddress,
+       │      fcmToken, model, manufacturer, appVersion }
        ▼
 ┌──────────────────┐
 │ VMS Server       │
-│ Creates device   │
-│ Marks code used  │
+│ Stores all info  │
+│ Registers FCM    │
+│ Returns config   │
 └──────┬───────────┘
        │
-       │ 4. Returns device record
+       │ 5. Returns: device config + company info + accessControl
        ▼
 ┌──────────────────┐
 │ Device App       │
-│ Stores deviceId  │
-│ Starts heartbeat │
-│ Polls /commands  │
+│ Stores deviceId  │  ← Uses as X-Device-Id header for ALL future calls
+│ Starts heartbeat │  ← POST /api/device-api/heartbeat (updates FCM token too)
+│ Ready for ops    │  ← GET /visits/today, POST /check-in, etc.
 └──────────────────┘
+       │
+       │ Server can now push remote commands via FCM:
+       │ POST /api/devices/{id}/send-notification
+       │ → FCM push → Device receives command → Executes → ACKs
+       ▼
+┌──────────────────┐
+│ Remote Control   │
+│ restart, lock,   │
+│ update, sync,    │
+│ screenshot, etc. │
+└──────────────────┘
+```
+
+---
+
+### 8.15 Quick Status Change
+
+```http
+PATCH /api/devices/{device_id}/status
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "status": "maintenance"
+}
+```
+
+| Valid Statuses | Description |
+|----------------|-------------|
+| `active` | Device is active and operational |
+| `maintenance` | Device is in maintenance mode (blocks device-api requests) |
+| `inactive` | Device is fully deactivated |
+
+---
+
+### 8.16 Send Push Notification
+
+```http
+POST /api/devices/{device_id}/send-notification
+Content-Type: application/json
+```
+
+Sends a push notification to a device via its registered FCM token. Falls back to queuing the notification as a pending command.
+
+**Request Body:**
+```json
+{
+  "title": "System Update",
+  "body": "A new update is available. Restart to apply.",
+  "data": { "action": "update" }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Notification queued for device",
+  "commandId": "cmd_xyz",
+  "deviceName": "Lobby Kiosk 1",
+  "fcmTokenRegistered": true
+}
+```
+
+**Errors:**
+
+| Code | Error |
+|------|-------|
+| 400 | Device has no FCM token registered |
+| 404 | Device not found |
+
+---
+
+### 8.17 Source Tracking on Transactions
+
+All check-in/check-out operations now include a `source` object that tracks the origin:
+
+```json
+{
+  "source": {
+    "type": "device",
+    "deviceId": "device_abc123",
+    "deviceName": "Lobby Kiosk 1",
+    "cctvId": null,
+    "serverId": null,
+    "userId": null
+  }
+}
+```
+
+| Source Type | Description |
+|-------------|-------------|
+| `device` | Check-in from kiosk/tablet (via device-api or `deviceId` in body) |
+| `cctv` | Check-in triggered by face recognition camera (pass `cctvId` in body) |
+| `admin` | Manual check-in from admin dashboard |
+| `api` | Programmatic check-in via external API |
+
+To specify a source from the admin API, include optional fields in the check-in/out request body:
+
+```json
+{
+  "method": "manual",
+  "deviceId": "DEV-123",
+  "cctvId": "cam_001",
+  "serverId": "srv_face_rec_1"
+}
 ```
 
 ---
@@ -4939,6 +5102,14 @@ X-Device-Id: DEV-1708012800000
     "location": "Main Entrance",
     "capabilities": ["face_recognition", "qr_scan"],
     "config": {},
+    "accessControl": {
+      "allowedZones": ["lobby"],
+      "allowedVisitorTypes": [],
+      "maxConcurrentVisitors": 50,
+      "operatingHours": { "start": "08:00", "end": "20:00" },
+      "requireApproval": false,
+      "allowWalkIns": true
+    },
     "locked": false
   },
   "company": { "_id": "...", "name": "Acme Inc", "logo": null },
@@ -4992,7 +5163,23 @@ POST /api/device-api/visits/{visitId}/check-in
 X-Device-Id: DEV-1708012800000
 ```
 
-Records which device performed the check-in (`checkInDeviceId`, `checkInDeviceName`).
+Records which device performed the check-in. Includes **access control validation**:
+- Rejects if device is outside `operatingHours`
+- Validates visitor type against `allowedVisitorTypes` (if configured)
+
+**Response includes `source` object:**
+```json
+{
+  "status": "success",
+  "visitId": "...",
+  "checkInTime": "2026-02-25T09:00:00Z",
+  "source": {
+    "type": "device",
+    "deviceId": "device_abc123",
+    "deviceName": "Lobby Kiosk 1"
+  }
+}
+```
 
 ---
 
@@ -5096,4 +5283,153 @@ Content-Type: application/json
 
 > [!TIP]
 > The heartbeat response includes pending commands, so devices can process commands without a separate polling call.
+
+---
+
+### 9.9 Device Activation (QR Scan Onboarding)
+
+```http
+POST /api/device-api/activate
+Content-Type: application/json
+```
+
+**No device auth required** — this is the onboarding step. The device scans a QR code containing the `deviceId` and calls this endpoint with all device information + FCM token in one call.
+
+**Request Body:**
+```json
+{
+  "deviceId": "DEV-1708012800000",
+  "osVersion": "Android 14",
+  "firmwareVersion": "1.2.0",
+  "ipAddress": "192.168.1.50",
+  "fcmToken": "dMm1J7eT...long_fcm_token...",
+  "batteryLevel": 95,
+  "appVersion": "1.0.0",
+  "model": "Samsung Galaxy Tab A9",
+  "manufacturer": "Samsung"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `deviceId` | string | **Yes** | Device ID from QR code (MongoDB ObjectId or `DEV-xxx` string) |
+| `osVersion` | string | No | Operating system version |
+| `firmwareVersion` | string | No | Device firmware/hardware version |
+| `ipAddress` | string | No | Device IP address |
+| `fcmToken` | string | No | Firebase Cloud Messaging token for push notifications |
+| `batteryLevel` | number | No | Battery percentage (0-100) |
+| `appVersion` | string | No | VMS client app version |
+| `model` | string | No | Device model name |
+| `manufacturer` | string | No | Device manufacturer |
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Device activated successfully",
+  "device": {
+    "_id": "...",
+    "deviceId": "DEV-1708012800000",
+    "deviceName": "Lobby Kiosk 1",
+    "deviceType": "kiosk",
+    "capabilities": ["face_recognition", "qr_scan"],
+    "accessControl": { ... }
+  },
+  "company": { "name": "Acme Inc", "logo": null },
+  "apiBase": "/api/device-api",
+  "fcmRegistered": true
+}
+```
+
+**Complete Onboarding Flow:**
+1. Device scans QR → extracts `deviceId` and `apiBase`
+2. Device collects its own info (OS, firmware, IP, model, manufacturer)
+3. Device gets FCM token from Firebase
+4. Device calls `POST /activate` with everything in one request
+5. Server stores all info, registers FCM, returns config
+6. Device stores `deviceId` → uses it as `X-Device-Id` for all future API calls
+7. Device starts heartbeat loop (re-sends FCM token if it changes)
+
+> [!IMPORTANT]
+> After activation, the device uses `deviceId` (or `_id`) as the `X-Device-Id` header for **all** subsequent API calls. The server validates this on every request.
+
+**Android/Kotlin Example:**
+```kotlin
+// 1. Parse QR code JSON
+val qrData = JSONObject(qrCodeContent)
+val deviceId = qrData.getString("deviceId")
+val apiBase = qrData.getString("apiBase")
+
+// 2. Get FCM token
+val fcmToken = FirebaseMessaging.getInstance().token.await()
+
+// 3. Activate in one call
+val response = api.post("$apiBase/activate", json {
+    put("deviceId", deviceId)
+    put("osVersion", Build.VERSION.RELEASE)
+    put("firmwareVersion", Build.DISPLAY)
+    put("ipAddress", getLocalIpAddress())
+    put("fcmToken", fcmToken)
+    put("model", Build.MODEL)
+    put("manufacturer", Build.MANUFACTURER)
+    put("appVersion", BuildConfig.VERSION_NAME)
+})
+
+// 4. Store deviceId for all future requests
+sharedPrefs.edit().putString("device_id", deviceId).apply()
+// All future API calls include: X-Device-Id: <deviceId>
+```
+
+**Errors:**
+
+| Code | Error |
+|------|-------|
+| 400 | `deviceId` is required |
+| 404 | Device not found (must be registered from admin panel first) |
+| 403 | Device has been deactivated |
+
+---
+
+### 9.10 Update FCM Token (Session Refresh)
+
+```http
+POST /api/device-api/fcm-token
+X-Device-Id: DEV-1708012800000
+Content-Type: application/json
+```
+
+Use this endpoint to **update** the FCM token on subsequent app launches, since FCM tokens can change. The initial token is registered during `/activate`.
+
+**Request Body:**
+```json
+{
+  "fcmToken": "dMm1J7eT...new_fcm_token..."
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "FCM token registered",
+  "deviceId": "DEV-1708012800000"
+}
+```
+
+> [!NOTE]
+> Call this on every app launch / session start. The initial FCM token is registered during activation, but tokens can rotate. The server stores `fcmToken` and `fcmTokenUpdatedAt` on the device document.
+
+---
+
+### Device Auth Middleware
+
+The `requireDeviceAuth` middleware validates the `X-Device-Id` header on every device-api request and rejects:
+
+| Condition | HTTP Code | Error |
+|-----------|-----------|-------|
+| No `X-Device-Id` header | 401 | Device authentication required |
+| Device not found | 401 | Device not found or not registered |
+| Device `status = 'inactive'` | 403 | Device has been deactivated |
+| Device `status = 'maintenance'` | 403 | Device is in maintenance mode |
+| Device `locked = true` | 403 | Device is locked. Contact administrator |
 

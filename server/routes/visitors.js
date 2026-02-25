@@ -384,13 +384,20 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
 
         // Use IST time to match expectedArrival format
         const now = getCurrentISTTime();
+        const source = {
+            type: req.body.cctvId ? 'cctv' : req.body.deviceId ? 'device' : 'admin',
+            userId: req.userId || null,
+            deviceId: req.body.deviceId || null,
+            cctvId: req.body.cctvId || null,
+            serverId: req.body.serverId || null,
+        };
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
+            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, source, lastUpdated: now } }
         );
 
-        console.log(`[check-in] Visit ${visitId} checked in via ${method}`);
-        res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString() });
+        console.log(`[check-in] Visit ${visitId} checked in via ${method} source=${source.type}`);
+        res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString(), source });
     } catch (error) {
         console.error('Error in check-in:', error);
         next(error);
@@ -420,9 +427,16 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
 
         // Use IST time to match expectedArrival format
         const now = getCurrentISTTime();
+        const source = {
+            type: req.body.cctvId ? 'cctv' : req.body.deviceId ? 'device' : 'admin',
+            userId: req.userId || null,
+            deviceId: req.body.deviceId || null,
+            cctvId: req.body.cctvId || null,
+            serverId: req.body.serverId || null,
+        };
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
+            { $set: { status: 'checked_out', actualDeparture: now, source, lastUpdated: now } }
         );
 
         let duration = null;
@@ -430,8 +444,8 @@ router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res,
             duration = Math.round((now - new Date(visit.actualArrival)) / 60000);
         }
 
-        console.log(`[check-out] Visit ${visitId} checked out. Duration: ${duration} minutes`);
-        res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString(), duration });
+        console.log(`[check-out] Visit ${visitId} checked out. Duration: ${duration} minutes source=${source.type}`);
+        res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString(), duration, source });
     } catch (error) {
         console.error('Error in check-out:', error);
         next(error);
@@ -469,12 +483,19 @@ router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) =
 
         // Use IST time to match expectedArrival format
         const now = getCurrentISTTime();
+        const source = {
+            type: req.body.cctvId ? 'cctv' : req.body.deviceId ? 'device' : 'admin',
+            userId: req.userId || null,
+            deviceId: req.body.deviceId || null,
+            cctvId: req.body.cctvId || null,
+            serverId: req.body.serverId || null,
+        };
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, lastUpdated: now } }
+            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, source, lastUpdated: now } }
         );
 
-        res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString() });
+        res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString(), source });
     } catch (error) {
         next(error);
     }
@@ -498,12 +519,19 @@ router.post('/:visitId/check-out', requireCompanyAccess, async (req, res, next) 
 
         // Use IST time to match expectedArrival format
         const now = getCurrentISTTime();
+        const source = {
+            type: req.body.cctvId ? 'cctv' : req.body.deviceId ? 'device' : 'admin',
+            userId: req.userId || null,
+            deviceId: req.body.deviceId || null,
+            cctvId: req.body.cctvId || null,
+            serverId: req.body.serverId || null,
+        };
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: { status: 'checked_out', actualDeparture: now, lastUpdated: now } }
+            { $set: { status: 'checked_out', actualDeparture: now, source, lastUpdated: now } }
         );
 
-        res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString() });
+        res.json({ status: 'success', message: 'Check-out successful', visitId, checkOutTime: now.toISOString(), source });
     } catch (error) {
         next(error);
     }

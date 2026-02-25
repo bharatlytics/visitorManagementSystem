@@ -73,6 +73,38 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
                 user: '',
                 password: '',
                 fromEmail: ''
+            },
+            integrations: {
+                whatsappEnabled: false,
+                whatsappPhoneId: '',
+                whatsappApiKey: '',
+                whatsappBusinessAccountId: '',
+                smsEnabled: false,
+                smsProvider: 'twilio',
+                smsApiKey: '',
+                smsSenderId: '',
+                webhookEnabled: false,
+                webhookUrl: '',
+                webhookSecret: '',
+                webhookEvents: ['check_in', 'check_out', 'visitor_registered']
+            },
+            kiosk: {
+                welcomeMessage: 'Welcome! Please check in.',
+                primaryColor: '#1976d2',
+                logoUrl: '',
+                autoLogoutMinutes: 2,
+                allowedVisitTypes: ['general', 'contractor', 'interview'],
+                requirePhotoOnKiosk: true,
+                showHostDirectory: true,
+                enableSelfCheckIn: true
+            },
+            compliance: {
+                gdprEnabled: false,
+                gdprConsentText: 'By checking in, you agree to our privacy policy and data handling practices.',
+                dataRetentionDays: 365,
+                autoAnonymize: false,
+                auditLogging: true,
+                exportDataFormat: 'csv'
             }
         };
 
@@ -104,7 +136,7 @@ router.put('/', requireCompanyAccess, async (req, res, next) => {
             lastUpdated: new Date()
         };
 
-        const settingsCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp'];
+        const settingsCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp', 'integrations', 'kiosk', 'compliance'];
         for (const category of settingsCategories) {
             if (data[category]) {
                 updateFields[category] = data[category];
@@ -137,7 +169,7 @@ router.get('/:category', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp'];
+        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp', 'integrations', 'kiosk', 'compliance'];
         if (!validCategories.includes(category)) {
             return res.status(400).json({ error: `Invalid category. Valid categories: ${validCategories.join(', ')}` });
         }
@@ -172,7 +204,7 @@ router.patch('/:category', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: 'Company ID is required.' });
         }
 
-        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp'];
+        const validCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp', 'integrations', 'kiosk', 'compliance'];
         if (!validCategories.includes(category)) {
             return res.status(400).json({ error: `Invalid category. Valid categories: ${validCategories.join(', ')}` });
         }

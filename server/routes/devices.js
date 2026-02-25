@@ -51,28 +51,64 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
             return res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
         }
 
+        const companyObjId = isValidObjectId(data.companyId) ? new ObjectId(data.companyId) : data.companyId;
+
+        // Prevent duplicate device names within same company
+        const companyQuery = isValidObjectId(data.companyId)
+            ? { $or: [{ companyId: new ObjectId(data.companyId) }, { companyId: data.companyId }] }
+            : { companyId: data.companyId };
+        const existing = await collections.devices().findOne({
+            ...companyQuery,
+            deviceName: data.deviceName,
+            status: { $ne: 'inactive' },
+        });
+        if (existing) {
+            return res.status(409).json({ error: `A device named "${data.deviceName}" already exists.` });
+        }
+
+        // Validate IP address if provided
+        if (data.ipAddress && !/^(\d{1,3}\.){3}\d{1,3}$/.test(data.ipAddress)) {
+            return res.status(400).json({ error: 'Invalid IP address format (expected x.x.x.x)' });
+        }
+
         const deviceDoc = {
             _id: new ObjectId(),
-            companyId: isValidObjectId(data.companyId) ? new ObjectId(data.companyId) : data.companyId,
+            companyId: companyObjId,
             deviceId: data.deviceId || `DEV-${Date.now()}`,
             deviceName: data.deviceName,
             deviceType: data.deviceType || 'kiosk',
             location: data.location || null,
             locationId: data.locationId ? new ObjectId(data.locationId) : null,
+            ipAddress: data.ipAddress || null,
+            firmwareVersion: data.firmwareVersion || null,
+            osVersion: data.osVersion || null,
+            zone: data.zone || null,
+            notes: data.notes || null,
             status: 'active',
+            locked: false,
             lastSeen: new Date(),
             capabilities: data.capabilities || ['face_recognition', 'qr_scan'],
+            accessControl: data.accessControl || {
+                allowedZones: [],
+                allowedVisitorTypes: [],
+                maxConcurrentVisitors: 50,
+                operatingHours: null,
+                requireApproval: false,
+                allowWalkIns: true,
+            },
             config: data.config || {},
+            fcmToken: null,
+            fcmTokenUpdatedAt: null,
+            activatedAt: null,
             createdAt: new Date(),
             lastUpdated: new Date()
         };
 
-        const result = await collections.devices().insertOne(deviceDoc);
+        await collections.devices().insertOne(deviceDoc);
 
         res.status(201).json({
             message: 'Device registered successfully',
-            _id: result.insertedId.toString(),
-            deviceId: deviceDoc.deviceId
+            device: convertObjectIds(deviceDoc),
         });
     } catch (error) {
         console.error('Error registering device:', error);
@@ -94,7 +130,10 @@ router.put('/:device_id', requireCompanyAccess, async (req, res, next) => {
         }
 
         const updateFields = {};
-        const allowedFields = ['deviceName', 'deviceType', 'location', 'locationId', 'status', 'capabilities', 'config'];
+        const allowedFields = [
+            'deviceName', 'deviceType', 'location', 'locationId', 'status', 'capabilities', 'config',
+            'accessControl', 'ipAddress', 'firmwareVersion', 'osVersion', 'zone', 'notes', 'locked'
+        ];
 
         for (const field of allowedFields) {
             if (data[field] !== undefined) {
@@ -152,6 +191,90 @@ router.delete('/:device_id', requireCompanyAccess, async (req, res, next) => {
         res.json({ message: 'Device deactivated successfully' });
     } catch (error) {
         console.error('Error deactivating device:', error);
+        next(error);
+    }
+});
+
+/**
+ * PATCH /api/devices/:device_id/status
+ * Quick status change (active / maintenance / inactive)
+ */
+router.patch('/:device_id/status', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { device_id } = req.params;
+        const { status } = req.body;
+
+        if (!isValidObjectId(device_id)) {
+            return res.status(400).json({ error: 'Invalid device ID format' });
+        }
+
+        const validStatuses = ['active', 'inactive', 'maintenance'];
+        if (!status || !validStatuses.includes(status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        }
+
+        const result = await collections.devices().updateOne(
+            { _id: new ObjectId(device_id) },
+            { $set: { status, lastUpdated: new Date() } }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        res.json({ message: `Device status changed to ${status}` });
+    } catch (error) {
+        console.error('Error changing device status:', error);
+        next(error);
+    }
+});
+
+/**
+ * POST /api/devices/:device_id/send-notification
+ * Send a push notification to a device via its FCM token.
+ * Body: { title, body, data }
+ */
+router.post('/:device_id/send-notification', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { device_id } = req.params;
+        const { title, body: notifBody, data } = req.body;
+
+        if (!isValidObjectId(device_id)) {
+            return res.status(400).json({ error: 'Invalid device ID format' });
+        }
+
+        const device = await collections.devices().findOne({ _id: new ObjectId(device_id) });
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+        if (!device.fcmToken) {
+            return res.status(400).json({ error: 'Device has no FCM token registered. Ensure the device app has called /api/device-api/fcm-token.' });
+        }
+
+        // Store the notification as a pending command (device picks up via heartbeat or push)
+        const commandDoc = {
+            _id: new ObjectId(),
+            deviceId: device._id,
+            command: 'notification',
+            params: { title: title || 'VMS', body: notifBody || '', data: data || {} },
+            status: 'pending',
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiry
+        };
+        await collections.deviceCommands().insertOne(commandDoc);
+
+        // FCM push would go here in production (firebase-admin SDK)
+        // For now, we store the command and the device picks it up via heartbeat
+        console.log(`[Devices] Notification queued for ${device.deviceName} (FCM: ${device.fcmToken.substring(0, 12)}...)`);
+
+        res.json({
+            message: 'Notification queued for device',
+            commandId: commandDoc._id.toString(),
+            deviceName: device.deviceName,
+            fcmTokenRegistered: true,
+        });
+    } catch (error) {
+        console.error('Error sending notification:', error);
         next(error);
     }
 });

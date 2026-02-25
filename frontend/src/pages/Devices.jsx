@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Search, Monitor, Tablet, Smartphone, Laptop, MapPin, Wifi, WifiOff, Settings, Trash2, Eye, RefreshCw, X, QrCode, Clock, CheckCircle, AlertTriangle, Power, Edit, RotateCcw, Lock, Unlock, Camera, Download, Send, ChevronDown, ChevronRight, Copy, ExternalLink, Wrench, History } from 'lucide-react'
+import { Plus, Search, Monitor, Tablet, Smartphone, Laptop, MapPin, Wifi, WifiOff, Settings, Trash2, Eye, RefreshCw, X, QrCode, Clock, CheckCircle, AlertTriangle, Power, Edit, RotateCcw, Lock, Unlock, Camera, Download, Send, ChevronDown, ChevronRight, Copy, ExternalLink, Wrench, History, Globe, Cpu, HardDrive, FileText } from 'lucide-react'
+import QRCodeLib from 'qrcode'
 import api from '../api/client'
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -76,18 +77,49 @@ export default function Devices() {
     // Edit form
     const [editForm, setEditForm] = useState({ deviceName: '', deviceType: 'kiosk', location: '', capabilities: '' })
 
-    // Register form
-    const [registerForm, setRegisterForm] = useState({ deviceName: '', deviceType: 'kiosk', location: '' })
+    // Register form (expanded)
+    const [registerForm, setRegisterForm] = useState({
+        deviceName: '', deviceType: 'kiosk', location: '',
+        ipAddress: '', firmwareVersion: '', osVersion: '',
+        capabilities: ['face_recognition', 'qr_scan'],
+        zone: '', notes: ''
+    })
 
     // QR
     const [qrData, setQrData] = useState(null)
+    const [qrImageUrl, setQrImageUrl] = useState(null)
     const [qrLoading, setQrLoading] = useState(false)
+    const [qrDeviceName, setQrDeviceName] = useState('')
+    const [qrDeviceType, setQrDeviceType] = useState('kiosk')
+    const [deviceQrUrl, setDeviceQrUrl] = useState(null)
+    const [showQrFullscreen, setShowQrFullscreen] = useState(false)
 
     // Commands
     const [commandHistory, setCommandHistory] = useState([])
+    const [loadingCommands, setLoadingCommands] = useState(false)
     const [sendingCommand, setSendingCommand] = useState(null)
 
     const companyId = localStorage.getItem('vms_company_id')
+
+    // Generate a deterministic QR image for a device (same deviceId = same QR always)
+    const generateDeviceQR = async (device) => {
+        try {
+            const payload = JSON.stringify({
+                action: 'device_activate',
+                deviceId: device.deviceId || device._id,
+                companyId: device.companyId || companyId,
+                apiBase: window.location.origin + '/api/device-api',
+            })
+            const url = await QRCodeLib.toDataURL(payload, {
+                width: 300, margin: 2,
+                color: { dark: '#1a1a2e', light: '#ffffff' },
+                errorCorrectionLevel: 'H'
+            })
+            setDeviceQrUrl(url)
+        } catch (err) {
+            console.error('QR generation error:', err)
+        }
+    }
 
     // ─── Data Fetching ────────────────────────────────────────────
 
@@ -124,9 +156,33 @@ export default function Devices() {
     const handleRegister = async (e) => {
         e.preventDefault()
         try {
-            await api.post('/devices/register', { ...registerForm })
+            const companyId = localStorage.getItem('vms_company_id')
+            const res = await api.post('/devices/register', {
+                companyId,
+                deviceName: registerForm.deviceName,
+                deviceType: registerForm.deviceType,
+                location: registerForm.location,
+                ipAddress: registerForm.ipAddress || undefined,
+                firmwareVersion: registerForm.firmwareVersion || undefined,
+                osVersion: registerForm.osVersion || undefined,
+                capabilities: registerForm.capabilities,
+                zone: registerForm.zone || undefined,
+                notes: registerForm.notes || undefined,
+            })
             setShowRegister(false)
-            setRegisterForm({ deviceName: '', deviceType: 'kiosk', location: '' })
+            // Show QR for newly registered device
+            const newDevice = res.data.device || res.data
+            if (newDevice) {
+                setSelectedDevice({ ...newDevice, deviceName: registerForm.deviceName, deviceType: registerForm.deviceType, companyId })
+                generateDeviceQR({ ...newDevice, deviceName: registerForm.deviceName, deviceType: registerForm.deviceType, companyId })
+                setShowDetail(true)
+            }
+            setRegisterForm({
+                deviceName: '', deviceType: 'kiosk', location: '',
+                ipAddress: '', firmwareVersion: '', osVersion: '',
+                capabilities: ['face_recognition', 'qr_scan'],
+                zone: '', notes: ''
+            })
             fetchData()
         } catch (err) {
             alert('Error registering device: ' + (err.response?.data?.error || err.message))
@@ -139,10 +195,26 @@ export default function Devices() {
         try {
             setQrLoading(true)
             const res = await api.post('/devices/qr-code', {
-                deviceType: 'kiosk',
+                deviceType: qrDeviceType,
+                deviceName: qrDeviceName || undefined,
                 expiresInHours: 24
             })
             setQrData(res.data)
+
+            // Generate actual scannable QR image
+            const payload = JSON.stringify(res.data.qrPayload || {
+                activationUrl: res.data.activationUrl,
+                code: res.data.code,
+                deviceName: qrDeviceName,
+                deviceType: qrDeviceType,
+            })
+            const url = await QRCodeLib.toDataURL(payload, {
+                width: 280,
+                margin: 2,
+                color: { dark: '#1a1a2e', light: '#ffffff' },
+                errorCorrectionLevel: 'H'
+            })
+            setQrImageUrl(url)
             setShowQR(true)
         } catch (err) {
             alert('Error generating QR code: ' + (err.response?.data?.error || err.message))
@@ -414,40 +486,106 @@ export default function Devices() {
             )}
 
             {/* ─── Register Device Modal ───────────────────────────── */}
-            <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register New Device" size="medium">
-                <form onSubmit={handleRegister} className="p-5 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Name *</label>
-                        <input type="text" required value={registerForm.deviceName}
-                            onChange={e => setRegisterForm(f => ({ ...f, deviceName: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                            placeholder="e.g., Lobby Kiosk 1" />
+            <Modal isOpen={showRegister} onClose={() => setShowRegister(false)} title="Register New Device" size="large">
+                <form onSubmit={handleRegister} className="p-5 space-y-5">
+                    {/* Basic Info */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Device Name *</label>
+                            <input type="text" required value={registerForm.deviceName}
+                                onChange={e => setRegisterForm(f => ({ ...f, deviceName: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                placeholder="e.g., Lobby Kiosk 1" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Device Type</label>
+                            <select value={registerForm.deviceType}
+                                onChange={e => setRegisterForm(f => ({ ...f, deviceType: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                                <option value="kiosk">Kiosk</option>
+                                <option value="tablet">Tablet</option>
+                                <option value="phone">Phone</option>
+                                <option value="laptop">Laptop</option>
+                                <option value="camera">Camera</option>
+                                <option value="gate">Gate Controller</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Location / Zone</label>
+                            <input type="text" value={registerForm.location}
+                                onChange={e => setRegisterForm(f => ({ ...f, location: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                placeholder="e.g., Main Entrance" />
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Type</label>
-                        <select value={registerForm.deviceType}
-                            onChange={e => setRegisterForm(f => ({ ...f, deviceType: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
-                            <option value="kiosk">Kiosk</option>
-                            <option value="tablet">Tablet</option>
-                            <option value="phone">Phone</option>
-                            <option value="laptop">Laptop</option>
-                        </select>
+
+                    {/* Network & System */}
+                    <div className="border-t border-gray-100 pt-4">
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Network & System</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">IP Address</label>
+                                <input type="text" value={registerForm.ipAddress}
+                                    onChange={e => setRegisterForm(f => ({ ...f, ipAddress: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="192.168.1.100" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Firmware Version</label>
+                                <input type="text" value={registerForm.firmwareVersion}
+                                    onChange={e => setRegisterForm(f => ({ ...f, firmwareVersion: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="v1.3.0" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">OS Version</label>
+                                <input type="text" value={registerForm.osVersion}
+                                    onChange={e => setRegisterForm(f => ({ ...f, osVersion: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="Android 14" />
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                        <input type="text" value={registerForm.location}
-                            onChange={e => setRegisterForm(f => ({ ...f, location: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                            placeholder="e.g., Main Entrance" />
+
+                    {/* Capabilities */}
+                    <div className="border-t border-gray-100 pt-4">
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Capabilities</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                            {['face_recognition', 'qr_scan', 'nfc', 'printer', 'badge_reader', 'temperature_check'].map(cap => (
+                                <label key={cap} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer text-sm">
+                                    <input type="checkbox"
+                                        checked={registerForm.capabilities.includes(cap)}
+                                        onChange={e => {
+                                            setRegisterForm(f => ({
+                                                ...f,
+                                                capabilities: e.target.checked
+                                                    ? [...f.capabilities, cap]
+                                                    : f.capabilities.filter(c => c !== cap)
+                                            }))
+                                        }}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                    <span className="text-gray-700">{cap.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
-                    <div className="flex justify-end gap-2 pt-2">
+
+                    {/* Notes */}
+                    <div className="border-t border-gray-100 pt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea value={registerForm.notes}
+                            onChange={e => setRegisterForm(f => ({ ...f, notes: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                            rows={2} placeholder="Additional notes about this device..." />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
                         <button type="button" onClick={() => setShowRegister(false)}
                             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
                             Cancel
                         </button>
                         <button type="submit"
-                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm">
+                            className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm">
                             Register Device
                         </button>
                     </div>
@@ -455,21 +593,58 @@ export default function Devices() {
             </Modal>
 
             {/* ─── QR Code Modal ────────────────────────────────────── */}
-            <Modal isOpen={showQR} onClose={() => setShowQR(false)} title="Device Registration QR Code" size="medium">
-                {qrData && (
+            <Modal isOpen={showQR} onClose={() => { setShowQR(false); setQrData(null); setQrImageUrl(null) }} title="Device Registration QR Code" size="medium">
+                {!qrData ? (
+                    <div className="p-5 space-y-4">
+                        <p className="text-sm text-gray-500">Generate a device-specific QR code. The device scans this to auto-register and onboard instantly.</p>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Device Name (optional)</label>
+                            <input type="text" value={qrDeviceName}
+                                onChange={e => setQrDeviceName(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                placeholder="e.g., Reception Tablet" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Device Type</label>
+                            <select value={qrDeviceType}
+                                onChange={e => setQrDeviceType(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <option value="kiosk">Kiosk</option>
+                                <option value="tablet">Tablet</option>
+                                <option value="phone">Phone</option>
+                                <option value="laptop">Laptop</option>
+                            </select>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setShowQR(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+                                Cancel
+                            </button>
+                            <button onClick={generateQR} disabled={qrLoading}
+                                className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                {qrLoading ? <Clock className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+                                {qrLoading ? 'Generating...' : 'Generate QR Code'}
+                            </button>
+                        </div>
+                    </div>
+                ) : (
                     <div className="p-5 text-center">
-                        {/* QR Code Display (rendered as data URL) */}
+                        {/* Actual scannable QR image */}
                         <div className="bg-gray-50 rounded-xl p-6 mb-4 inline-block">
-                            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 inline-block">
-                                {/* Simple QR representation using the qrString */}
-                                <div className="w-48 h-48 flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-700 rounded-lg">
-                                    <QrCode className="w-20 h-20 text-white" />
-                                </div>
+                            <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 inline-block">
+                                {qrImageUrl ? (
+                                    <img src={qrImageUrl} alt="QR Code" className="w-56 h-56" />
+                                ) : (
+                                    <div className="w-56 h-56 flex items-center justify-center">
+                                        <Clock className="w-8 h-8 text-gray-300 animate-spin" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         <h4 className="font-semibold text-gray-900 mb-1">Scan to Register Device</h4>
-                        <p className="text-sm text-gray-500 mb-4">Point the device's camera at this code to auto-register</p>
+                        <p className="text-sm text-gray-500 mb-1">Point the device's camera at this QR code</p>
+                        {qrDeviceName && <p className="text-xs text-blue-600 font-medium mb-3">For: {qrDeviceName} ({qrDeviceType})</p>}
 
                         {/* Activation Code */}
                         <div className="bg-gray-50 rounded-lg p-3 flex items-center justify-between mb-3">
@@ -477,16 +652,30 @@ export default function Devices() {
                                 <p className="text-xs text-gray-500">Activation Code</p>
                                 <p className="font-mono font-semibold text-gray-900">{qrData.code}</p>
                             </div>
-                            <button onClick={copyQRCode} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                            <button onClick={copyQRCode} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Copy code">
                                 <Copy className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* Expiry */}
-                        <p className="text-xs text-gray-400 flex items-center justify-center gap-1">
+                        <p className="text-xs text-gray-400 flex items-center justify-center gap-1 mb-3">
                             <Clock className="w-3 h-3" />
                             Expires: {formatDate(qrData.expiresAt)}
                         </p>
+
+                        {/* Actions */}
+                        <div className="flex justify-center gap-2">
+                            <button onClick={() => { setQrData(null); setQrImageUrl(null) }}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+                                Generate New
+                            </button>
+                            {qrImageUrl && (
+                                <a href={qrImageUrl} download={`device-qr-${qrData.code}.png`}
+                                    className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 flex items-center gap-1.5">
+                                    <Download className="w-4 h-4" /> Download QR
+                                </a>
+                            )}
+                        </div>
 
                         {/* QR Payload (collapsible) */}
                         <details className="mt-4 text-left">
@@ -500,7 +689,7 @@ export default function Devices() {
             </Modal>
 
             {/* ─── Device Detail Modal ──────────────────────────────── */}
-            <Modal isOpen={showDetail && selectedDevice} onClose={() => setShowDetail(false)} title={selectedDevice?.deviceName || 'Device Details'} size="large">
+            <Modal isOpen={showDetail && selectedDevice} onClose={() => { setShowDetail(false); setDeviceQrUrl(null) }} title={selectedDevice?.deviceName || 'Device Details'} size="large">
                 {selectedDevice && (
                     <div className="p-5">
                         {/* Status Header */}
@@ -544,6 +733,83 @@ export default function Devices() {
                                     {selectedDevice.capabilities.map(cap => (
                                         <span key={cap} className="px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-md">{cap.replace(/_/g, ' ')}</span>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Device QR Code */}
+                        <div className="border-t border-gray-100 pt-4 mb-5">
+                            <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <QrCode className="w-4 h-4" /> Device QR Code
+                            </h4>
+                            <div className="flex items-center gap-4">
+                                {deviceQrUrl ? (
+                                    <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                                        onClick={() => setShowQrFullscreen(true)} title="Click to enlarge">
+                                        <img src={deviceQrUrl} alt="Device QR" className="w-32 h-32" />
+                                    </div>
+                                ) : (
+                                    <button onClick={() => generateDeviceQR(selectedDevice)}
+                                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+                                        <QrCode className="w-4 h-4" /> Generate QR Code
+                                    </button>
+                                )}
+                                <div className="text-xs text-gray-500 max-w-xs">
+                                    <p className="font-medium text-gray-700 mb-1">Scan to onboard this device</p>
+                                    <p>Point the device's camera at this QR code. The app will store the device ID and register for push notifications.</p>
+                                    {deviceQrUrl && (
+                                        <div className="flex gap-2 mt-2">
+                                            <button onClick={() => setShowQrFullscreen(true)}
+                                                className="text-blue-600 hover:underline flex items-center gap-1">
+                                                <Eye className="w-3 h-3" /> Enlarge
+                                            </button>
+                                            <a href={deviceQrUrl} download={`qr-${selectedDevice.deviceId || selectedDevice._id}.png`}
+                                                className="text-blue-600 hover:underline flex items-center gap-1">
+                                                <Download className="w-3 h-3" /> Download
+                                            </a>
+                                            <button onClick={() => { setDeviceQrUrl(null); generateDeviceQR(selectedDevice) }}
+                                                className="text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                                                <RefreshCw className="w-3 h-3" /> Regenerate
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Access Control */}
+                        {selectedDevice.accessControl && (
+                            <div className="border-t border-gray-100 pt-4 mb-5">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                    <Lock className="w-4 h-4" /> Access Control
+                                </h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-50 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Walk-ins</p>
+                                        <p className="text-sm font-medium text-gray-900 mt-0.5">{selectedDevice.accessControl.allowWalkIns !== false ? 'Allowed' : 'Not allowed'}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Max Concurrent</p>
+                                        <p className="text-sm font-medium text-gray-900 mt-0.5">{selectedDevice.accessControl.maxConcurrentVisitors || 50}</p>
+                                    </div>
+                                    {selectedDevice.accessControl.operatingHours && (
+                                        <div className="bg-gray-50 rounded-lg p-3 col-span-2">
+                                            <p className="text-xs text-gray-500">Operating Hours</p>
+                                            <p className="text-sm font-medium text-gray-900 mt-0.5">
+                                                {selectedDevice.accessControl.operatingHours.start || '00:00'} — {selectedDevice.accessControl.operatingHours.end || '23:59'}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {selectedDevice.accessControl.allowedZones?.length > 0 && (
+                                        <div className="bg-gray-50 rounded-lg p-3 col-span-2">
+                                            <p className="text-xs text-gray-500 mb-1">Allowed Zones</p>
+                                            <div className="flex flex-wrap gap-1">
+                                                {selectedDevice.accessControl.allowedZones.map(z => (
+                                                    <span key={z} className="px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-md">{z}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -676,6 +942,37 @@ export default function Devices() {
                     )}
                 </div>
             </Modal>
+
+            {/* ─── Fullscreen QR Modal ────────────────────────────────── */}
+            {showQrFullscreen && deviceQrUrl && (
+                <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center" onClick={() => setShowQrFullscreen(false)}>
+                    <div className="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">{selectedDevice?.deviceName || 'Device QR'}</h3>
+                        <p className="text-sm text-gray-500 mb-4">{selectedDevice?.deviceId}</p>
+                        <div className="bg-gray-50 p-4 rounded-xl mb-4">
+                            <img src={deviceQrUrl} alt="Device QR Code" className="w-80 h-80" />
+                        </div>
+                        <p className="text-xs text-gray-400 mb-4 text-center">Scan this with the VMS app to activate this device</p>
+                        <div className="flex gap-3">
+                            <a href={deviceQrUrl} download={`qr-${selectedDevice?.deviceId || 'device'}.png`}
+                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                                <Download className="w-4 h-4" /> Download
+                            </a>
+                            <button onClick={() => {
+                                const win = window.open('', '_blank')
+                                win.document.write(`<html><body style="display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;"><img src="${deviceQrUrl}" style="width:400px;height:400px;" /><script>window.print()<\/script></body></html>`)
+                            }}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center gap-2">
+                                <FileText className="w-4 h-4" /> Print
+                            </button>
+                            <button onClick={() => setShowQrFullscreen(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center gap-2">
+                                <X className="w-4 h-4" /> Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

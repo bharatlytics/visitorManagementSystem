@@ -62,6 +62,7 @@ router.get('/config', async (req, res) => {
                 status: device.status,
                 capabilities: device.capabilities || [],
                 config: device.config || {},
+                accessControl: device.accessControl || {},
                 locked: device.locked || false,
             },
             company: company ? {
@@ -177,14 +178,35 @@ router.post('/visits/:visitId/check-in', async (req, res) => {
         }
 
         const now = new Date();
+        const source = {
+            type: 'device',
+            deviceId: req.device._id?.toString(),
+            deviceName: req.device.deviceName,
+            cctvId: null,
+            serverId: null,
+            userId: null,
+        };
+
+        // Access control validation
+        const ac = req.device.accessControl || {};
+        if (ac.operatingHours) {
+            const hours = now.getHours();
+            const mins = now.getMinutes();
+            const currentTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+            if (ac.operatingHours.start && ac.operatingHours.end) {
+                if (currentTime < ac.operatingHours.start || currentTime > ac.operatingHours.end) {
+                    return res.status(403).json({ error: 'Device is outside operating hours' });
+                }
+            }
+        }
+
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
             {
                 $set: {
                     status: 'checked_in',
                     checkInTime: now,
-                    checkInDeviceId: req.device._id,
-                    checkInDeviceName: req.device.deviceName,
+                    source,
                     lastUpdated: now,
                 }
             }
@@ -195,7 +217,7 @@ router.post('/visits/:visitId/check-in', async (req, res) => {
             message: 'Check-in successful',
             visitId,
             checkInTime: now.toISOString(),
-            deviceName: req.device.deviceName,
+            source,
         });
     } catch (error) {
         console.error('[DeviceAPI] Check-in error:', error);
@@ -228,6 +250,14 @@ router.post('/visits/:visitId/check-out', async (req, res) => {
         const checkInTime = visit.checkInTime ? new Date(visit.checkInTime) : now;
         const durationMs = now - checkInTime;
         const durationMinutes = Math.round(durationMs / 60000);
+        const source = {
+            type: 'device',
+            deviceId: req.device._id?.toString(),
+            deviceName: req.device.deviceName,
+            cctvId: null,
+            serverId: null,
+            userId: null,
+        };
 
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
@@ -235,8 +265,7 @@ router.post('/visits/:visitId/check-out', async (req, res) => {
                 $set: {
                     status: 'checked_out',
                     checkOutTime: now,
-                    checkOutDeviceId: req.device._id,
-                    checkOutDeviceName: req.device.deviceName,
+                    source,
                     duration: durationMinutes,
                     lastUpdated: now,
                 }
@@ -249,7 +278,7 @@ router.post('/visits/:visitId/check-out', async (req, res) => {
             visitId,
             checkOutTime: now.toISOString(),
             duration: durationMinutes,
-            deviceName: req.device.deviceName,
+            source,
         });
     } catch (error) {
         console.error('[DeviceAPI] Check-out error:', error);
@@ -330,6 +359,7 @@ router.post('/visitors/register', upload.fields([
             blacklisted: false,
             registeredByDevice: req.device._id,
             registeredByDeviceName: req.device.deviceName,
+            source: { type: 'device', deviceId: req.device._id?.toString(), deviceName: req.device.deviceName },
             visitorImages: Object.keys(imageDict).length > 0 ? imageDict : undefined,
             createdAt: new Date(),
             lastUpdated: new Date(),
@@ -353,6 +383,7 @@ router.post('/visitors/register', upload.fields([
                 checkInTime: data.autoCheckIn ? new Date() : null,
                 checkInDeviceId: data.autoCheckIn ? req.device._id : null,
                 checkInDeviceName: data.autoCheckIn ? req.device.deviceName : null,
+                source: data.autoCheckIn ? { type: 'device', deviceId: req.device._id?.toString(), deviceName: req.device.deviceName } : null,
                 createdAt: new Date(),
                 lastUpdated: new Date(),
             };
@@ -513,6 +544,125 @@ router.post('/heartbeat', async (req, res) => {
     } catch (error) {
         console.error('[DeviceAPI] Heartbeat error:', error);
         res.status(500).json({ error: 'Heartbeat failed' });
+    }
+});
+
+// ─── Device Activation (QR Scan Onboarding) ───────────────────────
+
+/**
+ * POST /api/device-api/activate
+ * Device scans QR code containing { deviceId }, calls this to verify and get config.
+ * No device auth needed — this IS the onboarding step.
+ */
+router.post('/activate', async (req, res) => {
+    try {
+        const { deviceId, osVersion, firmwareVersion, ipAddress, fcmToken,
+            batteryLevel, appVersion, model, manufacturer } = req.body;
+        if (!deviceId) {
+            return res.status(400).json({ error: 'deviceId is required' });
+        }
+
+        // Find device by deviceId string or ObjectId
+        let device = null;
+        if (isValidObjectId(deviceId)) {
+            device = await collections.devices().findOne({ _id: new ObjectId(deviceId) });
+        }
+        if (!device) {
+            device = await collections.devices().findOne({ deviceId });
+        }
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found. Please register it from the admin panel first.' });
+        }
+        if (device.status === 'inactive') {
+            return res.status(403).json({ error: 'Device has been deactivated.' });
+        }
+
+        // Build update with all provided device info
+        const updateFields = {
+            activatedAt: new Date(),
+            lastSeen: new Date(),
+            status: 'active',
+        };
+        if (osVersion) updateFields.osVersion = osVersion;
+        if (firmwareVersion) updateFields.firmwareVersion = firmwareVersion;
+        if (ipAddress) updateFields.ipAddress = ipAddress;
+        if (batteryLevel !== undefined) updateFields.batteryLevel = batteryLevel;
+        if (appVersion) updateFields.appVersion = appVersion;
+        if (model) updateFields.model = model;
+        if (manufacturer) updateFields.manufacturer = manufacturer;
+
+        // Register FCM token in the same call (no need for separate /fcm-token)
+        if (fcmToken) {
+            updateFields.fcmToken = fcmToken;
+            updateFields.fcmTokenUpdatedAt = new Date();
+        }
+
+        await collections.devices().updateOne(
+            { _id: device._id },
+            { $set: updateFields }
+        );
+
+        // Get company info
+        let company = null;
+        try {
+            const cid = device.companyId;
+            if (isValidObjectId(cid)) {
+                company = await collections.companies().findOne({ _id: new ObjectId(cid) });
+            }
+            if (!company) company = await collections.companies().findOne({ _id: cid });
+        } catch (e) { /* ignore */ }
+
+        console.log(`[DeviceAPI] Device activated: ${device.deviceName} (${device.deviceId}) OS=${osVersion || '-'} FCM=${fcmToken ? 'registered' : 'not provided'}`);
+
+        res.json({
+            status: 'success',
+            message: 'Device activated successfully',
+            device: {
+                _id: device._id.toString(),
+                deviceId: device.deviceId,
+                deviceName: device.deviceName,
+                deviceType: device.deviceType,
+                location: device.location,
+                capabilities: device.capabilities || [],
+                accessControl: device.accessControl || {},
+            },
+            company: company ? { name: company.name, logo: company.logo || null } : null,
+            apiBase: '/api/device-api',
+            fcmRegistered: Boolean(fcmToken),
+        });
+    } catch (error) {
+        console.error('[DeviceAPI] Activation error:', error);
+        res.status(500).json({ error: 'Activation failed' });
+    }
+});
+
+// ─── FCM Token Registration ───────────────────────────────────────
+
+/**
+ * POST /api/device-api/fcm-token
+ * Device registers/updates its FCM token for push notifications.
+ * Server uses this token to send remote commands via FCM.
+ */
+router.post('/fcm-token', requireDeviceAuth, async (req, res) => {
+    try {
+        const { fcmToken } = req.body;
+        if (!fcmToken) {
+            return res.status(400).json({ error: 'fcmToken is required' });
+        }
+
+        await collections.devices().updateOne(
+            { _id: req.device._id },
+            { $set: { fcmToken, fcmTokenUpdatedAt: new Date(), lastSeen: new Date() } }
+        );
+
+        res.json({
+            status: 'success',
+            message: 'FCM token registered',
+            deviceId: req.device.deviceId,
+        });
+    } catch (error) {
+        console.error('[DeviceAPI] FCM token error:', error);
+        res.status(500).json({ error: 'Failed to register FCM token' });
     }
 });
 

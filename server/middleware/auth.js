@@ -264,6 +264,12 @@ async function requireDeviceAuth(req, res, next) {
         if (device.status === 'inactive') {
             return res.status(403).json({ error: 'Device has been deactivated.' });
         }
+        if (device.status === 'maintenance') {
+            return res.status(403).json({ error: 'Device is in maintenance mode.' });
+        }
+        if (device.locked === true) {
+            return res.status(403).json({ error: 'Device is locked. Contact administrator.' });
+        }
 
         // Update lastSeen on every authenticated request
         collections.devices().updateOne(
