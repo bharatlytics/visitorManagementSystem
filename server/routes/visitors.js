@@ -131,15 +131,16 @@ async function syncVisitorToPlatform(visitorData, companyId, includeImages = tru
 /**
  * Check if visitor has overlapping visit
  */
-async function hasOverlappingVisit(visitorId, newStart, newEnd) {
+async function hasOverlappingVisit(visitorId, companyId, hostEmployeeId, newStart, newEnd) {
     const overlap = await collections.visits().findOne({
         visitorId: new ObjectId(visitorId),
-        status: { $in: ['scheduled', 'checked_in'] },
-        $or: [
-            { expectedArrival: { $lt: newEnd }, expectedDeparture: { $gt: newStart } }
-        ]
+        companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId,
+        hostEmployeeId: isValidObjectId(hostEmployeeId) ? new ObjectId(hostEmployeeId) : hostEmployeeId,
+        status: { $in: ['scheduled', 'checked_in', 'pending_approval'] },
+        expectedArrival: { $lte: newEnd },
+        expectedDeparture: { $gte: newStart }
     });
-    return overlap !== null;
+    return overlap;
 }
 
 /**
@@ -1290,9 +1291,15 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
         const arrival = new Date(data.expectedArrival);
         const departure = new Date(data.expectedDeparture || data.expectedArrival);
 
-        // Check for overlapping visit
-        if (await hasOverlappingVisit(visitorId, arrival, departure)) {
-            return res.status(409).json({ status: 'error', error: 'Visitor already has an overlapping visit.' });
+        // Check for exact duplicate or overlapping visit (same visitor + host + company + time)
+        const existingVisit = await hasOverlappingVisit(visitorId, data.companyId, data.hostEmployeeId, arrival, departure);
+        if (existingVisit) {
+            const existingResponse = convertObjectIds(existingVisit);
+            return res.status(409).json({
+                status: 'error',
+                error: 'Visitor already has an overlapping or duplicate visit.',
+                existingVisit: existingResponse
+            });
         }
 
         // Use DataProvider for residency-aware lookups
