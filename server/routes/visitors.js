@@ -1298,7 +1298,7 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             return res.status(409).json({
                 status: 'error',
                 error: 'Visitor already has an overlapping or duplicate visit.',
-                existingVisit: existingResponse
+                visit: existingResponse
             });
         }
 
