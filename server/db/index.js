@@ -120,6 +120,7 @@ const collections = {
     approvalTokens: () => getCollection('approval_tokens'),
     activationCodes: () => getCollection('activationCodes'),
     deviceCommands: () => getCollection('deviceCommands'),
+    reports: () => getCollection('reports'),
 };
 
 /**

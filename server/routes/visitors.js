@@ -186,15 +186,6 @@ function buildVisitorDoc(data, imageDict, embeddingsDict, documentDict) {
  * This way, what user sees in the form is what appears in the database
  */
 function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedArrival, expectedDeparture, options = {}) {
-    // Helper to preserve local time - add IST offset so DB shows same time as user entered
-    const preserveLocalTime = (dateInput) => {
-        if (!dateInput) return null;
-        const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-        // Add 5 hours 30 minutes to compensate for UTC conversion
-        const istOffset = 5.5 * 60 * 60 * 1000;
-        return new Date(date.getTime() + istOffset);
-    };
-
     const visitId = new ObjectId();
 
     return {
@@ -203,8 +194,8 @@ function buildVisitDoc(visitorId, companyId, hostEmployeeId, purpose, expectedAr
         companyId: companyId instanceof ObjectId ? companyId : new ObjectId(companyId),
         hostEmployeeId: hostEmployeeId instanceof ObjectId ? hostEmployeeId : new ObjectId(hostEmployeeId),
         purpose: purpose || '',
-        expectedArrival: preserveLocalTime(expectedArrival),
-        expectedDeparture: preserveLocalTime(expectedDeparture),
+        expectedArrival: expectedArrival instanceof Date ? expectedArrival : new Date(expectedArrival),
+        expectedDeparture: expectedDeparture ? (expectedDeparture instanceof Date ? expectedDeparture : new Date(expectedDeparture)) : (expectedArrival instanceof Date ? expectedArrival : new Date(expectedArrival)),
         actualArrival: null,
         actualDeparture: null,
         status: options.approved ? 'scheduled' : 'pending_approval',
@@ -1457,6 +1448,54 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
                         }
                     } else {
                         console.log('[schedule_visit] No host email - approval link generated without email');
+                    }
+
+                    // Step 5: Try FCM push notification (non-blocking — never breaks visit creation)
+                    approvalData.pushSent = false;
+                    try {
+                        const { sendApprovalNotification } = require('../services/fcm_service');
+                        const { createPlatformClient } = require('../services/platform_client');
+
+                        // Find the Platform user linked to this host employee (by email)
+                        let platformUserId = null;
+                        if (hostEmail) {
+                            const localUser = await collections.users().findOne(
+                                { email: hostEmail.toLowerCase() },
+                                { projection: { _id: 1, platformUserId: 1 } }
+                            );
+                            if (localUser) {
+                                // Prefer explicit platformUserId (set during local login auto-link)
+                                // Fall back to _id (which IS the Platform userId for SSO users)
+                                platformUserId = (localUser.platformUserId || localUser._id).toString();
+                            }
+                        }
+
+                        if (platformUserId) {
+                            const platformClient = createPlatformClient(data.companyId);
+                            const fcmTokens = await platformClient.getUserFcmTokens(platformUserId);
+
+                            if (fcmTokens && fcmTokens.length > 0) {
+                                const pushResult = await sendApprovalNotification(
+                                    fcmTokens,
+                                    {
+                                        visitId: visitId.toString(),
+                                        visitorName: visitor.visitorName,
+                                        purpose: data.purpose || 'Not specified',
+                                    },
+                                    approvalUrl,
+                                    platformClient,
+                                    platformUserId
+                                );
+                                approvalData.pushSent = pushResult.sent;
+                                console.log(`[schedule_visit] FCM push ${pushResult.sent ? 'sent' : 'skipped'} for visit ${visitId} (${fcmTokens.length} tokens)`);
+                            } else {
+                                console.log('[schedule_visit] No FCM tokens for host — push skipped');
+                            }
+                        } else {
+                            console.log('[schedule_visit] Host has no Platform user account — push skipped');
+                        }
+                    } catch (pushErr) {
+                        console.log('[schedule_visit] FCM push failed (non-blocking):', pushErr.message);
                     }
                 } else {
                     console.error(`[schedule_visit] Failed to create approval token: ${tokenResult.error}`);

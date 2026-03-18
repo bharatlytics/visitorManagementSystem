@@ -3,13 +3,14 @@
  * JWT authentication + Platform SSO matching Python auth/__init__.py
  */
 const jwt = require('jsonwebtoken');
+const { ObjectId } = require('mongodb');
 const Config = require('../config');
 const { collections } = require('../db');
 
 /**
  * Create JWT token with role
  */
-function createToken(userId, companyId, role = 'employee', expiresHours = 24, permissions = null) {
+function createToken(userId, companyId, role = 'employee', expiresHours = 24, permissions = null, userName = null) {
     const payload = {
         userId,
         companyId,
@@ -17,6 +18,10 @@ function createToken(userId, companyId, role = 'employee', expiresHours = 24, pe
         exp: Math.floor(Date.now() / 1000) + (expiresHours * 60 * 60),
         iat: Math.floor(Date.now() / 1000),
     };
+    // Embed user name for display purposes
+    if (userName) {
+        payload.userName = userName;
+    }
     // Embed granular RBAC permissions from Platform SSO
     if (permissions) {
         payload.permissions = permissions;
@@ -122,7 +127,7 @@ function requireAuth(req, res, next) {
  * Authentication + Authorization middleware
  * Validates that requested companyId matches the user's company from token
  */
-function requireCompanyAccess(req, res, next) {
+async function requireCompanyAccess(req, res, next) {
     // First authenticate
     const authHeader = req.headers.authorization;
     let token = null;
@@ -168,6 +173,16 @@ function requireCompanyAccess(req, res, next) {
                 }
             }
 
+            // Attach user info for platform service tokens
+            req.user = {
+                _id: 'platform-service',
+                id: 'platform-service',
+                name: req.session?.userName || platformPayload.userName || platformPayload.user_name || 'Platform Service',
+                email: req.session?.userEmail || platformPayload.userEmail || platformPayload.user_email || '',
+                role: 'admin',
+                companyId: platformPayload.company_id,
+            };
+
             return next();
         }
 
@@ -180,6 +195,65 @@ function requireCompanyAccess(req, res, next) {
     req.companyId = payload.companyId;
     req.userRole = payload.role || 'employee';
     req.tokenPayload = payload;
+
+    // Look up full user record from DB for req.user
+    try {
+        if (payload.userId && payload.userId !== 'platform-service') {
+            let userDoc = null;
+
+            // Try ObjectId lookup first
+            if (ObjectId.isValid(payload.userId)) {
+                userDoc = await collections.users().findOne(
+                    { _id: new ObjectId(payload.userId) },
+                    { projection: { password: 0 } }
+                );
+            }
+
+            // Fallback: try string-based _id (SSO users may store _id as string)
+            if (!userDoc) {
+                userDoc = await collections.users().findOne(
+                    { _id: payload.userId },
+                    { projection: { password: 0 } }
+                );
+            }
+
+            // Fallback: try platformUserId (SSO-linked users)
+            if (!userDoc) {
+                userDoc = await collections.users().findOne(
+                    { platformUserId: payload.userId },
+                    { projection: { password: 0 } }
+                );
+            }
+
+            if (userDoc) {
+                req.user = {
+                    _id: userDoc._id.toString(),
+                    id: userDoc._id.toString(),
+                    name: userDoc.name || userDoc.email || 'Unknown',
+                    email: userDoc.email || '',
+                    role: userDoc.role || payload.role || 'employee',
+                    companyId: userDoc.companyId?.toString() || payload.companyId,
+                };
+            } else {
+                console.log(`[CompanyAccess] User not found in DB for userId: ${payload.userId}`);
+            }
+        }
+    } catch (lookupErr) {
+        // Non-blocking — request proceeds even if user lookup fails
+        console.log(`[CompanyAccess] User lookup error: ${lookupErr.message}`);
+    }
+
+    // Fallback: if no DB user found, construct from token + session
+    if (!req.user) {
+        req.user = {
+            _id: payload.userId,
+            id: payload.userId,
+            name: payload.userName || req.session?.userName || 'Unknown User',
+            email: payload.userEmail || req.session?.userEmail || '',
+            role: payload.role || 'employee',
+            companyId: payload.companyId,
+        };
+    }
 
     // Get requested companyId from query, body, or params
     const requestedCompanyId = req.query.companyId || req.body?.companyId || req.params?.companyId;

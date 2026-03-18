@@ -58,8 +58,41 @@ router.post('/login', async (req, res, next) => {
         // Get role
         const role = user.role || 'employee';
 
-        // Create token with role
-        const token = createToken(user._id.toString(), user.companyId?.toString(), role);
+        // Auto-link to Platform user if not already linked (non-blocking)
+        if (!user.platformUserId && user.companyId) {
+            try {
+                const { createPlatformClient } = require('../services/platform_client');
+                const platformClient = createPlatformClient(user.companyId.toString());
+                const axios = require('axios');
+                const Config = require('../config');
+
+                const platformUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/users`;
+                const resp = await axios.get(platformUrl, {
+                    params: { companyId: user.companyId.toString(), email: user.email },
+                    headers: platformClient.getHeaders(),
+                    timeout: 3000,
+                }).catch(() => null);
+
+                if (resp?.data?.users?.length) {
+                    const platformUser = resp.data.users[0];
+                    const platformUserId = platformUser._id || platformUser.id;
+                    if (platformUserId) {
+                        await collections.users().updateOne(
+                            { _id: user._id },
+                            { $set: { platformUserId: platformUserId.toString() } }
+                        );
+                        user.platformUserId = platformUserId.toString();
+                        console.log(`[auth] Linked VMS user ${user.email} → Platform userId ${platformUserId}`);
+                    }
+                }
+            } catch (linkErr) {
+                // Non-blocking — login works without Platform link
+                console.log(`[auth] Platform user link skipped: ${linkErr.message}`);
+            }
+        }
+
+        // Create token with role (include name for display)
+        const token = createToken(user._id.toString(), user.companyId?.toString(), role, 24, null, user.name);
 
         // Set session with role
         if (req.session) {
@@ -193,8 +226,8 @@ router.post('/register', async (req, res, next) => {
         };
         await collections.users().insertOne(user);
 
-        // Create token with role
-        const token = createToken(user._id.toString(), companyId.toString(), role);
+        // Create token with role (include name for display)
+        const token = createToken(user._id.toString(), companyId.toString(), role, 24, null, user.name);
 
         // Set session with role
         if (req.session) {
@@ -307,8 +340,8 @@ router.all('/platform-sso', async (req, res, next) => {
             const isAdmin = roles.some(r => adminRoles.includes(r));
             const vmsRole = isAdmin ? 'admin' : (payload.permissions?.level || 'employee');
 
-            // Create VMS JWT with permissions embedded
-            const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions);
+            // Create VMS JWT with permissions embedded (include userName)
+            const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions, userName);
 
             // Build redirect URL with token for frontend auto-login
             const frontendUrl = Config.NODE_ENV === 'development'

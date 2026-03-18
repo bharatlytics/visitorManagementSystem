@@ -10,7 +10,7 @@ export default function Reports() {
     const [generating, setGenerating] = useState(false)
 
     const [form, setForm] = useState({
-        templateId: '', startDate: '', endDate: '', format: 'pdf'
+        templateId: '', startDate: '', endDate: '', format: 'csv'
     })
 
 
@@ -71,7 +71,7 @@ export default function Reports() {
                 endDate: form.endDate,
                 format: form.format
             })
-            setForm({ templateId: '', startDate: '', endDate: '', format: 'pdf' })
+            setForm({ templateId: '', startDate: '', endDate: '', format: 'csv' })
             fetchData()
         } catch (err) {
             alert(err.response?.data?.error || 'Failed to generate report')
@@ -80,13 +80,17 @@ export default function Reports() {
         }
     }
 
-    const handleDownload = async (reportId) => {
+    const handleDownload = async (reportId, format = 'csv') => {
         try {
-            const response = await api.get(`/reports/${reportId}/download`, { responseType: 'blob' })
+            const response = await api.get(`/reports/${reportId}/download`, {
+                params: { format },
+                responseType: 'blob'
+            })
+            const ext = format === 'csv' ? 'csv' : 'json'
             const url = window.URL.createObjectURL(new Blob([response.data]))
             const link = document.createElement('a')
             link.href = url
-            link.setAttribute('download', `report-${reportId}.pdf`)
+            link.setAttribute('download', `report-${reportId}.${ext}`)
             document.body.appendChild(link)
             link.click()
             link.remove()
@@ -100,7 +104,7 @@ export default function Reports() {
         const today = new Date()
         const startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
         const endDate = today.toISOString().split('T')[0]
-        setForm({ templateId, startDate, endDate, format: 'pdf' })
+        setForm({ templateId, startDate, endDate, format: 'csv' })
     }
 
     const formatDate = (dateStr) => {
@@ -147,9 +151,10 @@ export default function Reports() {
                             className="w-full px-4 py-3 border-0 bg-white/10 backdrop-blur-sm rounded-xl text-sm text-white placeholder-blue-200 focus:ring-2 focus:ring-white/50"
                         >
                             <option value="" className="text-gray-900">Select a template...</option>
-                            {templates.map(t => (
-                                <option key={t._id} value={t._id} className="text-gray-900">{t.name}</option>
-                            ))}
+                            {templates.map(t => {
+                                const tid = t.id || t._id
+                                return <option key={tid} value={tid} className="text-gray-900">{t.name}</option>
+                            })}
                         </select>
                     </div>
                     <div>
@@ -191,19 +196,20 @@ export default function Reports() {
                 <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Available Templates</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {templates.map(template => {
-                        const Icon = getTemplateIcon(template._id)
+                        const tid = template.id || template._id
+                        const Icon = getTemplateIcon(tid)
                         return (
                             <div
-                                key={template._id}
-                                onClick={() => handleQuickGenerate(template._id)}
-                                className={`p-5 bg-white border-2 rounded-xl cursor-pointer transition-all hover:shadow-lg ${form.templateId === template._id
+                                key={tid}
+                                onClick={() => handleQuickGenerate(tid)}
+                                className={`p-5 bg-white border-2 rounded-xl cursor-pointer transition-all hover:shadow-lg ${form.templateId === tid
                                     ? 'border-blue-500 bg-blue-50 shadow-md'
                                     : 'border-gray-200 hover:border-blue-300'
                                     }`}
                             >
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${form.templateId === template._id ? 'bg-blue-600' : 'bg-blue-100'
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${form.templateId === tid ? 'bg-blue-600' : 'bg-blue-100'
                                     }`}>
-                                    <Icon className={`w-6 h-6 ${form.templateId === template._id ? 'text-white' : 'text-blue-600'}`} />
+                                    <Icon className={`w-6 h-6 ${form.templateId === tid ? 'text-white' : 'text-blue-600'}`} />
                                 </div>
                                 <h4 className="font-semibold text-gray-900">{template.name}</h4>
                                 <p className="text-sm text-gray-500 mt-1 line-clamp-2">{template.description}</p>
@@ -255,15 +261,15 @@ export default function Reports() {
                                                 <FileText className="w-5 h-5 text-blue-600" />
                                             </div>
                                             <div>
-                                                <p className="text-sm font-semibold text-gray-900">{report.name || templates.find(t => t._id === report.templateId)?.name || 'Report'}</p>
+                                                <p className="text-sm font-semibold text-gray-900">{report.name || templates.find(t => (t.id || t._id) === report.templateId)?.name || 'Report'}</p>
                                                 <p className="text-xs text-gray-500">{report.templateId}</p>
                                             </div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-600">
-                                        {formatDate(report.startDate)} — {formatDate(report.endDate)}
+                                        {formatDate(report.dateRange?.startDate || report.startDate)} — {formatDate(report.dateRange?.endDate || report.endDate)}
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-gray-600">{formatDate(report.createdAt)}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-600">{formatDate(report.generatedAt || report.createdAt)}</td>
                                     <td className="px-6 py-4">
                                         <span className="px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full uppercase">
                                             {report.format || 'PDF'}
@@ -285,7 +291,7 @@ export default function Reports() {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <button
-                                            onClick={() => handleDownload(report._id)}
+                                            onClick={() => handleDownload(report._id, report.format || 'csv')}
                                             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                                         >
                                             <Download className="w-4 h-4" /> Download

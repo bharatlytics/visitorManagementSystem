@@ -530,6 +530,61 @@ class PlatformClient {
             };
         }
     }
+
+    // ─── FCM Token Management (service-to-service) ─────────────────────
+
+    /**
+     * Fetch a user's active FCM tokens from Platform.
+     * Used to send push notifications (e.g., visit approvals).
+     * 
+     * @param {string} userId - Platform user _id
+     * @returns {Promise<Array>} Active FCM token objects
+     */
+    async getUserFcmTokens(userId) {
+        try {
+            const url = `${this.baseUrl}/bharatlytics/v1/users/${userId}/fcm-tokens`;
+            const platformSecret = process.env.PLATFORM_SECRET || 'bharatlytics-platform-secret-2024';
+
+            const response = await axios.get(url, {
+                headers: {
+                    'X-Platform-Secret': platformSecret,
+                    'Content-Type': 'application/json',
+                },
+                timeout: 5000,
+            });
+
+            if (response.status === 200) {
+                return response.data.fcmTokens || [];
+            }
+        } catch (error) {
+            console.error(`[PlatformClient] Error fetching FCM tokens for user ${userId}:`, error.message);
+        }
+        return [];
+    }
+
+    /**
+     * Mark a stale FCM token as inactive on the Platform.
+     * Called when Firebase returns an error for a dead token.
+     * 
+     * @param {string} userId - Platform user _id
+     * @param {string} staleToken - The FCM token to deactivate
+     */
+    async pruneStaleToken(userId, staleToken) {
+        try {
+            const url = `${this.baseUrl}/bharatlytics/v1/users/${userId}/fcm-tokens/prune`;
+            const platformSecret = process.env.PLATFORM_SECRET || 'bharatlytics-platform-secret-2024';
+
+            await axios.post(url, { token: staleToken }, {
+                headers: {
+                    'X-Platform-Secret': platformSecret,
+                    'Content-Type': 'application/json',
+                },
+                timeout: 5000,
+            });
+        } catch (error) {
+            console.error(`[PlatformClient] Error pruning FCM token for user ${userId}:`, error.message);
+        }
+    }
 }
 
 

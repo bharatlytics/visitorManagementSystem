@@ -5433,3 +5433,114 @@ The `requireDeviceAuth` middleware validates the `X-Device-Id` header on every d
 | Device `status = 'maintenance'` | 403 | Device is in maintenance mode |
 | Device `locked = true` | 403 | Device is locked. Contact administrator |
 
+---
+
+### 9.11 User FCM Token Registration (Mobile App)
+
+```http
+POST /bharatlytics/v1/users/me/fcm-token
+Authorization: Bearer <user_jwt>
+Content-Type: application/json
+```
+
+Called by the **mobile app** on login and whenever Firebase fires `onTokenRefresh`. Stores the token on the Platform `users` collection so any app (VMS, PT, HR) can send push notifications.
+
+**Request Body:**
+```json
+{
+  "token": "dMm1J7eT...long_fcm_token...",
+  "deviceId": "a1b2c3d4-uuid-for-this-install",
+  "platform": "android",
+  "appVersion": "1.2.0"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token` | string | **Yes** | FCM registration token from Firebase |
+| `deviceId` | string | **Yes** | Stable UUID for this app install (client-generated) |
+| `platform` | string | No | `"android"` or `"ios"` |
+| `appVersion` | string | No | App version string |
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "FCM token registered",
+  "deviceId": "a1b2c3d4-uuid-for-this-install"
+}
+```
+
+> [!NOTE]
+> The server uses `$pull` + `$push` by `deviceId` — registering from the same device replaces the old token. Multiple devices per user are fully supported (array of token objects).
+
+**User document schema (Platform `users` collection):**
+```json
+{
+  "fcmTokens": [
+    {
+      "token": "dMm1J7eT...",
+      "deviceId": "a1b2c3d4-...",
+      "platform": "android",
+      "appVersion": "1.2.0",
+      "updatedAt": "2026-02-25T10:00:00Z",
+      "isActive": true
+    }
+  ]
+}
+```
+
+---
+
+### 9.12 Approval Push Notifications
+
+When a visit is created with `requiresApproval: true`, the VMS server now sends **both** an email and an FCM push notification to the host employee:
+
+```
+Visit created (requiresApproval: true)
+  │
+  ├─ Step 1: Generate approval token
+  ├─ Step 2: Build approval URL
+  ├─ Step 3: Store token + URL on visit document
+  ├─ Step 4: Send approval email (existing)
+  └─ Step 5: Send FCM push notification (NEW, non-blocking)
+       │
+       ├─ Look up Platform user by host email
+       ├─ Fetch user's FCM tokens from Platform (service-to-service)
+       ├─ Multicast to all active tokens via Firebase Admin SDK
+       └─ Prune dead tokens on FCM error
+```
+
+**Notification payload sent to device:**
+```json
+{
+  "notification": {
+    "title": "Visitor Approval Required",
+    "body": "John Doe is requesting approval for Business Meeting."
+  },
+  "data": {
+    "type": "VISITOR_APPROVAL",
+    "visitId": "6789abcdef012345",
+    "visitorName": "John Doe",
+    "purpose": "Business Meeting",
+    "deepLink": "vms://approvals/6789abcdef012345",
+    "approvalUrl": "https://yoursite.com/approval/token123"
+  }
+}
+```
+
+**Mobile app handling:**
+1. Tapping the notification opens the app via deep link → approval screen
+2. User authenticates (already logged in or biometric unlock)
+3. Approval action goes through normal authenticated API (`POST /api/approvals/:id/approve`)
+
+> [!IMPORTANT]
+> FCM push is **additive** — email remains the primary channel. Push failure never blocks visit creation. If Firebase is not configured (no `FIREBASE_PROJECT_ID` env var), push is silently skipped.
+
+**Environment variables for Firebase:**
+```
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk@your-project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
+```
+Or use `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
