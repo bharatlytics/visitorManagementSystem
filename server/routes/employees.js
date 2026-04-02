@@ -932,10 +932,13 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             if (req.files && req.files['embedding']) {
                 const file = req.files['embedding'][0];
                 const version = data.embeddingVersion || 'mobile_facenet_v1';
+                console.log(`[register_employee] Embedding file received, version: '${version}' (from data.embeddingVersion: '${data.embeddingVersion}')`);
                 embeddingData[version] = {
                     data: file.buffer.toString('base64'),
                     status: 'completed'
                 };
+            } else {
+                console.log(`[register_employee] No embedding file in request`);
             }
 
             // Build Platform actor data - DON'T include photos/embeddings here
@@ -999,6 +1002,10 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
 
                         const biometricsUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}/biometrics`;
                         console.log(`[register_employee] Uploading biometrics to ${biometricsUrl}`);
+                        console.log(`[register_employee] FormData fields: companyId=${companyId}, images=[${Object.keys(imageData).join(',')}], hasEmbedding=${Object.keys(embeddingData).length > 0}`);
+                        if (Object.keys(embeddingData).length > 0) {
+                            console.log(`[register_employee] Embedding version being sent: '${Object.keys(embeddingData)[0]}'`);
+                        }
 
                         const biometricsResponse = await axios.post(biometricsUrl, formData, {
                             headers: {
