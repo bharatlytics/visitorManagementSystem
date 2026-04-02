@@ -214,6 +214,18 @@ def create_employee():
         }
     }
     
+    # Convert photo to Platform's expected format:
+    # Platform create_actor expects 'photos' dict: {pose: "data:image/...;base64,..."}
+    # or 'photo' field with data:image prefix
+    photo_val = attributes.get('photo')
+    if photo_val and isinstance(photo_val, str):
+        if not photo_val.startswith('data:image'):
+            # Assume JPEG if no prefix
+            photo_val = f'data:image/jpeg;base64,{photo_val}'
+        # Set as both 'photo' (single, backward compat) and 'photos' dict (multi-pose)
+        actor_data['attributes']['photo'] = photo_val
+        actor_data['attributes']['photos'] = {'center': photo_val}
+    
     try:
         response = requests.post(
             f'{Config.PLATFORM_API_URL}/bharatlytics/v1/actors',
@@ -336,6 +348,14 @@ def create_visitor():
             'syncedFields': list(attributes.keys())
         }
     }
+    
+    # Convert photo to Platform's expected format
+    photo_val = attributes.get('photo')
+    if photo_val and isinstance(photo_val, str):
+        if not photo_val.startswith('data:image'):
+            photo_val = f'data:image/jpeg;base64,{photo_val}'
+        actor_data['attributes']['photo'] = photo_val
+        actor_data['attributes']['photos'] = {'center': photo_val}
     
     try:
         response = requests.post(

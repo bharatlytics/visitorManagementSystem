@@ -26,6 +26,10 @@ const Config = {
     // VMS App ID - must match the Platform's registered app ID
     APP_ID: process.env.VMS_APP_ID || 'app_bharatlytics_vms_366865a4',
 
+    // App API credentials for platform SSO verify (X-App-Key / X-App-Secret)
+    APP_KEY: process.env.VMS_APP_KEY || '',
+    APP_SECRET: process.env.VMS_APP_SECRET || '',
+
     // Platform API (used when user comes via platform SSO)
     PLATFORM_API_URL: process.env.PLATFORM_API_URL || 'http://localhost:5000',
 

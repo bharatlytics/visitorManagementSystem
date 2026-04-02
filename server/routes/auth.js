@@ -293,30 +293,72 @@ router.all('/platform-sso', async (req, res, next) => {
             return res.status(400).json({ error: 'Platform token required' });
         }
 
-        // Decode the SSO token from platform
-        let payload;
-        try {
-            payload = jwt.verify(platformToken, Config.PLATFORM_JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
-        } catch (err) {
-            if (err.name === 'TokenExpiredError') {
-                return res.status(401).json({ error: 'SSO token expired' });
+        // ── Determine token type and validate ──
+        let userId, userEmail, userName, permissions, roles;
+
+        if (platformToken.startsWith('sso_')) {
+            // Modern opaque sso_ token — call Platform /sso/verify
+            const verifyUrl = `${Config.PLATFORM_API_URL}/bharatlytics/v1/sso/verify`;
+            console.log(`[SSO] Verifying sso_ token via ${verifyUrl}`);
+
+            try {
+                const axios = require('axios');
+                const resp = await axios.post(verifyUrl, {
+                    ssoToken: platformToken,
+                }, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-App-Key': Config.APP_KEY,
+                        'X-App-Secret': Config.APP_SECRET,
+                    },
+                    timeout: 10000,
+                });
+
+                if (!resp.data?.valid || !resp.data?.context) {
+                    console.error('[SSO] Platform verify rejected:', resp.data);
+                    return res.status(401).json({ error: resp.data?.error || 'Invalid SSO token' });
+                }
+
+                const ctx = resp.data.context;
+                userId = ctx.userId;
+                userEmail = ctx.email;
+                userName = ctx.actor?.name || ctx.email;
+                companyId = companyId || ctx.companyId;
+                companyName = companyName || ctx.companyName;
+                companyLogo = companyLogo || ctx.companyLogo;
+                permissions = ctx.appAccess || null;
+                roles = ctx.roles || [];
+
+                console.log(`[SSO] Verified sso_ token: user=${userName}, company=${companyName}`);
+            } catch (fetchErr) {
+                console.error('[SSO] Platform SSO verify call failed:', fetchErr.response?.data || fetchErr.message);
+                return res.status(503).json({ error: 'Platform SSO service unavailable' });
             }
-            return res.status(401).json({ error: `Invalid SSO token: ${err.message}` });
+        } else {
+            // Legacy JWT token — verify locally with PLATFORM_JWT_SECRET
+            let payload;
+            try {
+                payload = jwt.verify(platformToken, Config.PLATFORM_JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
+            } catch (err) {
+                if (err.name === 'TokenExpiredError') {
+                    return res.status(401).json({ error: 'SSO token expired' });
+                }
+                return res.status(401).json({ error: `Invalid SSO token: ${err.message}` });
+            }
+
+            console.log('[SSO] Legacy JWT token payload:', payload);
+
+            userId = payload.userId || payload.user_id;
+            userEmail = payload.userEmail || payload.user_email;
+            userName = payload.userName || payload.user_name;
+            companyId = companyId || payload.companyId || payload.company_id;
+            companyName = companyName || payload.companyName || payload.company_name;
+            companyLogo = companyLogo || payload.companyLogo || payload.company_logo;
+            permissions = payload.permissions || null;
+            roles = payload.roles || [];
         }
 
-        console.log('[SSO] Token payload:', payload);
-
-        // Extract user info from token (camelCase primary, snake_case fallback)
-        const userId = payload.userId || payload.user_id;
-        const userEmail = payload.userEmail || payload.user_email;
-        const userName = payload.userName || payload.user_name;
-        companyId = companyId || payload.companyId || payload.company_id;
-        companyName = companyName || payload.companyName || payload.company_name;
-        companyLogo = companyLogo || payload.companyLogo || payload.company_logo;
-
-        console.log(`[SSO] Extracted - company_name: ${companyName}, company_logo: ${companyLogo}`);
-
-        // Store in session
+        // ── Store in session ──
         if (req.session) {
             req.session.platformToken = platformToken;
             req.session.companyId = companyId;
@@ -327,28 +369,20 @@ router.all('/platform-sso', async (req, res, next) => {
             req.session.companyLogo = companyLogo;
         }
 
-        console.log(`[SSO] Session set: user_id=${userId}, company_id=${companyId}, company_name=${companyName}`);
+        // ── Determine VMS role ──
+        const adminRoles = ['platform_admin', 'company_super_admin', 'super_admin', 'admin'];
+        const isAdmin = roles.some(r => adminRoles.includes(r));
+        const vmsRole = isAdmin ? 'admin' : (permissions?.level || 'employee');
+
+        // ── Create VMS JWT ──
+        const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions, userName);
 
         // If GET request (redirect from platform), redirect to frontend with token
         if (req.method === 'GET') {
-            // Extract permissions from Platform SSO JWT
-            const permissions = payload.permissions || null;
-            const roles = payload.roles || [];
-
-            // Determine the best role for VMS token
-            const adminRoles = ['platform_admin', 'company_super_admin', 'super_admin', 'admin'];
-            const isAdmin = roles.some(r => adminRoles.includes(r));
-            const vmsRole = isAdmin ? 'admin' : (payload.permissions?.level || 'employee');
-
-            // Create VMS JWT with permissions embedded (include userName)
-            const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions, userName);
-
-            // Build redirect URL with token for frontend auto-login
             const frontendUrl = Config.NODE_ENV === 'development'
                 ? 'http://localhost:5173'
                 : Config.FRONTEND_URL;
 
-            // Encode params for URL — include permissions for frontend to store
             const params = new URLSearchParams({
                 token: vmsToken,
                 companyId: companyId || '',
@@ -356,7 +390,6 @@ router.all('/platform-sso', async (req, res, next) => {
                 companyLogo: companyLogo || '',
             });
 
-            // Pass permissions as JSON string for frontend to parse
             if (permissions) {
                 params.set('permissions', JSON.stringify(permissions));
             }
@@ -364,29 +397,14 @@ router.all('/platform-sso', async (req, res, next) => {
             return res.redirect(`${frontendUrl}/sso-callback?${params.toString()}`);
         }
 
-        // For POST requests (mobile/API), return JSON with VMS JWT token
-        const permissions = payload.permissions || null;
-        const roles = payload.roles || [];
-        const adminRoles = ['platform_admin', 'company_super_admin', 'super_admin', 'admin'];
-        const isAdmin = roles.some(r => adminRoles.includes(r));
-        const vmsRole = isAdmin ? 'admin' : (permissions?.level || 'employee');
-        const vmsToken = createToken(userId, companyId, vmsRole, 24, permissions);
-
+        // For POST requests (mobile/API), return JSON
         res.json({
             message: 'Platform SSO successful',
             vmsToken,
             expiresIn: 86400,
             companyId,
-            company: {
-                id: companyId,
-                name: companyName,
-                logo: companyLogo
-            },
-            user: {
-                id: userId,
-                email: userEmail,
-                name: userName
-            },
+            company: { id: companyId, name: companyName, logo: companyLogo },
+            user: { id: userId, email: userEmail, name: userName },
             permissions
         });
     } catch (error) {

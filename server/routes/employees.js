@@ -1036,8 +1036,13 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     } catch (bioError) {
                         console.error(`[register_employee] Error uploading biometrics: ${bioError.message}`);
                         if (bioError.response) {
-                            console.error(`[register_employee] Response: ${bioError.response.status}`, bioError.response.data);
+                            console.error(`[register_employee] Biometrics response status: ${bioError.response.status}`);
+                            console.error(`[register_employee] Biometrics response body:`, JSON.stringify(bioError.response.data).substring(0, 500));
                         }
+                        if (bioError.code) {
+                            console.error(`[register_employee] Error code: ${bioError.code}`);
+                        }
+                        // biometricUploaded remains false — response will reflect this
                     }
                 }
 
@@ -1133,6 +1138,10 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                                                 }
                                             } catch (bioErr) {
                                                 console.error(`[register_employee] Error uploading biometrics for retry: ${bioErr.message}`);
+                                                if (bioErr.response) {
+                                                    console.error(`[register_employee] Retry biometrics status: ${bioErr.response.status}`);
+                                                    console.error(`[register_employee] Retry biometrics body:`, JSON.stringify(bioErr.response.data).substring(0, 500));
+                                                }
                                             }
                                         }
 
