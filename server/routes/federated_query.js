@@ -201,7 +201,13 @@ router.get('/visitors', async (req, res, next) => {
                 processedVisitor.hasPhoto = !!Object.keys(images).length;
             }
 
-            // Handle embeddings
+            // Handle embeddings — always include for face recognition consumers
+            // The detailed breakdown is gated by includeEmbeddings, but we always
+            // pass the raw visitorEmbeddings so processActorForSync can find them
+            if (visitor.visitorEmbeddings) {
+                processedVisitor.visitorEmbeddings = convertObjectIds(visitor.visitorEmbeddings);
+            }
+
             if (includeEmbeddings && visitor.visitorEmbeddings) {
                 const embeddings = visitor.visitorEmbeddings;
                 processedVisitor.embeddings = {};
