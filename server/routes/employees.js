@@ -895,13 +895,23 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             }
 
             // Prepare images as base64 for Platform
+            // Map VMS pose names to Platform POSES = ["center", "left", "right"]
             const imageData = {};
-            const facePositions = ['left', 'right', 'center', 'front', 'side'];
+            const poseMapping = {
+                'center': 'center',
+                'front': 'center',  // front face maps to Platform's "center"
+                'left': 'left',
+                'right': 'right',
+                'side': 'right'     // side face maps to Platform's "right"
+            };
 
-            for (const position of facePositions) {
-                if (req.files && req.files[position]) {
-                    const file = req.files[position][0];
-                    imageData[position] = file.buffer.toString('base64');
+            for (const [vmsPose, platformPose] of Object.entries(poseMapping)) {
+                if (req.files && req.files[vmsPose]) {
+                    const file = req.files[vmsPose][0];
+                    // Don't overwrite if we already have a better match for this platform pose
+                    if (!imageData[platformPose]) {
+                        imageData[platformPose] = file.buffer.toString('base64');
+                    }
                 }
             }
 
@@ -1010,13 +1020,14 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                             try {
                                 const updateUrl = `${require('../config').PLATFORM_API_URL}/bharatlytics/v1/actors/${actorId}`;
                                 const updateResponse = await fetch(updateUrl, {
-                                    method: 'PATCH',
+                                    method: 'PUT',
                                     headers: {
                                         'Authorization': `Bearer ${platformToken}`,
                                         'Content-Type': 'application/json',
                                         'X-App-Id': 'vms_app_v1'
                                     },
                                     body: JSON.stringify({
+                                        companyId: String(companyId),
                                         attributes: {
                                             ...attributes,
                                             photo: Object.values(imageData)[0] ? `data:image/jpeg;base64,${Object.values(imageData)[0]}` : undefined
@@ -1106,6 +1117,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                                                 const formData = new FormData();
                                                 formData.append('companyId', companyId);
 
+                                                // imageData already has Platform-compatible poses (center/left/right)
                                                 for (const [pose, base64] of Object.entries(imageData)) {
                                                     const buffer = Buffer.from(base64, 'base64');
                                                     formData.append(pose, buffer, { filename: `${pose}.jpg`, contentType: 'image/jpeg' });
