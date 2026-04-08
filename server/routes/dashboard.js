@@ -11,12 +11,13 @@ const { collections } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
 const { isValidObjectId } = require('../utils/helpers');
 const { getDataProvider } = require('../services/data_provider');
+const { cacheFor } = require('../middleware/cacheMiddleware');
 
 /**
  * GET /api/dashboard/stats
  * Get dashboard statistics - residency-aware
  */
-router.get('/stats', requireCompanyAccess, async (req, res, next) => {
+router.get('/stats', requireCompanyAccess, cacheFor(60), async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         if (!companyId) {
@@ -165,7 +166,7 @@ router.get('/recent-visits', requireCompanyAccess, async (req, res, next) => {
  * GET /api/dashboard/visit-trends
  * Get visit trends over time
  */
-router.get('/visit-trends', requireCompanyAccess, async (req, res, next) => {
+router.get('/visit-trends', requireCompanyAccess, cacheFor(60), async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         const days = parseInt(req.query.days) || 7;
@@ -212,7 +213,7 @@ router.get('/visit-trends', requireCompanyAccess, async (req, res, next) => {
 });
 
 // Alias for /visit-trends (some frontends call /trends instead)
-router.get('/trends', requireCompanyAccess, async (req, res, next) => {
+router.get('/trends', requireCompanyAccess, cacheFor(60), async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         const days = parseInt(req.query.days) || 7;

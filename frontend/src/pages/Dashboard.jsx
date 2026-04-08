@@ -3,6 +3,7 @@ import { Users, Calendar, Clock, AlertTriangle, TrendingUp, Building, UserCheck,
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/client'
+import { cachedGet } from '../utils/apiCache'
 
 function StatCard({ title, value, subtitle, icon: Icon, color = 'blue', trend }) {
     const colors = {
@@ -82,13 +83,13 @@ export default function Dashboard() {
             setError(null)
 
             const [statsRes, trendsRes, visitsRes, entitiesRes, employeesRes, approvalsRes, watchlistRes] = await Promise.allSettled([
-                api.get('/dashboard/stats'),
-                api.get('/dashboard/trends'),
-                api.get('/visitors/visits'),
-                api.get('/entities'),
-                api.get('/employees'),
-                api.get('/approvals', { params: { status: 'pending' } }),
-                api.get('/watchlist', { params: { limit: 5 } })
+                cachedGet(api, '/dashboard/stats', 60000),
+                cachedGet(api, '/dashboard/trends', 60000),
+                cachedGet(api, '/visitors/visits', 30000),
+                cachedGet(api, '/entities', 300000),
+                cachedGet(api, '/employees', 300000),
+                cachedGet(api, '/approvals?status=pending', 30000),
+                cachedGet(api, '/watchlist?limit=5', 30000)
             ])
 
             if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)

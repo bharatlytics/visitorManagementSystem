@@ -10,13 +10,14 @@ const { collections } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
 const { convertObjectIds, isValidObjectId, validateRequiredFields } = require('../utils/helpers');
 const { getDataProvider } = require('../services/data_provider');
+const { cacheFor } = require('../middleware/cacheMiddleware');
 
 /**
  * GET /api/locations
  * List all locations/entities for a company - respects data residency
  * Fetches from Platform when in platform mode (based on installation mappings)
  */
-router.get('/', requireCompanyAccess, async (req, res, next) => {
+router.get('/', requireCompanyAccess, cacheFor(300), async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         if (!companyId) {
