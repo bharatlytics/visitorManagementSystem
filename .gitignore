@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .vercel
 node_modules/
+
+# Debug files — don't deploy to serverless
+server/debug_*.txt
+server/debug_*.js
+server/check_fd.js

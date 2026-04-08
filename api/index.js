@@ -24,6 +24,24 @@ const app = express();
 app.set('strict routing', false);
 app.set('case sensitive routing', false);
 
+// ===========================================
+// Health Check — BEFORE all middleware for zero-overhead monitoring
+// ===========================================
+app.get('/api/health', (req, res) => {
+    res.json({
+        success: true,
+        status: 'healthy',
+        app: 'VMS',
+        version: '2.0.0-nodejs',
+        timestamp: new Date().toISOString(),
+        environment: Config.NODE_ENV
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', app: 'VMS', version: '2.0.0-nodejs' });
+});
+
 
 // ===========================================
 // Security Middleware
@@ -35,8 +53,9 @@ app.use(helmet({
 
 app.use(compression());
 
-if (Config.NODE_ENV !== 'test') {
-    app.use(morgan(Config.NODE_ENV === 'production' ? 'combined' : 'dev'));
+// Only log in non-production to save CPU on serverless
+if (Config.NODE_ENV !== 'production' && Config.NODE_ENV !== 'test') {
+    app.use(morgan('dev'));
 }
 
 // CORS Configuration
@@ -166,24 +185,7 @@ const { errorHandler, notFoundHandler } = require('../server/middleware/errorHan
 const { requireFeature, requireLevel } = require('../server/middleware/requireFeature');
 const { requireAuth } = require('../server/middleware/auth');
 
-// ===========================================
-// Health Check
-// ===========================================
-
-app.get('/api/health', (req, res) => {
-    res.json({
-        success: true,
-        status: 'healthy',
-        app: 'VMS',
-        version: '2.0.0-nodejs',
-        timestamp: new Date().toISOString(),
-        environment: Config.NODE_ENV
-    });
-});
-
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', app: 'VMS', version: '2.0.0-nodejs' });
-});
+// Health checks moved to top of file (before middleware) for zero-overhead monitoring
 
 // Root route - redirect to frontend (for SSO and browser access)
 app.get('/', (req, res) => {

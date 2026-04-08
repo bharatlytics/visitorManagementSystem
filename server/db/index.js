@@ -58,8 +58,9 @@ async function connectToDatabase() {
     // Initialize GridFS buckets
     initGridFSBuckets(cachedDb.db);
 
-    // Create indexes
-    await ensureIndexes();
+    // NOTE: ensureIndexes() removed from cold start path.
+    // Indexes are persistent in MongoDB — run ensureIndexes() once via
+    // a migration script or admin endpoint, not on every serverless boot.
 
     return cachedDb;
 }
