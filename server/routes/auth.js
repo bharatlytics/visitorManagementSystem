@@ -306,6 +306,7 @@ router.all('/platform-sso', async (req, res, next) => {
                 const resp = await axios.post(verifyUrl, {
                     ssoToken: platformToken,
                 }, {
+                    params: { ssoToken: platformToken },
                     headers: {
                         'Content-Type': 'application/json',
                         'X-App-Key': Config.APP_KEY,
@@ -331,8 +332,57 @@ router.all('/platform-sso', async (req, res, next) => {
 
                 console.log(`[SSO] Verified sso_ token: user=${userName}, company=${companyName}`);
             } catch (fetchErr) {
-                console.error('[SSO] Platform SSO verify call failed:', fetchErr.response?.data || fetchErr.message);
-                return res.status(503).json({ error: 'Platform SSO service unavailable' });
+                const errData = fetchErr.response?.data;
+                const errStatus = fetchErr.response?.status;
+                console.error('[SSO] Platform SSO verify call failed:', errStatus, errData || fetchErr.message);
+
+                // Return specific errors for known issues
+                if (errStatus === 401 && errData?.error === 'Invalid app key') {
+                    return res.status(500).json({
+                        error: 'SSO app credentials invalid',
+                        message: 'The VMS_APP_KEY is not registered on the Platform.',
+                    });
+                }
+                if (errStatus === 401 && errData?.error === 'Invalid app secret') {
+                    return res.status(500).json({
+                        error: 'SSO app secret mismatch',
+                        message: 'The VMS_APP_SECRET doesn\'t match what\'s in the Platform database.',
+                    });
+                }
+                if (errStatus === 403 && errData?.error?.includes('not valid for this app')) {
+                    return res.status(403).json({
+                        error: 'SSO appId mismatch',
+                        message: 'The SSO token was generated for a different appId.',
+                        detail: errData,
+                    });
+                }
+                if (errStatus === 401 && errData?.error === 'Token already used') {
+                    return res.status(401).json({
+                        error: 'SSO token already used',
+                        message: 'Please re-launch the app from the Platform to get a fresh token.',
+                    });
+                }
+                if (errStatus === 401 && errData?.error === 'Token expired') {
+                    return res.status(401).json({
+                        error: 'SSO token expired',
+                        message: 'The SSO token has expired (5 min TTL). Please re-launch from the Platform.',
+                    });
+                }
+
+                // Pass through other 4xx errors
+                if (errStatus >= 400 && errStatus < 500) {
+                    return res.status(errStatus).json({
+                        error: errData?.error || 'Invalid SSO token',
+                        message: errData?.message || 'The token could not be verified by the Platform.',
+                        detail: errData,
+                    });
+                }
+
+                // Network errors or 500s from the platform
+                return res.status(503).json({
+                    error: 'Platform SSO service unavailable',
+                    detail: errData?.error || fetchErr.message,
+                });
             }
         } else {
             // Legacy JWT token — verify locally with PLATFORM_JWT_SECRET
