@@ -658,7 +658,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
         const data = req.body;
 
         // Validate required fields
-        const requiredFields = ['companyId', 'visitorName', 'phone', 'hostEmployeeId'];
+        const requiredFields = ['companyId', 'visitorName', 'phone'];
         const validation = validateRequiredFields(data, requiredFields);
         if (!validation.valid) {
             return res.status(400).json({ status: 'error', error: `Missing required fields: ${validation.missing.join(', ')}` });
@@ -690,34 +690,26 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
             });
         }
 
-        // Verify host employee exists
+        // Verify host employee if provided (optional)
         const hostId = data.hostEmployeeId;
-        let hostEmployee = null;
+        if (hostId) {
+            let hostEmployee = null;
+            const residencyCheckToken = req.headers['x-platform-token'] || req.session?.platformToken;
+            const dataProvider = getDataProvider(companyId, residencyCheckToken);
 
-        // Use DataProvider to fetch employee (handles residency automatically)
-        const residencyCheckToken = req.headers['x-platform-token'] || req.session?.platformToken;
+            try {
+                hostEmployee = await dataProvider.getEmployeeById(hostId);
+            } catch (e) {
+                console.log(`[register_visitor] Error fetching host employee: ${e.message}`);
+            }
 
-        // DataProvider handles the import at top level now
-        const dataProvider = getDataProvider(companyId, residencyCheckToken);
-
-        try {
-            hostEmployee = await dataProvider.getEmployeeById(hostId);
-        } catch (e) {
-            console.log(`[register_visitor] Error fetching host employee: ${e.message}`);
-        }
-
-        if (!hostEmployee) {
-            return res.status(400).json({ status: 'error', error: 'Host employee not found or not active.' });
-        }
-
-        // Check status (handle both local and platform formats)
-        // Local: status field
-        // Platform: attributes.status or status field
-        const status = hostEmployee.status || (hostEmployee.attributes && hostEmployee.attributes.status) || 'active';
-        const isBlacklisted = hostEmployee.blacklisted === true || hostEmployee.blacklisted === 'true';
-
-        if (status !== 'active' || isBlacklisted) {
-            return res.status(400).json({ status: 'error', error: 'Host employee not found or not active.' });
+            if (hostEmployee) {
+                const status = hostEmployee.status || (hostEmployee.attributes && hostEmployee.attributes.status) || 'active';
+                const isBlacklisted = hostEmployee.blacklisted === true || hostEmployee.blacklisted === 'true';
+                if (status !== 'active' || isBlacklisted) {
+                    return res.status(400).json({ status: 'error', error: 'Host employee is not active or is blacklisted.' });
+                }
+            }
         }
 
         // Process face images

@@ -305,7 +305,7 @@ def serve_visit_qr(visit_id):
 def register_visitor():
     """Register a new visitor"""
     try:
-        required_fields = ['companyId', 'visitorName', 'phone', 'hostEmployeeId']
+        required_fields = ['companyId', 'visitorName', 'phone']
         valid, msg = validate_required_fields(request.form, required_fields)
         if not valid:
             return error_response(msg, 400)
@@ -313,45 +313,41 @@ def register_visitor():
         data = {field: request.form[field] for field in required_fields}
         optional_fields = [
             'visitorType', 'idType', 'idNumber', 'email',
-            'organization', 'purpose', 'status', 'blacklisted', 'blacklistReason'
+            'organization', 'purpose', 'status', 'blacklisted', 'blacklistReason',
+            'hostEmployeeId'
         ]
         data.update({k: request.form[k] for k in optional_fields if k in request.form})
         
-        # Verify host employee exists and is active
-        # Use DataProvider to respect residency mode (check VMS or Platform)
-        from app.services import get_data_provider
-        
-        host_employee = None
+        # Verify host employee if provided (optional)
         company_id = data['companyId']
-        host_id = data['hostEmployeeId']
+        host_id = data.get('hostEmployeeId')
         
-        # First try DataProvider (residency-aware)
-        data_provider = get_data_provider(company_id)
-        host_employee = data_provider.get_employee_by_id(host_id, company_id)
-        
-        # If not found via DataProvider, try local DB as fallback
-        if not host_employee:
-            try:
-                host_employee = employee_collection.find_one({
-                    '_id': ObjectId(host_id),
-                    'companyId': ObjectId(company_id),
-                    'status': 'active',
-                    'blacklisted': False
-                })
-            except (InvalidId, TypeError):
-                host_employee = employee_collection.find_one({
-                    'employeeId': host_id,
-                    'companyId': ObjectId(company_id),
-                    'status': 'active',
-                    'blacklisted': False
-                })
-        
-        # Check if employee is active and not blacklisted
-        if host_employee:
-            if host_employee.get('status') != 'active' or host_employee.get('blacklisted', False):
-                return error_response('Host employee is not active or is blacklisted.', 400)
-        else:
-            return error_response('Host employee not found or not active.', 400)
+        if host_id:
+            from app.services import get_data_provider
+            
+            host_employee = None
+            data_provider = get_data_provider(company_id)
+            host_employee = data_provider.get_employee_by_id(host_id, company_id)
+            
+            if not host_employee:
+                try:
+                    host_employee = employee_collection.find_one({
+                        '_id': ObjectId(host_id),
+                        'companyId': ObjectId(company_id),
+                        'status': 'active',
+                        'blacklisted': False
+                    })
+                except (InvalidId, TypeError):
+                    host_employee = employee_collection.find_one({
+                        'employeeId': host_id,
+                        'companyId': ObjectId(company_id),
+                        'status': 'active',
+                        'blacklisted': False
+                    })
+            
+            if host_employee:
+                if host_employee.get('status') != 'active' or host_employee.get('blacklisted', False):
+                    return error_response('Host employee is not active or is blacklisted.', 400)
         
         # Email/phone validation
         if data.get('email'):
