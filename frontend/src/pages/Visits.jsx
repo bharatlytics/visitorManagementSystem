@@ -1,6 +1,86 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash, Users, Package, Car, Copy } from 'lucide-react'
 import api from '../api/client'
+
+// Searchable Dropdown for host employee selection
+function SearchableHostSelect({ hosts, value, onChange, getHostName, getHostDepartment }) {
+    const [searchTerm, setSearchTerm] = useState('')
+    const [isOpen, setIsOpen] = useState(false)
+    const ref = useRef(null)
+
+    useEffect(() => {
+        const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setIsOpen(false) }
+        document.addEventListener('mousedown', handleClick)
+        return () => document.removeEventListener('mousedown', handleClick)
+    }, [])
+
+    const getPhone = (h) => h.phone || h.attributes?.phone || h.mobile || h.attributes?.mobile || ''
+    const getEmail = (h) => h.email || h.attributes?.email || ''
+
+    const filtered = hosts.filter(h => {
+        if (!searchTerm) return true
+        const q = searchTerm.toLowerCase()
+        return getHostName(h).toLowerCase().includes(q) ||
+            getPhone(h).toLowerCase().includes(q) ||
+            getEmail(h).toLowerCase().includes(q) ||
+            getHostDepartment(h).toLowerCase().includes(q)
+    })
+
+    const selected = hosts.find(h => h._id === value)
+
+    return (
+        <div ref={ref} className="relative">
+            <div
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm cursor-pointer bg-white flex items-center justify-between focus-within:ring-2 focus-within:ring-blue-500"
+            >
+                <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
+                    {selected ? `${getHostName(selected)} • ${getHostDepartment(selected)}` : 'Search by name, phone, or email...'}
+                </span>
+                {value && (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onChange(''); setSearchTerm('') }}
+                        className="p-0.5 hover:bg-gray-100 rounded"><X className="w-3.5 h-3.5 text-gray-400" /></button>
+                )}
+            </div>
+            {isOpen && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-hidden">
+                    <div className="p-2 border-b border-gray-100">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                autoFocus
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Search name, phone, email..."
+                                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                        </div>
+                    </div>
+                    <div className="overflow-y-auto max-h-48">
+                        {filtered.length === 0 ? (
+                            <p className="px-4 py-3 text-sm text-gray-400 text-center">No employees found</p>
+                        ) : (
+                            filtered.map(h => (
+                                <button
+                                    key={h._id}
+                                    type="button"
+                                    onClick={() => { onChange(h._id); setIsOpen(false); setSearchTerm('') }}
+                                    className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition-colors flex flex-col ${value === h._id ? 'bg-blue-50' : ''}`}
+                                >
+                                    <span className="font-medium text-gray-900">{getHostName(h)} <span className="text-gray-400 font-normal">• {getHostDepartment(h)}</span></span>
+                                    <span className="text-xs text-gray-500 mt-0.5">
+                                        {[getPhone(h), getEmail(h)].filter(Boolean).join(' • ') || 'No contact info'}
+                                    </span>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
 
 // Enterprise Modal Component - 80% viewport
 function Modal({ isOpen, onClose, title, children }) {
@@ -49,6 +129,11 @@ export default function Visits() {
     const [error, setError] = useState(null)
     const [filter, setFilter] = useState('all')
     const [search, setSearch] = useState('')
+
+    // Date range — default to today
+    const todayStr = new Date().toISOString().split('T')[0]
+    const [dateFrom, setDateFrom] = useState(todayStr)
+    const [dateTo, setDateTo] = useState(todayStr)
 
     // Entity/Host filters
     const [selectedEntity, setSelectedEntity] = useState('')
@@ -225,12 +310,23 @@ export default function Visits() {
         cancelled: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-400', label: 'Cancelled', icon: AlertCircle },
     }
 
+    // Pre-filter by date for accurate status counts
+    const dateFilteredVisits = visits.filter(v => {
+        if (!dateFrom && !dateTo) return true
+        const visitDate = v.expectedArrival || v.actualArrival || v.createdAt
+        if (!visitDate) return true
+        const vd = new Date(visitDate).toISOString().split('T')[0]
+        if (dateFrom && vd < dateFrom) return false
+        if (dateTo && vd > dateTo) return false
+        return true
+    })
+
     const filters = [
-        { id: 'all', label: 'All Visits', count: visits.length },
-        { id: 'pending_approval', label: 'Pending Approval', count: visits.filter(v => v.status === 'pending_approval').length },
-        { id: 'scheduled', label: 'Scheduled', count: visits.filter(v => v.status === 'scheduled').length },
-        { id: 'checked_in', label: 'On-Site', count: visits.filter(v => v.status === 'checked_in').length },
-        { id: 'checked_out', label: 'Completed', count: visits.filter(v => v.status === 'checked_out').length },
+        { id: 'all', label: 'All Visits', count: dateFilteredVisits.length },
+        { id: 'pending_approval', label: 'Pending Approval', count: dateFilteredVisits.filter(v => v.status === 'pending_approval').length },
+        { id: 'scheduled', label: 'Scheduled', count: dateFilteredVisits.filter(v => v.status === 'scheduled').length },
+        { id: 'checked_in', label: 'On-Site', count: dateFilteredVisits.filter(v => v.status === 'checked_in').length },
+        { id: 'checked_out', label: 'Completed', count: dateFilteredVisits.filter(v => v.status === 'checked_out').length },
     ]
 
     const filteredVisits = visits.filter(v => {
@@ -240,7 +336,19 @@ export default function Visits() {
             v.hostEmployeeName?.toLowerCase().includes(search.toLowerCase())
         const matchesEntity = !selectedEntity || v.locationId === selectedEntity || v.entityId === selectedEntity
         const matchesHost = !selectedHost || v.hostEmployeeId === selectedHost
-        return matchesStatus && matchesSearch && matchesEntity && matchesHost
+
+        // Date range filter — check expectedArrival or actualArrival
+        let matchesDate = true
+        if (dateFrom || dateTo) {
+            const visitDate = v.expectedArrival || v.actualArrival || v.createdAt
+            if (visitDate) {
+                const vd = new Date(visitDate).toISOString().split('T')[0]
+                if (dateFrom && vd < dateFrom) matchesDate = false
+                if (dateTo && vd > dateTo) matchesDate = false
+            }
+        }
+
+        return matchesStatus && matchesSearch && matchesEntity && matchesHost && matchesDate
     })
 
     const getHostName = (host) => {
@@ -257,7 +365,7 @@ export default function Visits() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-xl font-bold text-gray-900">Visit Management</h1>
-                    <p className="text-sm text-gray-500">{visits.length} total visits • {visits.filter(v => v.status === 'checked_in').length} currently on-site</p>
+                    <p className="text-sm text-gray-500">{filteredVisits.length} visits shown{dateFrom === todayStr && dateTo === todayStr ? ' (Today)' : dateFrom || dateTo ? ` (${dateFrom || '...'} to ${dateTo || '...'})` : ''} • {visits.filter(v => v.status === 'checked_in').length} currently on-site</p>
                 </div>
                 <button
                     onClick={() => { resetForm(); setShowScheduleModal(true) }}
@@ -279,6 +387,21 @@ export default function Visits() {
                             onChange={(e) => setSearch(e.target.value)}
                             className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                         />
+                    </div>
+
+                    {/* Date Range */}
+                    <div className="flex items-center gap-2">
+                        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                            className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white" />
+                        <span className="text-gray-400 text-xs">to</span>
+                        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                            className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white" />
+                        {(dateFrom !== todayStr || dateTo !== todayStr) && (
+                            <button onClick={() => { setDateFrom(todayStr); setDateTo(todayStr) }}
+                                className="px-3 py-2.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">Today</button>
+                        )}
+                        <button onClick={() => { setDateFrom(''); setDateTo('') }}
+                            className="px-3 py-2.5 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">All Time</button>
                     </div>
 
                     <select value={selectedEntity} onChange={(e) => setSelectedEntity(e.target.value)}
@@ -427,13 +550,13 @@ export default function Visits() {
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Host Employee *</label>
-                                <select value={form.hostEmployeeId} onChange={e => setForm({ ...form, hostEmployeeId: e.target.value })}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500" required>
-                                    <option value="">Select host employee</option>
-                                    {hosts.map(h => (
-                                        <option key={h._id} value={h._id}>{getHostName(h)} • {getHostDepartment(h)}</option>
-                                    ))}
-                                </select>
+                                <SearchableHostSelect
+                                    hosts={hosts}
+                                    value={form.hostEmployeeId}
+                                    onChange={(id) => setForm({ ...form, hostEmployeeId: id })}
+                                    getHostName={getHostName}
+                                    getHostDepartment={getHostDepartment}
+                                />
                             </div>
 
                             <div>
