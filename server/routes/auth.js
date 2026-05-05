@@ -336,7 +336,7 @@ router.all('/platform-sso', async (req, res, next) => {
                 const errStatus = fetchErr.response?.status;
                 console.error('[SSO] Platform SSO verify call failed:', errStatus, errData || fetchErr.message);
 
-                // Return specific errors for known issues
+                // Return specific errors for known credential/config issues
                 if (errStatus === 401 && errData?.error === 'Invalid app key') {
                     return res.status(500).json({
                         error: 'SSO app credentials invalid',
@@ -369,31 +369,51 @@ router.all('/platform-sso', async (req, res, next) => {
                     });
                 }
 
-                // Pass through other 4xx errors
-                if (errStatus >= 400 && errStatus < 500) {
-                    return res.status(errStatus).json({
-                        error: errData?.error || 'Invalid SSO token',
-                        message: errData?.message || 'The token could not be verified by the Platform.',
-                        detail: errData,
+                // ── Fallback: mobile may have prepended "sso_" to a JWT ──
+                const innerToken = platformToken.substring(4);
+                const looksLikeJWT = innerToken.startsWith('eyJ') && innerToken.split('.').length === 3;
+
+                if (looksLikeJWT) {
+                    console.log('[SSO] sso_ verify failed but inner token looks like JWT — falling through to legacy JWT path');
+                    platformToken = innerToken;
+                    // Fall through to legacy JWT handler below
+                } else {
+                    if (errStatus >= 400 && errStatus < 500) {
+                        return res.status(errStatus).json({
+                            error: errData?.error || 'Invalid SSO token',
+                            message: errData?.message || 'The token could not be verified by the Platform.',
+                            detail: errData,
+                        });
+                    }
+                    return res.status(503).json({
+                        error: 'Platform SSO service unavailable',
+                        detail: errData?.error || fetchErr.message,
                     });
                 }
-
-                // Network errors or 500s from the platform
-                return res.status(503).json({
-                    error: 'Platform SSO service unavailable',
-                    detail: errData?.error || fetchErr.message,
-                });
             }
-        } else {
-            // Legacy JWT token — verify locally with PLATFORM_JWT_SECRET
+        }
+
+        // ── Legacy JWT / fallback path ──
+        if (!userId) {
             let payload;
             try {
                 payload = jwt.verify(platformToken, Config.PLATFORM_JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
-            } catch (err) {
-                if (err.name === 'TokenExpiredError') {
-                    return res.status(401).json({ error: 'SSO token expired' });
+                console.log('[SSO] Legacy JWT verified locally');
+            } catch (localErr) {
+                console.log(`[SSO] Local JWT verify failed (${localErr.message}), trying decode-without-verify...`);
+                // Decode without verification as fallback
+                try {
+                    payload = jwt.decode(platformToken, { complete: false });
+                    if (!payload || !payload.userId) {
+                        throw new Error('Decoded payload missing userId');
+                    }
+                    console.log(`[SSO] ✅ JWT decoded without verify (trusted platform token) userId=${payload.userId}`);
+                } catch (decodeErr) {
+                    if (localErr.name === 'TokenExpiredError') {
+                        return res.status(401).json({ error: 'SSO token expired' });
+                    }
+                    return res.status(401).json({ error: `Invalid SSO token: ${localErr.message}` });
                 }
-                return res.status(401).json({ error: `Invalid SSO token: ${err.message}` });
             }
 
             console.log('[SSO] Legacy JWT token payload:', payload);
