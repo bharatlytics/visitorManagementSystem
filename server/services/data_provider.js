@@ -184,17 +184,10 @@ class DataProvider {
     async getVisitors(companyId = null) {
         const cid = companyId || this.companyId;
 
-        // Check residency mode
-        const mode = await getResidencyMode(cid, 'visitor');
-        console.log(`[DataProvider.getVisitors] Company ${cid}, mode: ${mode}`);
-
-        // Visitors typically stay in app mode, but we check anyway
-        if (mode === 'app') {
-            return this._getVisitorsFromVms(cid);
-        }
-
-        // Platform mode (rare for visitors)
-        return this._getVisitorsFromPlatform(cid);
+        // SAFETY: Visitors ALWAYS stay in app mode — they are managed in VMS DB,
+        // never on the Platform. Skip residency detection entirely.
+        console.log(`[DataProvider.getVisitors] Company ${cid}, forced mode: app (visitors always local)`);
+        return this._getVisitorsFromVms(cid);
     }
 
     /**
@@ -207,8 +200,7 @@ class DataProvider {
     async getVisitorById(visitorId, companyId = null) {
         const cid = companyId || this.companyId;
 
-        const mode = await getResidencyMode(cid, 'visitor');
-        console.log(`[DataProvider.getVisitorById] Company ${cid}, mode: ${mode}`);
+        // Visitors always stay in app mode — skip residency detection
 
         // Visitors always stay in app mode
         let visitor = null;
