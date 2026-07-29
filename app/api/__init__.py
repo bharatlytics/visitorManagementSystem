@@ -50,6 +50,7 @@ def register_blueprints(app):
     
     # Phase 1: Foundation & Quick Wins
     app.register_blueprint(evacuation_bp, url_prefix='/api/emergency')
+    app.register_blueprint(evacuation_bp, url_prefix='/api/evacuation', name='evacuation_alias')
     app.register_blueprint(preregistration_bp, url_prefix='/api/preregistration')
     
     # Phase 2: Security & Approval Workflows

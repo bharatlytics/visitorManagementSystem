@@ -15,13 +15,20 @@ import SSOCallback from './pages/SSOCallback'
 import VisitApproval from './pages/VisitApproval'
 import { useAuthStore } from './store/authStore'
 
+import VisitorRegistration from './pages/VisitorRegistration'
+import Evacuation from './pages/Evacuation'
+
 function App() {
   const { isAuthenticated, checkAuth } = useAuthStore()
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Skip auth check if we're on the SSO callback page - let it process the token first
-    if (window.location.pathname === '/sso-callback') {
+    // Skip auth check if on public routes (SSO callback, approval, visitor registration, kiosk)
+    const isPublicPath = ['/sso-callback', '/kiosk'].some(p => window.location.pathname.startsWith(p)) ||
+      window.location.pathname.startsWith('/approval/') ||
+      window.location.pathname.startsWith('/visitor-registration/')
+
+    if (isPublicPath) {
       setLoading(false)
       return
     }
@@ -40,10 +47,11 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* SSO callback must be first and always accessible */}
+        {/* Public routes - no authentication required */}
         <Route path="/sso-callback" element={<SSOCallback />} />
-        {/* Public approval route - no authentication required */}
         <Route path="/approval/:token" element={<VisitApproval />} />
+        <Route path="/visitor-registration/:token" element={<VisitorRegistration />} />
+        <Route path="/kiosk" element={<VisitorRegistration />} />
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route
           path="/*"
@@ -55,6 +63,7 @@ function App() {
                   <Route path="/visitors" element={<Visitors />} />
                   <Route path="/visits" element={<Visits />} />
                   <Route path="/approvals" element={<Approvals />} />
+                  <Route path="/evacuation" element={<Evacuation />} />
                   <Route path="/watchlist" element={<Watchlist />} />
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/reports" element={<Reports />} />

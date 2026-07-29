@@ -2,19 +2,19 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard, Users, Calendar, ShieldCheck, AlertTriangle,
-    BarChart3, FileText, Settings, Menu, LogOut, Bell, Search, Monitor
+    BarChart3, FileText, Settings, Menu, LogOut, Bell, Search, Monitor,
+    Flame, Sparkles, ShieldAlert
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 // Navigation items with optional feature gating
-// Items without 'feature' are always visible (core features)
-// Items with 'feature' are only shown when user has that feature in their permission role
-// Items with 'minLevel' require a minimum permission level
 const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Visitors', href: '/visitors', icon: Users },
     { name: 'Visits', href: '/visits', icon: Calendar },
     { name: 'Approvals', href: '/approvals', icon: ShieldCheck },
+    { name: 'Kiosk Self Check-In', href: '/kiosk', icon: Monitor },
+    { name: 'Evacuation Muster', href: '/evacuation', icon: Flame },
     { name: 'Watchlist', href: '/watchlist', icon: AlertTriangle, feature: 'watchlist' },
     { name: 'Analytics', href: '/analytics', icon: BarChart3, feature: 'analytics' },
     { name: 'Reports', href: '/reports', icon: FileText, feature: 'reports' },
@@ -151,6 +151,16 @@ export default function Layout({ children }) {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {/* Emergency Evacuation Action Button */}
+                        <Link
+                            to="/evacuation"
+                            className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-lg border border-red-200 transition-colors shadow-sm"
+                            title="Open Emergency Evacuation Roll Call"
+                        >
+                            <Flame className="w-3.5 h-3.5 text-red-600 animate-pulse" />
+                            <span className="hidden sm:inline">Evacuation</span>
+                        </Link>
+
                         {/* Platform connection badge */}
                         {isPlatformConnected && (
                             <span className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full">

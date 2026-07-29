@@ -185,7 +185,19 @@ async function ensureIndexes() {
             { unique: true, name: 'unique_username', sparse: true }
         );
 
-        console.log('[DB] Database indexes ensured');
+        // embedding_jobs: 7-day TTL index to prevent storage footprint growth
+        await db.collection('embedding_jobs').createIndex(
+            { createdAt: 1 },
+            { expireAfterSeconds: 604800, name: 'embedding_jobs_ttl' }
+        );
+
+        // sync_audit_logs: 7-day TTL index
+        await db.collection('sync_audit_logs').createIndex(
+            { timestamp: 1 },
+            { expireAfterSeconds: 604800, name: 'sync_audit_logs_ttl' }
+        );
+
+        console.log('[DB] Database indexes ensured (including TTL indexes)');
     } catch (error) {
         console.log(`[DB] Index creation warning (may already exist): ${error.message}`);
     }

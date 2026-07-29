@@ -195,10 +195,18 @@ export default function Dashboard() {
                         <Plus className="w-4 h-4" /> Register
                     </button>
                     <button
-                        onClick={() => navigate('/visits')}
-                        className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg"
+                        onClick={() => navigate('/kiosk')}
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg"
+                        title="Launch Public Touchscreen Kiosk Mode"
                     >
-                        <Calendar className="w-4 h-4" /> Schedule
+                        <Building className="w-4 h-4 text-purple-600" /> Kiosk Mode
+                    </button>
+                    <button
+                        onClick={() => navigate('/evacuation')}
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-100"
+                        title="Emergency Evacuation Muster Console"
+                    >
+                        <AlertTriangle className="w-4 h-4 text-red-600 animate-pulse" /> Evacuation
                     </button>
                     <button
                         onClick={() => setShowQuickCheckin(true)}

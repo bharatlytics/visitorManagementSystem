@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const { ObjectId } = require('mongodb');
 const Config = require('../config');
 const { collections } = require('../db');
+const { enrichRBAC } = require('./rbac');
 
 /**
  * Create JWT token with role
@@ -37,16 +38,7 @@ function decodeToken(token) {
         return jwt.verify(token, Config.JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
     } catch (error) {
         console.log('[Auth Debug] decodeToken verify failed:', error.message);
-
-        // Fallback: decode without verify — the token was signed by this same server
-        const decoded = jwt.decode(token);
-        if (decoded && decoded.userId && decoded.companyId) {
-            console.log(`[Auth] ⚠️ JWT verify failed but decode succeeded — accepting token for userId=${decoded.userId}`);
-            return decoded;
-        }
-
-        console.log(`[Auth Debug] Token: ${token.substring(0, 10)}...`);
-        console.log(`[Auth Debug] Secret: '${Config.JWT_SECRET}' (Length: ${Config.JWT_SECRET.length})`);
+        console.log(`[Auth Debug] Token prefix: ${token.substring(0, 10)}...`);
         return null;
     }
 }
@@ -108,9 +100,10 @@ function requireAuth(req, res, next) {
             req.tokenPayload = platformPayload;
             req.isFederated = true;
             req.sourceAppId = platformPayload.sub;
-            // Extract permissions from SSO token (granular RBAC)
             req.permissions = platformPayload.permissions || null;
             req.userRoles = platformPayload.roles || [];
+            // Enrich with standardized RBAC helpers
+            enrichRBAC(req);
             return next();
         }
 
@@ -127,6 +120,9 @@ function requireAuth(req, res, next) {
     req.userRoles = payload.roles || [];
     req.permissionLevel = payload.permissions?.level || null;
     req.permissionFeatures = payload.permissions?.features || [];
+    
+    // Enrich with standardized RBAC helpers
+    enrichRBAC(req);
 
     next();
 }

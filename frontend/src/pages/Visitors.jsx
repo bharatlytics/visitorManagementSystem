@@ -518,22 +518,21 @@ export default function Visitors() {
                 <table className="w-full">
                     <thead>
                         <tr className="bg-gray-50 border-b border-gray-200">
-                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Visitor</th>
-                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
-                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
-                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Visitor Details</th>
+                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact & Org</th>
+                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Category & Permit</th>
+                            <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Compliance & Status</th>
                             <th className="px-5 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
-                            <tr><td colSpan={6} className="px-5 py-16 text-center">
+                            <tr><td colSpan={5} className="px-5 py-16 text-center">
                                 <div className="animate-spin rounded-full h-10 w-10 border-3 border-gray-200 border-t-blue-600 mx-auto"></div>
                                 <p className="mt-3 text-sm text-gray-500">Loading visitors...</p>
                             </td></tr>
                         ) : filteredVisitors.length === 0 ? (
-                            <tr><td colSpan={6} className="px-5 py-16 text-center">
+                            <tr><td colSpan={5} className="px-5 py-16 text-center">
                                 <User className="w-12 h-12 text-gray-300 mx-auto" />
                                 <p className="mt-3 text-sm text-gray-400">No visitors found</p>
                             </td></tr>
@@ -542,34 +541,56 @@ export default function Visitors() {
                                 <tr key={visitor._id} className="hover:bg-blue-50/30 transition-colors">
                                     <td className="px-5 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-md overflow-hidden">
+                                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
                                                 {getVisitorImage(visitor) ? <img src={getVisitorImage(visitor)} alt="" className="w-full h-full object-cover" />
                                                     : <span className="text-white font-medium">{visitor.visitorName?.charAt(0)?.toUpperCase()}</span>}
                                             </div>
                                             <div>
-                                                <p className="text-sm font-semibold text-gray-900">{visitor.visitorName}</p>
-                                                <p className="text-xs text-gray-500">{visitor.idType ? `${visitor.idType}: ${visitor.idNumber}` : 'No ID'}</p>
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="text-sm font-semibold text-gray-900">{visitor.visitorName}</p>
+                                                    {visitor.visitorType === 'vip' && (
+                                                        <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] font-black rounded border border-amber-300">
+                                                            VIP
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-gray-500">{visitor.idType ? `${visitor.idType}: ${visitor.idNumber}` : 'Standard Profile'}</p>
                                             </div>
                                         </div>
                                     </td>
                                     <td className="px-5 py-4">
-                                        <p className="text-sm text-gray-900">{visitor.phone}</p>
-                                        <p className="text-xs text-gray-500">{visitor.email || '—'}</p>
-                                    </td>
-                                    <td className="px-5 py-4 text-sm text-gray-600">{visitor.organization || '—'}</td>
-                                    <td className="px-5 py-4">
-                                        <span className="px-2.5 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">{visitor.visitorType || 'guest'}</span>
+                                        <p className="text-sm text-gray-900 font-medium">{visitor.phone}</p>
+                                        <p className="text-xs text-gray-500">{visitor.organization || visitor.email || 'Individual'}</p>
                                     </td>
                                     <td className="px-5 py-4">
-                                        {visitor.blacklisted ? (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
-                                                <UserX className="w-3 h-3" /> Blacklisted
+                                        <div className="space-y-1">
+                                            <span className={`px-2 py-0.5 text-xs font-bold rounded-full uppercase ${
+                                                visitor.visitorType === 'contractor' ? 'bg-purple-100 text-purple-700' :
+                                                visitor.visitorType === 'vip' ? 'bg-amber-100 text-amber-700' :
+                                                visitor.visitorType === 'vendor' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
+                                            }`}>
+                                                {visitor.visitorType || 'guest'}
                                             </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
-                                                <UserCheck className="w-3 h-3" /> Active
+                                            {visitor.workPermitNumber && (
+                                                <p className="text-[11px] font-mono text-purple-600">Permit: {visitor.workPermitNumber}</p>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-4">
+                                        <div className="flex flex-col gap-1">
+                                            {visitor.blacklisted ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full w-max">
+                                                    <UserX className="w-3 h-3" /> Blacklisted
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full w-max">
+                                                    <UserCheck className="w-3 h-3" /> Active
+                                                </span>
+                                            )}
+                                            <span className="text-[10px] text-gray-500 font-medium">
+                                                NDA: {visitor.ndaSigned ? '✅ Signed' : 'Pending'}
                                             </span>
-                                        )}
+                                        </div>
                                     </td>
                                     <td className="px-5 py-4">
                                         <div className="flex items-center justify-end gap-1">

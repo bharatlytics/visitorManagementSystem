@@ -9,13 +9,14 @@ const { ObjectId } = require('mongodb');
 
 const { collections } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
+const { requireLevel, requireFeature } = require('../middleware/rbac');
 const { convertObjectIds, isValidObjectId } = require('../utils/helpers');
 
 /**
  * GET /api/settings
  * Get all settings for a company
  */
-router.get('/', requireCompanyAccess, async (req, res, next) => {
+router.get('/', requireCompanyAccess, requireFeature('settings'), async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
 
@@ -119,7 +120,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
  * PUT /api/settings
  * Update settings
  */
-router.put('/', requireCompanyAccess, async (req, res, next) => {
+router.put('/', requireCompanyAccess, requireLevel('admin'), requireFeature('settings'), async (req, res, next) => {
     try {
         const data = req.body;
         const companyId = data.companyId || req.query.companyId;
@@ -160,7 +161,7 @@ router.put('/', requireCompanyAccess, async (req, res, next) => {
  * GET /api/settings/:category
  * Get specific settings category
  */
-router.get('/:category', requireCompanyAccess, async (req, res, next) => {
+router.get('/:category', requireCompanyAccess, requireFeature('settings'), async (req, res, next) => {
     try {
         const { category } = req.params;
         const companyId = req.query.companyId;
@@ -194,7 +195,7 @@ router.get('/:category', requireCompanyAccess, async (req, res, next) => {
  * PATCH /api/settings/:category
  * Update specific settings category
  */
-router.patch('/:category', requireCompanyAccess, async (req, res, next) => {
+router.patch('/:category', requireCompanyAccess, requireLevel('admin'), requireFeature('settings'), async (req, res, next) => {
     try {
         const { category } = req.params;
         const data = req.body;
@@ -233,7 +234,7 @@ router.patch('/:category', requireCompanyAccess, async (req, res, next) => {
  * POST /api/settings/test-email
  * Send a test email to verify SMTP configuration
  */
-router.post('/test-email', requireCompanyAccess, async (req, res, next) => {
+router.post('/test-email', requireCompanyAccess, requireLevel('admin'), requireFeature('settings'), async (req, res, next) => {
     try {
         const { companyId, toEmail } = req.body;
 

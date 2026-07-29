@@ -417,6 +417,7 @@ def record_consent():
 
 
 @gdpr_bp.route('/retention/run', methods=['POST'])
+@gdpr_bp.route('/anonymize', methods=['POST'])
 @require_company_access
 def run_retention_cleanup():
     """

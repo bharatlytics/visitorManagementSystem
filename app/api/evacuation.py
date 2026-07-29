@@ -31,6 +31,8 @@ def convert_objectids(obj):
 
 
 @evacuation_bp.route('/evacuation-list', methods=['GET'])
+@evacuation_bp.route('/active-visitors', methods=['GET'])
+@evacuation_bp.route('/muster', methods=['GET'])
 @require_company_access
 def get_evacuation_list():
     """

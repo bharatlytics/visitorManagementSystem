@@ -94,13 +94,6 @@ router.post('/login', async (req, res, next) => {
         // Create token with role (include name for display)
         const token = createToken(user._id.toString(), user.companyId?.toString(), role, 24, null, user.name);
 
-        // Set session with role
-        if (req.session) {
-            req.session.userId = user._id.toString();
-            req.session.companyId = user.companyId?.toString();
-            req.session.userRole = role;
-        }
-
         res.json({
             token,
             user: {
@@ -184,7 +177,7 @@ router.post('/register', async (req, res, next) => {
         // Mode 2: Create New Company
         else if (data.companyName) {
             // Verify Admin Secret
-            if (data.adminSecret !== '112233445566778899') {
+            if (data.adminSecret !== (process.env.ADMIN_REGISTRATION_SECRET || '112233445566778899')) {
                 return res.status(403).json({ error: 'Invalid Admin Secret for new company registration' });
             }
 
@@ -229,12 +222,7 @@ router.post('/register', async (req, res, next) => {
         // Create token with role (include name for display)
         const token = createToken(user._id.toString(), companyId.toString(), role, 24, null, user.name);
 
-        // Set session with role
-        if (req.session) {
-            req.session.userId = user._id.toString();
-            req.session.companyId = companyId.toString();
-            req.session.userRole = role;
-        }
+
 
         res.status(201).json({
             token,
@@ -256,9 +244,6 @@ router.post('/register', async (req, res, next) => {
  * Logout
  */
 router.post('/logout', (req, res) => {
-    if (req.session) {
-        req.session.destroy();
-    }
     res.json({ message: 'Logged out' });
 });
 
@@ -303,17 +288,34 @@ router.all('/platform-sso', async (req, res, next) => {
 
             try {
                 const axios = require('axios');
-                const resp = await axios.post(verifyUrl, {
-                    ssoToken: platformToken,
-                }, {
-                    params: { ssoToken: platformToken },
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-App-Key': Config.APP_KEY,
-                        'X-App-Secret': Config.APP_SECRET,
-                    },
-                    timeout: 10000,
-                });
+
+                // SSO verify with retry (handles Vercel cold start timeouts)
+                async function verifySsoWithRetry(attempt = 1) {
+                    try {
+                        return await axios.post(verifyUrl, {
+                            ssoToken: platformToken,
+                        }, {
+                            params: { ssoToken: platformToken },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-App-Key': Config.APP_KEY,
+                                'X-App-Secret': Config.APP_SECRET,
+                            },
+                            timeout: 15000,
+                        });
+                    } catch (err) {
+                        const status = err.response?.status;
+                        const isRetryable = !status || status >= 500 || err.code === 'ECONNABORTED';
+                        if (isRetryable && attempt < 2) {
+                            console.log(`[SSO] Verify attempt ${attempt} failed (${err.message}), retrying in 2s...`);
+                            await new Promise(r => setTimeout(r, 2000));
+                            return verifySsoWithRetry(attempt + 1);
+                        }
+                        throw err;
+                    }
+                }
+
+                const resp = await verifySsoWithRetry();
 
                 if (!resp.data?.valid || !resp.data?.context) {
                     console.error('[SSO] Platform verify rejected:', resp.data);
@@ -400,20 +402,11 @@ router.all('/platform-sso', async (req, res, next) => {
                 payload = jwt.verify(platformToken, Config.PLATFORM_JWT_SECRET, { algorithms: [Config.JWT_ALGORITHM] });
                 console.log('[SSO] Legacy JWT verified locally');
             } catch (localErr) {
-                console.log(`[SSO] Local JWT verify failed (${localErr.message}), trying decode-without-verify...`);
-                // Decode without verification as fallback
-                try {
-                    payload = jwt.decode(platformToken, { complete: false });
-                    if (!payload || !payload.userId) {
-                        throw new Error('Decoded payload missing userId');
-                    }
-                    console.log(`[SSO] ✅ JWT decoded without verify (trusted platform token) userId=${payload.userId}`);
-                } catch (decodeErr) {
-                    if (localErr.name === 'TokenExpiredError') {
-                        return res.status(401).json({ error: 'SSO token expired' });
-                    }
-                    return res.status(401).json({ error: `Invalid SSO token: ${localErr.message}` });
+                console.error(`[SSO] All verification strategies failed: ${localErr.message}`);
+                if (localErr.name === 'TokenExpiredError') {
+                    return res.status(401).json({ error: 'SSO token expired' });
                 }
+                return res.status(401).json({ error: `Invalid SSO token: ${localErr.message}` });
             }
 
             console.log('[SSO] Legacy JWT token payload:', payload);
@@ -428,16 +421,7 @@ router.all('/platform-sso', async (req, res, next) => {
             roles = payload.roles || [];
         }
 
-        // ── Store in session ──
-        if (req.session) {
-            req.session.platformToken = platformToken;
-            req.session.companyId = companyId;
-            req.session.userId = userId;
-            req.session.userEmail = userEmail;
-            req.session.userName = userName;
-            req.session.companyName = companyName;
-            req.session.companyLogo = companyLogo;
-        }
+
 
         // ── Determine VMS role ──
         const adminRoles = ['platform_admin', 'company_super_admin', 'super_admin', 'admin'];
@@ -488,26 +472,34 @@ router.all('/platform-sso', async (req, res, next) => {
  */
 router.get('/me', requireAuth, (req, res) => {
     const companyId = req.companyId;
-    const isConnected = Boolean(req.session?.platformToken);
 
     const response = {
         user_id: req.userId,
         user_email: req.tokenPayload?.email || '',
-        user_name: req.tokenPayload?.name || '',
+        user_name: req.tokenPayload?.userName || req.tokenPayload?.name || '',
         user_role: req.userRole,
         company_id: companyId,
-        connected: isConnected,
-        permissions: req.permissions || null
+        connected: Boolean(req.tokenPayload?.permissions),
+        permissions: req.permissions || null,
+        rbac: req.rbac ? {
+            level: req.rbac.level,
+            features: req.rbac.features,
+            entityScope: req.rbac.entityScope,
+            isAdmin: req.rbac.isAdmin,
+            isManager: req.rbac.isManager,
+            isOperator: req.rbac.isOperator,
+            isViewer: req.rbac.isViewer
+        } : null
     };
 
     // If connected to platform, include company details and return URL
-    if (isConnected && companyId) {
+    if (response.connected && companyId) {
         const platformBase = Config.PLATFORM_WEB_URL.replace(/\/$/, '');
         response.platform_url = `${platformBase}/companies/${companyId}`;
         response.company = {
             id: companyId,
-            name: req.session?.companyName,
-            logo: req.session?.companyLogo
+            name: req.tokenPayload?.companyName || '',
+            logo: req.tokenPayload?.companyLogo || ''
         };
     }
 

@@ -9,13 +9,14 @@ const { ObjectId } = require('mongodb');
 
 const { collections, getDb } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
+const { requireLevel, requireFeature } = require('../middleware/rbac');
 const { convertObjectIds, isValidObjectId, validateRequiredFields } = require('../utils/helpers');
 
 /**
  * GET /api/watchlist
  * List all watchlist entries for a company
  */
-router.get('/', requireCompanyAccess, async (req, res, next) => {
+router.get('/', requireCompanyAccess, requireFeature('watchlist'), async (req, res, next) => {
     try {
         const companyId = req.query.companyId;
         const limit = parseInt(req.query.limit) || 100;
@@ -58,7 +59,7 @@ router.get('/', requireCompanyAccess, async (req, res, next) => {
  * POST /api/watchlist
  * Add a person to watchlist
  */
-router.post('/', requireCompanyAccess, async (req, res, next) => {
+router.post('/', requireCompanyAccess, requireLevel('manager'), requireFeature('watchlist'), async (req, res, next) => {
     try {
         const data = req.body;
 
@@ -145,7 +146,7 @@ router.get('/:entry_id', requireCompanyAccess, async (req, res, next) => {
  * PUT /api/watchlist/:entry_id
  * Update watchlist entry
  */
-router.put('/:entry_id', requireCompanyAccess, async (req, res, next) => {
+router.put('/:entry_id', requireCompanyAccess, requireLevel('manager'), requireFeature('watchlist'), async (req, res, next) => {
     try {
         const { entry_id } = req.params;
         const data = req.body;
@@ -212,7 +213,7 @@ router.put('/:entry_id', requireCompanyAccess, async (req, res, next) => {
  * PATCH /api/watchlist/:entry_id/status
  * Quick status change (e.g. active → cleared, cleared → active)
  */
-router.patch('/:entry_id/status', requireCompanyAccess, async (req, res, next) => {
+router.patch('/:entry_id/status', requireCompanyAccess, requireLevel('manager'), requireFeature('watchlist'), async (req, res, next) => {
     try {
         const { entry_id } = req.params;
         const { status, reason } = req.body;
@@ -257,7 +258,7 @@ router.patch('/:entry_id/status', requireCompanyAccess, async (req, res, next) =
  * DELETE /api/watchlist/:entry_id
  * Permanently remove from watchlist
  */
-router.delete('/:entry_id', requireCompanyAccess, async (req, res, next) => {
+router.delete('/:entry_id', requireCompanyAccess, requireLevel('admin'), requireFeature('watchlist'), async (req, res, next) => {
     try {
         const { entry_id } = req.params;
 

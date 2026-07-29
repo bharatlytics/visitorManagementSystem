@@ -11,7 +11,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const compression = require('compression');
-const session = require('express-session');
 
 const { connectToDatabase } = require('../server/db');
 const Config = require('../server/config');
@@ -91,17 +90,8 @@ app.use('/auth/register', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Session middleware (for SSO)
-app.use(session({
-    secret: Config.SECRET_KEY,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: Config.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-}));
+// NOTE: express-session removed — MemoryStore doesn't persist across Vercel
+// lambda invocations. All auth state is in JWT tokens (cookie-less auth).
 
 // ===========================================
 // URL Normalization - Strip trailing slashes

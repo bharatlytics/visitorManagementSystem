@@ -587,6 +587,27 @@ export default function Settings() {
                             <option value="xlsx">Excel (XLSX)</option>
                         </select>
                     </div>
+                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <div>
+                            <p className="text-xs font-semibold text-gray-700">Right-to-be-Forgotten Execution</p>
+                            <p className="text-xs text-gray-400">Purge PII data older than retention threshold</p>
+                        </div>
+                        <button
+                            onClick={async () => {
+                                if (confirm('Purge/anonymize all visitor photos and PII records older than retention threshold?')) {
+                                    try {
+                                        await api.post('/gdpr/anonymize', { retentionDays: settings.compliance.dataRetentionDays })
+                                        alert('GDPR data anonymization executed successfully!')
+                                    } catch (err) {
+                                        alert(err.response?.data?.error || 'Anonymization execution failed.')
+                                    }
+                                }
+                            }}
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-lg border border-red-200 transition-colors"
+                        >
+                            Execute PII Purge Now
+                        </button>
+                    </div>
                 </div>
             </SettingCard>
         </div>
