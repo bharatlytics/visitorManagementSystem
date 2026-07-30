@@ -604,7 +604,17 @@ export default function VisitorRegistration() {
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-center gap-3 pt-2">
+                        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                            {resultPass.portalUrl && (
+                                <a
+                                    href={resultPass.portalUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-600/30"
+                                >
+                                    <Sparkles className="w-4 h-4" /> View Digital Portal
+                                </a>
+                            )}
                             <button
                                 onClick={() => window.print()}
                                 className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-medium flex items-center gap-2"
@@ -613,7 +623,7 @@ export default function VisitorRegistration() {
                             </button>
                             <button
                                 onClick={() => navigate('/visits')}
-                                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-600/30"
+                                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium"
                             >
                                 Return to Console
                             </button>

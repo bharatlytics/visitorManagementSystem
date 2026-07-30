@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { ObjectId } = require('mongodb');
+const crypto = require('crypto');
 
 const { collections, getDb } = require('../db');
 const { requireCompanyAccess } = require('../middleware/auth');
@@ -104,12 +105,71 @@ router.post('/', requireCompanyAccess, async (req, res, next) => {
             lastUpdated: new Date()
         };
 
+        // Generate visitor portal token
+        const visitorPortalToken = crypto.randomBytes(32).toString('hex');
+        preregDoc.visitorPortalToken = visitorPortalToken;
+
         await db.collection('preregistrations').insertOne(preregDoc);
+
+        // Build portal URL
+        let frontendUrl = process.env.FRONTEND_URL;
+        if (!frontendUrl && req) {
+            if (req.headers.origin) frontendUrl = req.headers.origin;
+            else if (req.headers.referer) { try { frontendUrl = new URL(req.headers.referer).origin; } catch (e) {} }
+            else { const host = req.headers['x-forwarded-host'] || req.headers.host; const proto = req.headers['x-forwarded-proto'] || 'https'; if (host) frontendUrl = `${proto}://${host}`; }
+        }
+        if (!frontendUrl) frontendUrl = 'http://localhost:3000';
+        const portalUrl = `${frontendUrl}/visitor-portal/${visitorPortalToken}`;
+        const registrationUrl = `${frontendUrl}/visitor-registration/${preregDoc._id.toString()}`;
+
+        // Store portal URL on the preregistration
+        await db.collection('preregistrations').updateOne(
+            { _id: preregDoc._id },
+            { $set: { portalUrl, registrationUrl } }
+        );
+
+        // Try sending visitor notification email (non-blocking)
+        let emailSent = false;
+        if (data.email) {
+            try {
+                const { sendVisitorInviteEmail } = require('../services/email_service');
+                const emailResult = await sendVisitorInviteEmail(data.companyId, data.email, {
+                    visitorName: data.visitorName,
+                    hostEmployeeName: data.hostEmployeeName,
+                    purpose: data.purpose,
+                    expectedArrival: data.expectedArrival,
+                    expectedDeparture: data.expectedDeparture
+                }, portalUrl, registrationUrl, req);
+                emailSent = emailResult?.success || false;
+            } catch (emailErr) {
+                console.log('[preregistration] Email send failed (non-blocking):', emailErr.message);
+            }
+        }
+
+        // Try sending SMS if enabled (non-blocking)
+        let smsSent = false;
+        if (data.phone) {
+            try {
+                const { sendVisitorInviteSMS } = require('../services/sms_service');
+                const smsResult = await sendVisitorInviteSMS(data.companyId, data.phone, {
+                    visitorName: data.visitorName,
+                    hostEmployeeName: data.hostEmployeeName,
+                    expectedArrival: data.expectedArrival
+                }, portalUrl);
+                smsSent = smsResult?.success || false;
+            } catch (smsErr) {
+                console.log('[preregistration] SMS send failed (non-blocking):', smsErr.message);
+            }
+        }
 
         res.status(201).json({
             message: 'Pre-registration created successfully',
             _id: preregDoc._id.toString(),
             confirmationCode: preregDoc.confirmationCode,
+            portalUrl,
+            registrationUrl,
+            emailSent,
+            smsSent,
             preregistration: convertObjectIds(preregDoc)
         });
     } catch (error) {
@@ -353,6 +413,200 @@ router.post('/:prereg_id/convert', requireCompanyAccess, async (req, res, next) 
         });
     } catch (error) {
         console.error('Error converting preregistration:', error);
+        next(error);
+    }
+});
+
+/**
+ * POST /api/preregistration/:token/submit
+ * Submit visitor registration via pre-registration invite link
+ * This is the endpoint called by VisitorRegistration.jsx when visitor completes the form
+ */
+router.post('/:token/submit', async (req, res, next) => {
+    try {
+        const { token } = req.params;
+        const data = req.body;
+
+        const db = getDb();
+
+        // Find preregistration by _id or confirmationCode
+        let prereg;
+        if (isValidObjectId(token)) {
+            prereg = await db.collection('preregistrations').findOne({ _id: new ObjectId(token) });
+        }
+        if (!prereg) {
+            prereg = await db.collection('preregistrations').findOne({ confirmationCode: token });
+        }
+        if (!prereg) {
+            prereg = await db.collection('preregistrations').findOne({ visitorPortalToken: token });
+        }
+
+        if (!prereg) {
+            return res.status(404).json({ error: 'Invitation not found or has expired' });
+        }
+
+        if (prereg.status === 'checked_in' || prereg.status === 'cancelled') {
+            return res.status(400).json({ error: `This invitation has already been ${prereg.status === 'checked_in' ? 'used' : 'cancelled'}` });
+        }
+
+        // Create or update visitor record
+        const visitorName = data.visitorName || prereg.visitorName;
+        const phone = data.phone || prereg.phone;
+        const email = data.email || prereg.email;
+
+        let visitor = await collections.visitors().findOne({
+            companyId: prereg.companyId,
+            phone: phone
+        });
+
+        const ndaData = {
+            ndaSigned: data.ndaSigned || false,
+            ndaSignedAt: data.ndaSigned ? new Date() : null,
+            safetyAcknowledgments: data.safetyAgreed || {},
+        };
+
+        if (!visitor) {
+            const visitorDoc = {
+                _id: new ObjectId(),
+                companyId: prereg.companyId,
+                visitorName: visitorName,
+                phone: phone,
+                email: email,
+                organization: data.organization || prereg.organization,
+                visitorType: data.visitorType || prereg.visitorType || 'guest',
+                idType: data.idType || null,
+                idNumber: data.idNumber || null,
+                hostEmployeeId: prereg.hostEmployeeId,
+                purpose: prereg.purpose,
+                status: 'active',
+                ...ndaData,
+                visitorImages: {},
+                createdAt: new Date(),
+                lastUpdated: new Date()
+            };
+
+            // Handle photo if provided
+            if (data.photo) {
+                try {
+                    const { getGridFSBucket } = require('../db');
+                    let base64Data = data.photo;
+                    if (base64Data.includes(',')) base64Data = base64Data.split(',')[1];
+                    const imageBuffer = Buffer.from(base64Data, 'base64');
+
+                    const bucket = getGridFSBucket('visitorImages');
+                    const uploadStream = bucket.openUploadStream(`${prereg.companyId}_center_face.jpg`, {
+                        metadata: { companyId: String(prereg.companyId), type: 'face_image_center', source: 'preregistration', timestamp: new Date() }
+                    });
+                    uploadStream.write(imageBuffer);
+                    uploadStream.end();
+                    await new Promise((resolve, reject) => { uploadStream.on('finish', resolve); uploadStream.on('error', reject); });
+                    visitorDoc.visitorImages = { center: uploadStream.id };
+                } catch (imgErr) {
+                    console.log('[preregistration/submit] Photo save failed (non-blocking):', imgErr.message);
+                }
+            }
+
+            // Handle NDA signature image
+            if (data.signatureData) {
+                try {
+                    const { getGridFSBucket } = require('../db');
+                    let sigBase64 = data.signatureData;
+                    if (sigBase64.includes(',')) sigBase64 = sigBase64.split(',')[1];
+                    const sigBuffer = Buffer.from(sigBase64, 'base64');
+
+                    const bucket = getGridFSBucket('visitorImages');
+                    const uploadStream = bucket.openUploadStream(`${prereg.companyId}_nda_signature.png`, {
+                        metadata: { companyId: String(prereg.companyId), type: 'nda_signature', source: 'preregistration', timestamp: new Date() }
+                    });
+                    uploadStream.write(sigBuffer);
+                    uploadStream.end();
+                    await new Promise((resolve, reject) => { uploadStream.on('finish', resolve); uploadStream.on('error', reject); });
+                    visitorDoc.ndaSignatureId = uploadStream.id;
+                } catch (sigErr) {
+                    console.log('[preregistration/submit] Signature save failed (non-blocking):', sigErr.message);
+                }
+            }
+
+            await collections.visitors().insertOne(visitorDoc);
+            visitor = visitorDoc;
+        } else {
+            // Update existing visitor with NDA data
+            const updateFields = { ...ndaData, lastUpdated: new Date() };
+            if (data.organization) updateFields.organization = data.organization;
+            await collections.visitors().updateOne(
+                { _id: visitor._id },
+                { $set: updateFields }
+            );
+        }
+
+        // Create visit record
+        const visitDoc = {
+            _id: new ObjectId(),
+            visitorId: visitor._id,
+            companyId: prereg.companyId,
+            hostEmployeeId: prereg.hostEmployeeId,
+            hostEmployeeName: prereg.hostEmployeeName,
+            visitorName: visitorName,
+            visitorMobile: phone,
+            visitorPhone: phone,
+            visitorEmail: email,
+            purpose: prereg.purpose,
+            expectedArrival: prereg.expectedArrival || new Date(),
+            expectedDeparture: prereg.expectedDeparture || null,
+            numberOfPersons: prereg.numberOfPersons || 1,
+            vehicleNumber: data.vehicleNumber || prereg.vehicleNumber || null,
+            belongings: prereg.belongings || [],
+            accessAreas: prereg.accessAreas || [],
+            visitType: data.visitorType || prereg.visitorType || 'guest',
+            status: 'scheduled',
+            preregistrationId: prereg._id,
+            qrCode: new ObjectId().toString(),
+            ...ndaData,
+            createdAt: new Date(),
+            lastUpdated: new Date()
+        };
+
+        // Generate visitor portal token for the visit
+        const visitorPortalToken = prereg.visitorPortalToken || crypto.randomBytes(32).toString('hex');
+        visitDoc.visitorPortalToken = visitorPortalToken;
+
+        await collections.visits().insertOne(visitDoc);
+
+        // Update preregistration status
+        await db.collection('preregistrations').updateOne(
+            { _id: prereg._id },
+            { $set: { status: 'checked_in', visitId: visitDoc._id, visitorId: visitor._id, registeredAt: new Date(), lastUpdated: new Date() } }
+        );
+
+        // Update visitor's visits list
+        await collections.visitors().updateOne(
+            { _id: visitor._id },
+            { $push: { visits: visitDoc._id.toString() } }
+        );
+
+        console.log(`[preregistration/submit] Visitor ${visitorName} registered via invite ${token}, visit ${visitDoc._id}`);
+
+        // Build portal URL for response
+        let frontendUrl = process.env.FRONTEND_URL;
+        if (!frontendUrl && req) {
+            if (req.headers.origin) frontendUrl = req.headers.origin;
+            else if (req.headers.referer) { try { frontendUrl = new URL(req.headers.referer).origin; } catch (e) {} }
+        }
+        if (!frontendUrl) frontendUrl = 'http://localhost:3000';
+
+        res.json({
+            status: 'success',
+            message: 'Registration completed successfully',
+            visitorId: visitor._id.toString(),
+            visitId: visitDoc._id.toString(),
+            visitorName: visitorName,
+            confirmationCode: prereg.confirmationCode,
+            qrCodeUrl: `/api/visitors/visits/qr/${visitDoc._id.toString()}`,
+            portalUrl: `${frontendUrl}/visitor-portal/${visitorPortalToken}`,
+            visit: convertObjectIds(visitDoc)
+        });
+    } catch (error) {
+        console.error('Error in preregistration submit:', error);
         next(error);
     }
 });

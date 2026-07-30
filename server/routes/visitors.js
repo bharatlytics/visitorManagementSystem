@@ -1358,6 +1358,20 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
         );
 
         // Add extra fields
+        const crypto = require('crypto');
+        const visitorPortalToken = crypto.randomBytes(32).toString('hex');
+        visitDoc.visitorPortalToken = visitorPortalToken;
+
+        let frontendUrl = process.env.FRONTEND_URL;
+        if (!frontendUrl && req) {
+            if (req.headers.origin) frontendUrl = req.headers.origin;
+            else if (req.headers.referer) { try { frontendUrl = new URL(req.headers.referer).origin; } catch (e) {} }
+            else { const host = req.headers['x-forwarded-host'] || req.headers.host; const proto = req.headers['x-forwarded-proto'] || 'https'; if (host) frontendUrl = `${proto}://${host}`; }
+        }
+        if (!frontendUrl) frontendUrl = 'http://localhost:3000';
+        const portalUrl = `${frontendUrl}/visitor-portal/${visitorPortalToken}`;
+        visitDoc.portalUrl = portalUrl;
+
         visitDoc.visitType = data.visitType || 'single';
         visitDoc.accessAreas = (data.accessAreas || []).filter(id => isValidObjectId(id)).map(id => new ObjectId(id));
         visitDoc.assets = data.assets || {};
@@ -1374,6 +1388,30 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
             { _id: new ObjectId(visitorId) },
             { $push: { visits: visitId.toString() } }
         );
+
+        // Send visitor notification (Email & SMS) non-blocking
+        if (visitor.email) {
+            try {
+                const { sendVisitorInviteEmail } = require('../services/email_service');
+                sendVisitorInviteEmail(data.companyId, visitor.email, {
+                    visitorName: visitor.visitorName,
+                    hostEmployeeName: hostEmployee.employeeName,
+                    purpose: data.purpose,
+                    expectedArrival: arrival,
+                    expectedDeparture: departure
+                }, portalUrl, null, req);
+            } catch (err) { console.log('[schedule_visit] Visitor email failed:', err.message); }
+        }
+        if (visitor.phone) {
+            try {
+                const { sendVisitorInviteSMS } = require('../services/sms_service');
+                sendVisitorInviteSMS(data.companyId, visitor.phone, {
+                    visitorName: visitor.visitorName,
+                    hostEmployeeName: hostEmployee.employeeName,
+                    expectedArrival: arrival
+                }, portalUrl);
+            } catch (err) { console.log('[schedule_visit] Visitor SMS failed:', err.message); }
+        }
 
         // Handle approval workflow if required
         let approvalData = null;

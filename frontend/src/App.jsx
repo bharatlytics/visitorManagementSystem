@@ -16,6 +16,7 @@ import VisitApproval from './pages/VisitApproval'
 import { useAuthStore } from './store/authStore'
 
 import VisitorRegistration from './pages/VisitorRegistration'
+import VisitorPortal from './pages/VisitorPortal'
 import Evacuation from './pages/Evacuation'
 
 function App() {
@@ -23,10 +24,11 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Skip auth check if on public routes (SSO callback, approval, visitor registration, kiosk)
+    // Skip auth check if on public routes (SSO callback, approval, visitor registration, visitor portal, kiosk)
     const isPublicPath = ['/sso-callback', '/kiosk'].some(p => window.location.pathname.startsWith(p)) ||
       window.location.pathname.startsWith('/approval/') ||
-      window.location.pathname.startsWith('/visitor-registration/')
+      window.location.pathname.startsWith('/visitor-registration/') ||
+      window.location.pathname.startsWith('/visitor-portal/')
 
     if (isPublicPath) {
       setLoading(false)
@@ -51,6 +53,7 @@ function App() {
         <Route path="/sso-callback" element={<SSOCallback />} />
         <Route path="/approval/:token" element={<VisitApproval />} />
         <Route path="/visitor-registration/:token" element={<VisitorRegistration />} />
+        <Route path="/visitor-portal/:token" element={<VisitorPortal />} />
         <Route path="/kiosk" element={<VisitorRegistration />} />
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
         <Route

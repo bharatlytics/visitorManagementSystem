@@ -277,8 +277,145 @@ async function sendTestEmail(companyId, toEmail) {
     }
 }
 
+/**
+ * Send visitor invite email with portal link and NDA instructions
+ */
+async function sendVisitorInviteEmail(companyId, visitorEmail, visitData, portalUrl, registrationUrl, req = null) {
+    try {
+        const smtpConfig = await getSMTPConfig(companyId);
+        if (!smtpConfig) {
+            console.log('[EmailService] Cannot send visitor email - SMTP not configured');
+            return { success: false, error: 'SMTP not configured' };
+        }
+
+        const transporter = nodemailer.createTransport(smtpConfig);
+
+        const settings = await collections.settings().findOne({
+            companyId: isValidObjectId(companyId) ? new ObjectId(companyId) : companyId
+        });
+        const fromEmail = settings?.smtp?.fromEmail || smtpConfig.auth.user;
+        const companyName = settings?.general?.companyName || 'Our Company';
+
+        const arrivalDate = visitData.expectedArrival
+            ? new Date(visitData.expectedArrival).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+            : 'To be confirmed';
+
+        const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #1e3a8a, #3b82f6); padding: 32px; text-align: center; border-radius: 16px 16px 0 0; }
+        .header h1 { color: white; margin: 0; font-size: 24px; font-weight: 700; }
+        .header p { color: rgba(255,255,255,0.8); margin: 8px 0 0; font-size: 14px; }
+        .body { background: white; padding: 32px; }
+        .greeting { font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 16px; }
+        .info-grid { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 20px 0; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #64748b; font-size: 13px; font-weight: 500; }
+        .info-value { color: #1e293b; font-size: 13px; font-weight: 600; text-align: right; }
+        .cta-button { display: inline-block; background: linear-gradient(135deg, #1e3a8a, #3b82f6); color: white !important; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 15px; margin: 8px 4px; }
+        .cta-secondary { background: linear-gradient(135deg, #059669, #10b981); }
+        .nda-box { background: #fffbeb; border: 1px solid #fbbf24; border-radius: 12px; padding: 16px; margin: 20px 0; }
+        .nda-box h3 { color: #92400e; margin: 0 0 8px; font-size: 14px; }
+        .nda-box p { color: #78350f; font-size: 12px; margin: 0; line-height: 1.5; }
+        .footer { background: #f8fafc; padding: 20px 32px; text-align: center; border-radius: 0 0 16px 16px; border-top: 1px solid #e2e8f0; }
+        .footer p { color: #94a3b8; font-size: 11px; margin: 4px 0; }
+    </style>
+</head>
+<body>
+    <div class="container" style="padding: 20px;">
+        <div class="header">
+            <h1>🏢 ${companyName}</h1>
+            <p>Visitor Management System</p>
+        </div>
+        <div class="body">
+            <p class="greeting">Hello ${visitData.visitorName},</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+                You have been invited to visit <strong>${companyName}</strong>. Please review your visit details below and complete the required steps before your arrival.
+            </p>
+
+            <div class="info-grid">
+                <div class="info-row">
+                    <span class="info-label">Host</span>
+                    <span class="info-value">${visitData.hostEmployeeName || 'To be assigned'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Purpose</span>
+                    <span class="info-value">${visitData.purpose || 'Business Visit'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Expected Arrival</span>
+                    <span class="info-value">${arrivalDate}</span>
+                </div>
+                ${visitData.expectedDeparture ? `<div class="info-row">
+                    <span class="info-label">Expected Departure</span>
+                    <span class="info-value">${new Date(visitData.expectedDeparture).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                </div>` : ''}
+            </div>
+
+            <div class="nda-box">
+                <h3>📋 NDA & Safety Compliance Required</h3>
+                <p>Before your visit, you must review and sign the Non-Disclosure Agreement and acknowledge the safety guidelines. You can complete this through the portal link below.</p>
+            </div>
+
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${portalUrl}" class="cta-button">📱 View Visit Portal</a>
+                ${registrationUrl ? `<a href="${registrationUrl}" class="cta-button cta-secondary">✍️ Complete Registration</a>` : ''}
+            </div>
+
+            <p style="color: #94a3b8; font-size: 12px; text-align: center; margin-top: 20px;">
+                Use the portal to view your visit details, NDA requirements, and check-in status at any time.
+            </p>
+        </div>
+        <div class="footer">
+            <p>This is an automated message from ${companyName} Visitor Management System</p>
+            <p>Please do not reply to this email</p>
+        </div>
+    </div>
+</body>
+</html>`.trim();
+
+        const mailOptions = {
+            from: `"${companyName} - Visitor Management" <${fromEmail}>`,
+            to: visitorEmail,
+            subject: `You're Invited — Visit ${companyName} on ${arrivalDate}`,
+            html: htmlContent,
+            text: `
+Hello ${visitData.visitorName},
+
+You have been invited to visit ${companyName}.
+
+Host: ${visitData.hostEmployeeName || 'To be assigned'}
+Purpose: ${visitData.purpose || 'Business Visit'}
+Expected Arrival: ${arrivalDate}
+
+View your visit details and complete NDA: ${portalUrl}
+${registrationUrl ? `Complete your registration: ${registrationUrl}` : ''}
+
+---
+${companyName} Visitor Management System
+            `.trim()
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('[EmailService] Visitor invite email sent:', info.messageId);
+
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('[EmailService] Error sending visitor invite email:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 module.exports = {
     sendApprovalEmail,
+    sendVisitorInviteEmail,
     sendTestEmail,
     getSMTPConfig
 };

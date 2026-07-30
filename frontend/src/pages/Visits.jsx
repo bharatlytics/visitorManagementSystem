@@ -769,9 +769,7 @@ export default function Visits() {
                                         <h5 className="text-xs font-semibold uppercase mb-2">Approval Status</h5>
                                         <p className="text-sm font-medium">{selectedVisit.approvalStatus?.toUpperCase()}</p>
                                     </div>
-                                )}
-
-                                {/* Approval Link Display */}
+                                       {/* Approval Link Display */}
                                 {selectedVisit.status === 'pending_approval' && selectedVisit.approvalUrl && (
                                     <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
                                         <h5 className="text-xs font-semibold text-purple-800 uppercase mb-2 flex items-center gap-2">
@@ -805,6 +803,37 @@ export default function Visits() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Visitor Portal Link Display */}
+                                {(selectedVisit.visitorPortalToken || selectedVisit.portalUrl) && (
+                                    <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                                        <h5 className="text-xs font-semibold text-blue-800 uppercase mb-2 flex items-center gap-2">
+                                            <Building className="w-3.5 h-3.5" /> Visitor Portal Link (Zero-Download)
+                                        </h5>
+                                        <div className="space-y-2">
+                                            <div className="p-2 bg-white rounded-lg border border-blue-200 break-all">
+                                                <a
+                                                    href={selectedVisit.portalUrl || `${window.location.origin}/visitor-portal/${selectedVisit.visitorPortalToken}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-blue-600 hover:text-blue-800 underline font-mono"
+                                                >
+                                                    {selectedVisit.portalUrl || `${window.location.origin}/visitor-portal/${selectedVisit.visitorPortalToken}`}
+                                                </a>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const url = selectedVisit.portalUrl || `${window.location.origin}/visitor-portal/${selectedVisit.visitorPortalToken}`;
+                                                    navigator.clipboard.writeText(url);
+                                                    alert('Visitor Portal link copied to clipboard!');
+                                                }}
+                                                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
+                                            >
+                                                <Copy className="w-3.5 h-3.5" /> Copy Visitor Portal Link
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}                              )}
                             </div>
                         </div>
                     </div>
