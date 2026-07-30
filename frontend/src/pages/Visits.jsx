@@ -769,7 +769,9 @@ export default function Visits() {
                                         <h5 className="text-xs font-semibold uppercase mb-2">Approval Status</h5>
                                         <p className="text-sm font-medium">{selectedVisit.approvalStatus?.toUpperCase()}</p>
                                     </div>
-                                       {/* Approval Link Display */}
+                                )}
+
+                                {/* Approval Link Display */}
                                 {selectedVisit.status === 'pending_approval' && selectedVisit.approvalUrl && (
                                     <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
                                         <h5 className="text-xs font-semibold text-purple-800 uppercase mb-2 flex items-center gap-2">
@@ -833,7 +835,7 @@ export default function Visits() {
                                             </button>
                                         </div>
                                     </div>
-                                )}                              )}
+                                )}
                             </div>
                         </div>
                     </div>
