@@ -106,6 +106,18 @@ router.get('/', requireCompanyAccess, requireFeature('settings'), async (req, re
                 autoAnonymize: false,
                 auditLogging: true,
                 exportDataFormat: 'csv'
+            },
+            nda: {
+                enabled: true,
+                title: 'Non-Disclosure Agreement (NDA) & Facility Safety',
+                disclosureText: 'I hereby agree to keep all confidential information disclosed during my visit strictly secret and confidential. I will not record, photo, or transmit any sensitive material without explicit written consent.',
+                requireSignature: true,
+                safetyRules: [
+                    'Wear personal protective equipment (PPE) where designated.',
+                    'No unauthorized photography or audio/video recording.',
+                    'Visitors must remain accompanied by an authorized host at all times.',
+                    'Review and follow building emergency exit routes in case of alarm.'
+                ]
             }
         };
 
@@ -137,7 +149,7 @@ router.put('/', requireCompanyAccess, requireLevel('admin'), requireFeature('set
             lastUpdated: new Date()
         };
 
-        const settingsCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp', 'integrations', 'kiosk', 'compliance'];
+        const settingsCategories = ['general', 'visitor', 'notifications', 'security', 'branding', 'smtp', 'integrations', 'kiosk', 'compliance', 'nda'];
         for (const category of settingsCategories) {
             if (data[category]) {
                 updateFields[category] = data[category];

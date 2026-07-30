@@ -82,6 +82,7 @@ function StatusBadge({ active }) {
 const TABS = [
     { id: 'general', label: 'General', icon: Building },
     { id: 'visitor', label: 'Visitor', icon: FileText },
+    { id: 'nda', label: 'NDA & Safety Rules', icon: Shield },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'integrations', label: 'Integrations', icon: Zap },
     { id: 'security', label: 'Security', icon: Shield },
@@ -103,6 +104,18 @@ export default function Settings() {
             requireApproval: false, badgeExpiry: 24,
             visitorTypes: 'general,contractor,interview,vendor,delivery',
             idTypes: 'aadhar,passport,drivers_license,employee_id',
+        },
+        nda: {
+            enabled: true,
+            title: 'Non-Disclosure Agreement (NDA) & Facility Safety',
+            disclosureText: 'I hereby agree to keep all confidential information disclosed during my visit strictly secret and confidential. I will not record, photo, or transmit any sensitive material without explicit written consent.',
+            requireSignature: true,
+            safetyRules: [
+                'Wear personal protective equipment (PPE) where designated.',
+                'No unauthorized photography or audio/video recording.',
+                'Visitors must remain accompanied by an authorized host at all times.',
+                'Review and follow building emergency exit routes in case of alarm.'
+            ]
         },
         notifications: {
             hostNotifyOnArrival: true, notifyOnCheckIn: true, notifyOnCheckOut: true,
@@ -613,9 +626,50 @@ export default function Settings() {
         </div>
     )
 
+    const renderNdaTab = () => (
+        <div className="space-y-5">
+            <SettingCard title="NDA Configuration" description="Customize visitor Non-Disclosure Agreement terms and signature requirements" icon={FileText}>
+                <div className="space-y-4">
+                    <Toggle label="Require NDA Sign-Off" checked={settings.nda?.enabled ?? true}
+                        onChange={v => u('nda', 'enabled', v)}
+                        description="Require visitors to agree to NDA terms before entry" />
+                    <Toggle label="Mandatory Signature Drawing" checked={settings.nda?.requireSignature ?? true}
+                        onChange={v => u('nda', 'requireSignature', v)}
+                        description="Visitors must draw their signature on digital canvas" />
+                    <InputField label="NDA Title" value={settings.nda?.title || ''}
+                        onChange={v => u('nda', 'title', v)} placeholder="Non-Disclosure Agreement (NDA)" />
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">NDA Disclosure Terms</label>
+                        <textarea value={settings.nda?.disclosureText || ''}
+                            onChange={e => u('nda', 'disclosureText', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none font-sans"
+                            rows={5} placeholder="Enter custom NDA text..." />
+                        <p className="text-xs text-gray-400 mt-1">This text is displayed to visitors in the Visitor Portal and Kiosk during check-in.</p>
+                    </div>
+                </div>
+            </SettingCard>
+            <SettingCard title="Facility Safety Rules" description="Define safety instructions visitors must acknowledge" icon={Shield}>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Safety Rules (One rule per line)</label>
+                        <textarea
+                            value={Array.isArray(settings.nda?.safetyRules) ? settings.nda.safetyRules.join('\n') : (settings.nda?.safetyRules || '')}
+                            onChange={e => u('nda', 'safetyRules', e.target.value.split('\n'))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none font-sans"
+                            rows={5}
+                            placeholder="Wear PPE where designated&#10;No unauthorized photography"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">Visitors must check each safety rule before completing registration.</p>
+                    </div>
+                </div>
+            </SettingCard>
+        </div>
+    )
+
     const tabContent = {
         general: renderGeneralTab,
         visitor: renderVisitorTab,
+        nda: renderNdaTab,
         notifications: renderNotificationsTab,
         integrations: renderIntegrationsTab,
         security: renderSecurityTab,
