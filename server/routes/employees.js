@@ -1189,13 +1189,27 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                         dataResidency: 'platform'
                     });
                 }
-                res.status(500).json({
-                    status: 'error',
-                    error: 'Failed to register employee on Platform',
-                    details: createResult.error
-                });
+
+                // If platform registration failed due to network/DNS issue, fall back to local database registration
+                const isDnsOrNetworkError = createResult.error && (
+                    createResult.error.includes('ENOTFOUND') ||
+                    createResult.error.includes('EAI_AGAIN') ||
+                    createResult.error.includes('ECONNREFUSED') ||
+                    createResult.error.includes('UnknownHostException') ||
+                    createResult.isNetworkError
+                );
+
+                if (isDnsOrNetworkError) {
+                    console.warn(`[register_employee] Platform DNS/network unreachable (${createResult.error}). Falling back to local app database registration...`);
+                    // Fall through to local App Mode registration below
+                } else {
+                    return res.status(500).json({
+                        status: 'error',
+                        error: 'Failed to register employee on Platform',
+                        details: createResult.error
+                    });
+                }
             }
-            return;
         }
 
         // ============ APP MODE: Create locally only ============
