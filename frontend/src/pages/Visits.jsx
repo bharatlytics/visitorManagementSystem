@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash, Users, Package, Car, Copy } from 'lucide-react'
+import { Calendar, Clock, LogIn, LogOut, Plus, Search, User, Building, Eye, BadgeCheck, X, Printer, MapPin, Phone, Mail, Briefcase, FileText, CheckCircle, AlertCircle, Hash, Users, Package, Car, Copy, Edit, Trash2 } from 'lucide-react'
 import api from '../api/client'
 
 // Searchable Dropdown for host employee selection
@@ -143,6 +143,7 @@ export default function Visits() {
     const [showScheduleModal, setShowScheduleModal] = useState(false)
     const [showDetailsModal, setShowDetailsModal] = useState(false)
     const [showBadgeModal, setShowBadgeModal] = useState(false)
+    const [showEditVisitModal, setShowEditVisitModal] = useState(false)
     const [selectedVisit, setSelectedVisit] = useState(null)
     const [saving, setSaving] = useState(false)
 
@@ -241,6 +242,62 @@ export default function Visits() {
             fetchData()
         } catch (err) {
             alert(err.response?.data?.error || 'Check-out failed')
+        }
+    }
+
+    const handleCancelVisit = async (visitId, visitorName) => {
+        if (!visitId) return
+        const confirmed = window.confirm(`Are you sure you want to cancel the visit for "${visitorName || 'Visitor'}"?`)
+        if (!confirmed) return
+
+        try {
+            await api.delete(`/visitors/visits/${visitId}`)
+            if (showDetailsModal) setShowDetailsModal(false)
+            fetchData()
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to cancel visit')
+        }
+    }
+
+    const openEditVisitModal = (visit) => {
+        setSelectedVisit(visit)
+        setForm({
+            visitorId: visit.visitorId || '',
+            hostEmployeeId: visit.hostEmployeeId || '',
+            expectedArrival: visit.expectedArrival ? new Date(visit.expectedArrival).toISOString().slice(0, 16) : '',
+            expectedDeparture: visit.expectedDeparture ? new Date(visit.expectedDeparture).toISOString().slice(0, 16) : '',
+            purpose: visit.purpose || '',
+            visitType: visit.visitType || 'guest',
+            notes: visit.notes || '',
+            locationId: visit.locationId || '',
+            accessAreas: visit.accessAreas || [],
+            vehicleNumber: visit.vehicleNumber || '',
+            requiresApproval: visit.status === 'pending_approval'
+        })
+        setShowEditVisitModal(true)
+    }
+
+    const handleUpdateVisit = async (e) => {
+        e.preventDefault()
+        if (!selectedVisit) return
+        setSaving(true)
+        try {
+            await api.put(`/visitors/visits/${selectedVisit._id}`, {
+                hostEmployeeId: form.hostEmployeeId,
+                expectedArrival: form.expectedArrival ? new Date(form.expectedArrival).toISOString() : null,
+                expectedDeparture: form.expectedDeparture ? new Date(form.expectedDeparture).toISOString() : null,
+                purpose: form.purpose,
+                visitType: form.visitType,
+                locationId: form.locationId,
+                notes: form.notes,
+                vehicleNumber: form.vehicleNumber
+            })
+            setShowEditVisitModal(false)
+            fetchData()
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to update visit')
+        } finally {
+            setSaving(false)
         }
     }
 
@@ -519,6 +576,14 @@ export default function Visits() {
                                                 <button onClick={() => openBadgeModal(visit)} className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors" title="View Badge">
                                                     <BadgeCheck className="w-4 h-4" />
                                                 </button>
+                                                <button onClick={() => openEditVisitModal(visit)} className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Edit Visit">
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
+                                                {['scheduled', 'pending_approval'].includes(visit.status) && (
+                                                    <button onClick={() => handleCancelVisit(visit._id, visit.visitorName)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Cancel Visit">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -867,6 +932,68 @@ export default function Visits() {
                         </div>
                     </div>
                 )}
+            </Modal>
+
+            {/* Edit Visit Modal */}
+            <Modal isOpen={showEditVisitModal} onClose={() => setShowEditVisitModal(false)} title="Edit Scheduled Visit">
+                <form onSubmit={handleUpdateVisit} className="h-full flex flex-col">
+                    <div className="flex-1 grid grid-cols-2 gap-6">
+                        <div className="space-y-5">
+                            <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider pb-2 border-b">Visit Schedule & Host</h4>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Host Employee</label>
+                                <SearchableHostSelect
+                                    hosts={hosts}
+                                    value={form.hostEmployeeId}
+                                    onChange={(id) => setForm({ ...form, hostEmployeeId: id })}
+                                    getHostName={getHostName}
+                                    getHostDepartment={getHostDepartment}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Expected Arrival</label>
+                                <input type="datetime-local" value={form.expectedArrival} onChange={e => setForm({ ...form, expectedArrival: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Expected Departure</label>
+                                <input type="datetime-local" value={form.expectedDeparture} onChange={e => setForm({ ...form, expectedDeparture: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm" />
+                            </div>
+                        </div>
+                        <div className="space-y-5">
+                            <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider pb-2 border-b">Purpose & Details</h4>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Purpose of Visit</label>
+                                <input type="text" value={form.purpose} onChange={e => setForm({ ...form, purpose: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Visit Type</label>
+                                <select value={form.visitType} onChange={e => setForm({ ...form, visitType: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm">
+                                    <option value="guest">General Guest</option>
+                                    <option value="meeting">Business Meeting</option>
+                                    <option value="interview">Job Interview</option>
+                                    <option value="delivery">Delivery</option>
+                                    <option value="contractor">Contractor</option>
+                                    <option value="vip">VIP Visit</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                                <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm resize-none" rows={3} />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
+                        <button type="button" onClick={() => setShowEditVisitModal(false)} className="px-6 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+                        <button type="submit" disabled={saving} className="px-8 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-xl shadow-lg disabled:opacity-50">
+                            {saving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                    </div>
+                </form>
             </Modal>
         </div>
     )

@@ -538,6 +538,95 @@ router.post('/:visitId/checkout', requireCompanyAccess, async (req, res, next) =
 });
 
 /**
+ * DELETE /api/visitors/visits/:visitId
+ * Cancel / Delete a visit by ID
+ */
+router.delete('/visits/:visitId', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitId } = req.params;
+        const { reason = 'Cancelled by user' } = req.body || {};
+
+        if (!isValidObjectId(visitId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
+        }
+
+        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
+        if (!visit) {
+            return res.status(404).json({ status: 'error', error: 'Visit not found' });
+        }
+
+        await collections.visits().updateOne(
+            { _id: new ObjectId(visitId) },
+            {
+                $set: {
+                    status: 'cancelled',
+                    cancelReason: reason,
+                    cancelledAt: new Date(),
+                    lastUpdated: new Date()
+                }
+            }
+        );
+
+        res.json({ status: 'success', message: 'Visit cancelled successfully', visitId });
+    } catch (error) {
+        console.error('Error cancelling visit:', error);
+        next(error);
+    }
+});
+
+/**
+ * PUT /api/visitors/visits/:visitId
+ * Edit / Update visit details
+ */
+router.put('/visits/:visitId', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitId } = req.params;
+        const updateData = req.body;
+
+        if (!isValidObjectId(visitId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
+        }
+
+        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
+        if (!visit) {
+            return res.status(404).json({ status: 'error', error: 'Visit not found' });
+        }
+
+        const updates = { lastUpdated: new Date() };
+
+        if (updateData.purpose !== undefined) updates.purpose = updateData.purpose;
+        if (updateData.visitType !== undefined) updates.visitType = updateData.visitType;
+        if (updateData.expectedArrival) updates.expectedArrival = new Date(updateData.expectedArrival);
+        if (updateData.expectedDeparture) updates.expectedDeparture = new Date(updateData.expectedDeparture);
+        if (updateData.notes !== undefined) updates.notes = updateData.notes;
+        if (updateData.vehicleNumber !== undefined) updates.vehicleNumber = updateData.vehicleNumber;
+        if (updateData.numberOfPersons !== undefined) updates.numberOfPersons = parseInt(updateData.numberOfPersons, 10);
+
+        if (updateData.hostEmployeeId && updateData.hostEmployeeId !== visit.hostEmployeeId?.toString()) {
+            if (isValidObjectId(updateData.hostEmployeeId)) {
+                const host = await collections.employees().findOne({ _id: new ObjectId(updateData.hostEmployeeId) });
+                if (host) {
+                    updates.hostEmployeeId = host._id;
+                    updates.hostEmployeeName = host.employeeName;
+                    updates.hostEmployeeCode = host.employeeId;
+                }
+            }
+        }
+
+        await collections.visits().updateOne(
+            { _id: new ObjectId(visitId) },
+            { $set: updates }
+        );
+
+        res.json({ status: 'success', message: 'Visit updated successfully', visitId, updates });
+    } catch (error) {
+        console.error('Error updating visit:', error);
+        next(error);
+    }
+});
+
+
+/**
  * GET /api/visitors/:id
  * Get a single visitor by ID - respects data residency
  */
@@ -1188,15 +1277,128 @@ router.post('/unblacklist', requireCompanyAccess, async (req, res, next) => {
 });
 
 /**
+ * Helper to soft-delete a visitor by ID
+ */
+async function performDeleteVisitor(visitorId, companyId, platformToken) {
+    const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
+    if (!visitor) return { found: false };
+
+    // Soft delete
+    await collections.visitors().updateOne(
+        { _id: new ObjectId(visitorId) },
+        {
+            $set: {
+                status: 'deleted',
+                deletedAt: new Date(),
+                lastUpdated: new Date()
+            }
+        }
+    );
+
+    // Cancel active/scheduled visits
+    await collections.visits().updateMany(
+        { visitorId: new ObjectId(visitorId), status: { $in: ['scheduled', 'approved', 'pending_approval'] } },
+        {
+            $set: {
+                status: 'cancelled',
+                cancelReason: 'Visitor deleted',
+                cancelledAt: new Date(),
+                lastUpdated: new Date()
+            }
+        }
+    );
+
+    // Sync deletion to Platform if connected
+    let platformSync = { status: 'skipped', message: 'No platform token' };
+    const syncCompanyId = companyId || visitor.companyId?.toString();
+    if (platformToken && syncCompanyId) {
+        try {
+            const deletedVisitor = { ...visitor, status: 'deleted' };
+            console.log(`[delete_visitor] Syncing deleted visitor ${visitorId} to platform...`);
+            const syncResult = await syncVisitorToPlatform(deletedVisitor, syncCompanyId, false, platformToken);
+            if (syncResult.success) {
+                platformSync = { status: 'success', actorId: syncResult.actorId };
+            } else {
+                platformSync = { status: 'failed', error: syncResult.error };
+            }
+        } catch (syncError) {
+            console.error(`[delete_visitor] Platform sync error: ${syncError.message}`);
+            platformSync = { status: 'failed', error: syncError.message };
+        }
+    }
+
+    return { found: true, platformSync };
+}
+
+/**
  * DELETE /api/visitors/delete
- * Soft delete a visitor - syncs to Platform if connected
+ * Soft delete a visitor (body: { visitorId })
  */
 router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
     try {
-        const { visitorId, companyId } = req.body;
+        const { visitorId, companyId } = req.body || {};
+        if (!visitorId || !isValidObjectId(visitorId)) {
+            return res.status(400).json({ status: 'error', error: 'Valid Visitor ID is required' });
+        }
 
-        if (!visitorId) {
-            return res.status(400).json({ status: 'error', error: 'Visitor ID is required' });
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        const result = await performDeleteVisitor(visitorId, companyId, platformToken);
+        if (!result.found) {
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
+        }
+
+        res.json({ status: 'success', message: 'Visitor deleted successfully', platformSync: result.platformSync });
+    } catch (error) {
+        console.error('Error deleting visitor:', error);
+        next(error);
+    }
+});
+
+/**
+ * DELETE /api/visitors/:visitorId
+ * Standard REST delete endpoint for a visitor
+ */
+router.delete('/:visitorId', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitorId } = req.params;
+        const companyId = req.body?.companyId || req.query?.companyId;
+
+        if (!isValidObjectId(visitorId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visitor ID format' });
+        }
+
+        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
+        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+            platformToken = req.headers.authorization.substring(7);
+        }
+
+        const result = await performDeleteVisitor(visitorId, companyId, platformToken);
+        if (!result.found) {
+            return res.status(404).json({ status: 'error', error: 'Visitor not found' });
+        }
+
+        res.json({ status: 'success', message: 'Visitor deleted successfully', platformSync: result.platformSync });
+    } catch (error) {
+        console.error('Error deleting visitor:', error);
+        next(error);
+    }
+});
+
+/**
+ * PUT /api/visitors/:visitorId
+ * Update visitor details
+ */
+router.put('/:visitorId', requireCompanyAccess, async (req, res, next) => {
+    try {
+        const { visitorId } = req.params;
+        const data = req.body;
+
+        if (!isValidObjectId(visitorId)) {
+            return res.status(400).json({ status: 'error', error: 'Invalid visitor ID format' });
         }
 
         const visitor = await collections.visitors().findOne({ _id: new ObjectId(visitorId) });
@@ -1204,63 +1406,28 @@ router.delete('/delete', requireCompanyAccess, async (req, res, next) => {
             return res.status(404).json({ status: 'error', error: 'Visitor not found' });
         }
 
-        // Soft delete
+        const updates = { lastUpdated: new Date() };
+        if (data.visitorName !== undefined) updates.visitorName = data.visitorName;
+        if (data.email !== undefined) updates.email = data.email;
+        if (data.phone !== undefined) updates.phone = data.phone;
+        if (data.organization !== undefined) updates.organization = data.organization;
+        if (data.visitorType !== undefined) updates.visitorType = data.visitorType;
+        if (data.purpose !== undefined) updates.purpose = data.purpose;
+        if (data.notes !== undefined) updates.notes = data.notes;
+        if (typeof data.blacklisted === 'boolean') updates.blacklisted = data.blacklisted;
+
         await collections.visitors().updateOne(
             { _id: new ObjectId(visitorId) },
-            {
-                $set: {
-                    status: 'pending_approval',
-                    status: 'deleted',
-                    deletedAt: new Date(),
-                    lastUpdated: new Date()
-                }
-            }
+            { $set: updates }
         );
 
-        // Cancel scheduled visits
-        await collections.visits().updateMany(
-            { visitorId: new ObjectId(visitorId), status: 'scheduled' },
-            {
-                $set: {
-                    status: 'pending_approval',
-                    status: 'cancelled',
-                    cancelReason: 'Visitor deleted',
-                    lastUpdated: new Date()
-                }
-            }
-        );
-
-        // Sync deletion to Platform if connected
-        let platformSync = { status: 'skipped', message: 'No platform token' };
-        let platformToken = req.headers['x-platform-token'] || req.session?.platformToken;
-        if (!platformToken && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-            platformToken = req.headers.authorization.substring(7);
-        }
-
-        const syncCompanyId = companyId || visitor.companyId?.toString();
-        if (platformToken && syncCompanyId) {
-            try {
-                // Sync deleted status
-                const deletedVisitor = { ...visitor, status: 'deleted' };
-                console.log(`[delete_visitor] Syncing deleted visitor ${visitorId} to platform...`);
-                const syncResult = await syncVisitorToPlatform(deletedVisitor, syncCompanyId, false, platformToken);
-                if (syncResult.success) {
-                    platformSync = { status: 'success', actorId: syncResult.actorId };
-                } else {
-                    platformSync = { status: 'failed', error: syncResult.error };
-                }
-            } catch (syncError) {
-                console.error(`[delete_visitor] Platform sync error: ${syncError.message}`);
-                platformSync = { status: 'failed', error: syncError.message };
-            }
-        }
-
-        res.json({ status: 'success', message: 'Visitor deleted successfully', platformSync });
+        res.json({ status: 'success', message: 'Visitor updated successfully', visitorId, updates });
     } catch (error) {
-        console.error('Error deleting visitor:', error);
+        console.error('Error updating visitor:', error);
         next(error);
     }
 });
+
 
 
 /**

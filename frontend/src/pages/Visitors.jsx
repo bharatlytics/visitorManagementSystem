@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Search, UserCheck, UserX, Eye, Edit, Ban, CheckCircle, X, User, Phone, Mail, Building, Briefcase, Hash, Calendar, MapPin, FileText, Shield, Camera, ChevronLeft, ChevronRight, RotateCcw, Video, VideoOff } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, Eye, Edit, Ban, CheckCircle, X, User, Phone, Mail, Building, Briefcase, Hash, Calendar, MapPin, FileText, Shield, Camera, ChevronLeft, ChevronRight, RotateCcw, Video, VideoOff, Trash2 } from 'lucide-react'
 import api from '../api/client'
 
 // Enterprise Modal Component - 80% viewport
@@ -358,20 +358,35 @@ export default function Visitors() {
 
         setSaving(true)
         try {
-            const formData = new FormData()
-            formData.append('visitorId', selectedVisitor._id)
-            formData.append('visitorName', form.visitorName)
-            formData.append('phone', form.phone)
-            formData.append('email', form.email)
-            formData.append('organization', form.organization)
-
-            await api.patch('/visitors/update', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+            await api.put(`/visitors/${selectedVisitor._id}`, {
+                visitorName: form.visitorName,
+                phone: form.phone,
+                email: form.email,
+                organization: form.organization,
+                visitorType: form.visitorType,
+                purpose: form.purpose,
+                notes: form.notes
+            })
             setShowEditModal(false)
             fetchData()
         } catch (err) {
             alert(err.response?.data?.error || 'Failed to update visitor')
         } finally {
             setSaving(false)
+        }
+    }
+
+    const handleDeleteVisitor = async (visitor) => {
+        if (!visitor || !visitor._id) return
+        const confirmed = window.confirm(`Are you sure you want to delete visitor "${visitor.visitorName}"?\n\nThis will soft-delete the visitor record and cancel any active or scheduled visits.`)
+        if (!confirmed) return
+
+        try {
+            await api.delete(`/visitors/${visitor._id}`)
+            if (showViewModal) setShowViewModal(false)
+            fetchData()
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to delete visitor')
         }
     }
 
@@ -600,8 +615,11 @@ export default function Visitors() {
                                             <button onClick={() => openEditModal(visitor)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Edit">
                                                 <Edit className="w-4 h-4" />
                                             </button>
-                                            <button onClick={() => handleBlacklist(visitor._id, !visitor.blacklisted)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title={visitor.blacklisted ? 'Remove Blacklist' : 'Blacklist'}>
+                                            <button onClick={() => handleBlacklist(visitor._id, !visitor.blacklisted)} className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title={visitor.blacklisted ? 'Remove Blacklist' : 'Blacklist'}>
                                                 <Ban className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => handleDeleteVisitor(visitor)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Visitor">
+                                                <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>
                                     </td>
@@ -859,10 +877,16 @@ export default function Visitors() {
                         </div>
 
                         <div className="flex items-center justify-between pt-6 border-t border-gray-200">
-                            <button onClick={() => { openEditModal(selectedVisitor); setShowViewModal(false) }}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">
-                                <Edit className="w-4 h-4" /> Edit Profile
-                            </button>
+                            <div className="flex gap-3">
+                                <button onClick={() => { openEditModal(selectedVisitor); setShowViewModal(false) }}
+                                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">
+                                    <Edit className="w-4 h-4" /> Edit Profile
+                                </button>
+                                <button onClick={() => handleDeleteVisitor(selectedVisitor)}
+                                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-red-50 text-red-700 border border-red-200 rounded-xl hover:bg-red-100">
+                                    <Trash2 className="w-4 h-4" /> Delete Visitor
+                                </button>
+                            </div>
                             <div className="flex gap-3">
                                 {selectedVisitor.blacklisted ? (
                                     <button onClick={() => { handleBlacklist(selectedVisitor._id, false); setShowViewModal(false) }}
@@ -871,7 +895,7 @@ export default function Visitors() {
                                     </button>
                                 ) : (
                                     <button onClick={() => { handleBlacklist(selectedVisitor._id, true); setShowViewModal(false) }}
-                                        className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-red-600 text-white rounded-xl hover:bg-red-700">
+                                        className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-amber-600 text-white rounded-xl hover:bg-amber-700">
                                         <Ban className="w-4 h-4" /> Add to Blacklist
                                     </button>
                                 )}
