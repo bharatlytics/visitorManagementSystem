@@ -359,7 +359,7 @@ function getCurrentISTTime() {
 router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, next) => {
     try {
         const { visitId } = req.params;
-        const { method = 'manual' } = req.body;
+        const method = req.body.checkInMethod || req.body.method || 'manual';
 
         if (!isValidObjectId(visitId)) {
             return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
@@ -370,7 +370,7 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
             return res.status(404).json({ status: 'error', error: 'Visit not found' });
         }
 
-        if (visit.status !== 'scheduled') {
+        if (!['scheduled', 'approved'].includes(visit.status)) {
             return res.status(400).json({ status: 'error', error: `Visit cannot be checked in. Current status: ${visit.status}` });
         }
 
@@ -385,7 +385,7 @@ router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, 
         };
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, source, lastUpdated: now } }
+            { $set: { status: 'checked_in', actualArrival: now, checkInTime: now, checkInMethod: method, source, lastUpdated: now } }
         );
 
         console.log(`[check-in] Visit ${visitId} checked in via ${method} source=${source.type}`);
@@ -458,7 +458,7 @@ router.post('/visits/:visitId/checkout', requireCompanyAccess, async (req, res, 
 router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) => {
     try {
         const { visitId } = req.params;
-        const { method = 'manual' } = req.body;
+        const method = req.body.checkInMethod || req.body.method || 'manual';
 
         if (!isValidObjectId(visitId)) {
             return res.status(400).json({ status: 'error', error: 'Invalid visit ID format' });
@@ -469,7 +469,7 @@ router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) =
             return res.status(404).json({ status: 'error', error: 'Visit not found' });
         }
 
-        if (visit.status !== 'scheduled') {
+        if (!['scheduled', 'approved'].includes(visit.status)) {
             return res.status(400).json({ status: 'error', error: `Visit cannot be checked in. Current status: ${visit.status}` });
         }
 
@@ -484,7 +484,7 @@ router.post('/:visitId/check-in', requireCompanyAccess, async (req, res, next) =
         };
         await collections.visits().updateOne(
             { _id: new ObjectId(visitId) },
-            { $set: { status: 'checked_in', actualArrival: now, checkInMethod: method, source, lastUpdated: now } }
+            { $set: { status: 'checked_in', actualArrival: now, checkInTime: now, checkInMethod: method, source, lastUpdated: now } }
         );
 
         res.json({ status: 'success', message: 'Check-in successful', visitId, checkInTime: now.toISOString(), source });
@@ -1568,91 +1568,8 @@ router.post('/:visitorId/schedule-visit', requireCompanyAccess, async (req, res,
     }
 });
 
-/**
- * POST /api/visitors/visits/:visitId/check-in
- * Check in a visitor
- */
-router.post('/visits/:visitId/check-in', requireCompanyAccess, async (req, res, next) => {
-    try {
-        const { visitId } = req.params;
-        const data = req.body;
+// Note: Primary /visits/:visitId/check-in and /visits/:visitId/check-out routes are implemented above.
 
-        if (!data.checkInMethod) {
-            return res.status(400).json({ status: 'error', error: 'Check-in method is required.' });
-        }
-
-        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
-        if (!visit) {
-            return res.status(404).json({ status: 'error', error: 'Visit not found.' });
-        }
-
-        if (visit.status !== 'scheduled') {
-            return res.status(400).json({ status: 'error', error: 'Visit is not in scheduled state.' });
-        }
-
-        await collections.visits().updateOne(
-            { _id: new ObjectId(visitId) },
-            {
-                $set: {
-                    status: 'pending_approval',
-                    status: 'checked_in',
-                    checkInMethod: data.checkInMethod,
-                    actualArrival: new Date(),
-                    lastUpdated: new Date()
-                }
-            }
-        );
-
-        res.json({
-            status: 'success',
-            message: 'Check-in successful',
-            visitId
-        });
-    } catch (error) {
-        console.error('Error in check_in:', error);
-        next(error);
-    }
-});
-
-/**
- * POST /api/visitors/visits/:visitId/check-out
- * Check out a visitor
- */
-router.post('/visits/:visitId/check-out', requireCompanyAccess, async (req, res, next) => {
-    try {
-        const { visitId } = req.params;
-
-        const visit = await collections.visits().findOne({ _id: new ObjectId(visitId) });
-        if (!visit) {
-            return res.status(404).json({ status: 'error', error: 'Visit not found.' });
-        }
-
-        if (visit.status !== 'checked_in') {
-            return res.status(400).json({ status: 'error', error: 'Visit is not checked in.' });
-        }
-
-        await collections.visits().updateOne(
-            { _id: new ObjectId(visitId) },
-            {
-                $set: {
-                    status: 'pending_approval',
-                    status: 'checked_out',
-                    actualDeparture: new Date(),
-                    lastUpdated: new Date()
-                }
-            }
-        );
-
-        res.json({
-            status: 'success',
-            message: 'Check-out successful',
-            visitId
-        });
-    } catch (error) {
-        console.error('Error in check_out:', error);
-        next(error);
-    }
-});
 
 /**
  * GET /api/visitors/embeddings/:embedding_id
