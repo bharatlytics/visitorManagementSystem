@@ -1064,7 +1064,7 @@ router.post('/register', requireCompanyAccess, registerFields, async (req, res, 
                     }
                 }
 
-                res.status(201).json({
+                return res.status(201).json({
                     status: 'success',
                     message: 'Employee registered successfully on Platform',
                     dataResidency: 'platform',
